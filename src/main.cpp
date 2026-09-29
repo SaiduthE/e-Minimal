@@ -608,6 +608,7 @@ void setup() {
   // Output polarity is resolved per render by ActivityManager (night mode
   // inverts only the reading surfaces), so nothing to restore here.
 
+  const bool backHeldAtBoot = mappedInputManager.isPressed(MappedInputManager::Button::Back);
   if (recoveryFirmwareMode) {
     // Skip normal home/reader routing: jump straight into the SD firmware picker.
     activityManager.replaceActivity(
@@ -621,13 +622,22 @@ void setup() {
   } else if (resume == BootResume::Silent && snapshotTarget == SILENT_REBOOT_TARGET_SETTINGS) {
     // Back out of the WiFi rows and the user is where they left off, not on Home.
     activityManager.goToSettings();
+  } else if (resume == BootResume::Silent && APP_STATE.lastApp == AppId::DASHBOARD) {
+    // Leaving Game Night for the dashboard restarts to shed the WiFi heap.
+    activityManager.goToDashboard();
   } else if (resume == BootResume::Silent) {
     // target == home (or reader with no open book): land on home — don't fall
     // through to the sleep-wake "resume reader" logic, which fires on stale
-    // openEpubPath + lastSleepFromReader from a prior session.
+    // openEpubPath + lastSleepFromReader from a prior session. Games also lands
+    // here: its own exit is what restarted.
     activityManager.goHome();
-  } else if (APP_STATE.openEpubPath.empty() || !APP_STATE.lastSleepFromReader ||
-             mappedInputManager.isPressed(MappedInputManager::Button::Back) || APP_STATE.readerActivityLoadCount > 0) {
+  } else if (APP_STATE.lastApp == AppId::DASHBOARD && !backHeldAtBoot) {
+    // Boot and wake return to the app last opened; Back held is the way to Home.
+    activityManager.goToDashboard(needsWakeRefresh);
+  } else if (APP_STATE.lastApp == AppId::GAMES && !backHeldAtBoot) {
+    activityManager.goToGameNight();
+  } else if (APP_STATE.openEpubPath.empty() || !APP_STATE.lastSleepFromReader || backHeldAtBoot ||
+             APP_STATE.readerActivityLoadCount > 0) {
     // Boot to home screen if no book is open, last sleep was not from reader, back button is held, or reader activity
     // crashed (indicated by readerActivityLoadCount > 0). Back is logical here: the user's own Back key.
     activityManager.goHome(HomeMenuItem::NONE, needsWakeRefresh);

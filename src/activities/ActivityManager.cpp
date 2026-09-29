@@ -12,9 +12,11 @@
 
 #include "CrossPointSettings.h"
 #include "OpdsServerStore.h"
+#include "PowerMenuActivity.h"
 #include "boot_sleep/BootActivity.h"
 #include "boot_sleep/SleepActivity.h"
 #include "browser/OpdsBookBrowserActivity.h"
+#include "dashboard/DashboardActivity.h"
 #include "games/GameNightActivity.h"
 #include "home/CrashActivity.h"
 #include "home/FileBrowserActivity.h"
@@ -23,7 +25,6 @@
 #include "network/CrossPointWebServerActivity.h"
 #include "network/UsbDriveActivity.h"
 #include "reader/ReaderActivity.h"
-#include "PowerMenuActivity.h"
 #include "settings/OpdsServerListActivity.h"
 #include "settings/SettingsActivity.h"
 #include "util/BmpViewerActivity.h"
@@ -249,7 +250,48 @@ void ActivityManager::goToGameNight() {
     LOG_ERR("ACT", "OOM: Game Night activity");
     return;
   }
+  noteApp(AppId::GAMES);
   replaceActivity(std::move(activity));
+}
+
+void ActivityManager::goToDashboard(const bool cleanInitialRefresh) {
+  auto activity = makeUniqueNoThrow<DashboardActivity>(renderer, mappedInput, cleanInitialRefresh);
+  if (!activity) {
+    LOG_ERR("ACT", "OOM: dashboard activity");
+    return;
+  }
+  noteApp(AppId::DASHBOARD);
+  replaceActivity(std::move(activity));
+}
+
+void ActivityManager::goToApp(const AppId app) {
+  switch (app) {
+    case AppId::READER:
+      if (APP_STATE.resumeBookOnReturn && !APP_STATE.openEpubPath.empty()) {
+        goToReader(APP_STATE.openEpubPath);
+      } else {
+        goHome();
+      }
+      return;
+    case AppId::DASHBOARD:
+      goToDashboard();
+      return;
+    case AppId::GAMES:
+      goToGameNight();
+      return;
+  }
+}
+
+void ActivityManager::noteApp(const AppId app) {
+  if (APP_STATE.lastApp == app) return;
+  if (APP_STATE.lastApp == AppId::READER) {
+    // Leaving the reader: switching back resumes the book if one was on screen.
+    APP_STATE.resumeBookOnReturn = isReaderActivity();
+  } else if (app == AppId::READER) {
+    APP_STATE.resumeBookOnReturn = false;
+  }
+  APP_STATE.lastApp = app;
+  APP_STATE.saveToFile();
 }
 
 void ActivityManager::goToUsbDrive() {
@@ -308,6 +350,7 @@ void ActivityManager::goToReader(std::string path, const bool allowFastInitialRe
 
   auto activity = ReaderActivity::create(renderer, mappedInput, std::move(path), allowFastInitialRefresh);
   if (activity) {
+    noteApp(AppId::READER);
     replaceActivity(std::move(activity));
   }
 }
@@ -338,6 +381,7 @@ void ActivityManager::goHome(HomeMenuItem initialMenuItem, bool cleanInitialRefr
       initialMenuItem = HomeMenuItem::SETTINGS_MENU;
     }
   }
+  noteApp(AppId::READER);
   replaceActivity(std::make_unique<HomeActivity>(renderer, mappedInput, initialMenuItem, cleanInitialRefresh));
 }
 void ActivityManager::goToCrashReport() { replaceActivity(std::make_unique<CrashActivity>(renderer, mappedInput)); }
@@ -375,6 +419,8 @@ bool ActivityManager::isReaderActivity() const {
          (currentActivity && currentActivity->isReaderActivity());
 }
 
+bool ActivityManager::isEnteringReader() const { return pendingActivity && pendingActivity->isReaderActivity(); }
+
 bool ActivityManager::handleForcedRefresh() { return currentActivity && currentActivity->handleForcedRefresh(); }
 
 bool ActivityManager::isPowerMenuOpen() const { return currentActivity && currentActivity->name == "PowerMenu"; }
@@ -385,15 +431,15 @@ void ActivityManager::openPowerMenu() {
   // forced refresh scheduled here lands on that repaint (the reader turns it
   // into a full-refresh page render; the others repaint as a screen change,
   // which the driver already clears with a GC16).
-  currentActivity->startActivityForResult(std::make_unique<PowerMenuActivity>(renderer, mappedInput),
-                                          [this](const ActivityResult& result) {
-                                            if (result.isCancelled) return;
-                                            const auto* menu = std::get_if<MenuResult>(&result.data);
-                                            if (!menu) return;
-                                            if (menu->action == static_cast<int>(PowerMenuActivity::Action::REFRESH_SCREEN)) {
-                                              handleForcedRefresh();
-                                            }
-                                          });
+  currentActivity->startActivityForResult(
+      std::make_unique<PowerMenuActivity>(renderer, mappedInput), [this](const ActivityResult& result) {
+        if (result.isCancelled) return;
+        const auto* menu = std::get_if<MenuResult>(&result.data);
+        if (!menu) return;
+        if (menu->action == static_cast<int>(PowerMenuActivity::Action::REFRESH_SCREEN)) {
+          handleForcedRefresh();
+        }
+      });
 }
 
 bool ActivityManager::skipLoopDelay() const { return currentActivity && currentActivity->skipLoopDelay(); }

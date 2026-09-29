@@ -5,6 +5,10 @@
 #include <cstdint>
 #include <string>
 
+// The top-level apps the power menu switches between. The one last opened is
+// the one the device boots or wakes into.
+enum class AppId : uint8_t { READER = 0, DASHBOARD = 1, GAMES = 2 };
+
 class CrossPointState : public PersistableStore<CrossPointState> {
   CrossPointState() = default;
 
@@ -23,6 +27,10 @@ class CrossPointState : public PersistableStore<CrossPointState> {
   uint8_t readerActivityLoadCount = 0;
   bool lastSleepFromReader = false;
   bool showBootScreen = true;
+  AppId lastApp = AppId::READER;
+  // Set when the reader app is left for another app: whether a book was on
+  // screen, so switching back resumes it instead of opening Home.
+  bool resumeBookOnReturn = false;
 
   static const char* getFilePath() { return "/.crosspoint/state.json"; }
   void toJson(JsonDocument& doc) const;

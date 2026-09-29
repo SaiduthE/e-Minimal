@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "CrossPointState.h"
 #include "GfxRenderer.h"
 #include "MappedInputManager.h"
 #include "util/ScreenshotInfo.h"
@@ -68,6 +69,10 @@ class ActivityManager {
 
   bool deepSleepRequested = false;
 
+  // Records the app a root screen belongs to, so boot and wake return to it.
+  // Saves only on a change.
+  void noteApp(AppId app);
+
  public:
   explicit ActivityManager(GfxRenderer& renderer, MappedInputManager& mappedInput)
       : renderer(renderer), mappedInput(mappedInput), renderingMutex(xSemaphoreCreateMutex()) {
@@ -86,6 +91,7 @@ class ActivityManager {
   void goToFileTransfer();
   void goToUsbDrive();
   void goToGameNight();
+  void goToDashboard(bool cleanInitialRefresh = false);
   void goToSettings();
   void goToFileBrowser(std::string path = {});
   void goToLibrary();
@@ -96,6 +102,9 @@ class ActivityManager {
   void goToFullScreenMessage(std::string message, EpdFontFamily::Style style = EpdFontFamily::REGULAR);
   void goToCrashReport();
   void goHome(HomeMenuItem initialMenuItem = HomeMenuItem::NONE, bool cleanInitialRefresh = false);
+  // Switches to an app's root screen: Reader resumes the book that was open
+  // when the reader was left (else Home), Dashboard, Games opens Game Night.
+  void goToApp(AppId app);
 
   // This will move current activity to stack instead of deleting it
   void pushActivity(std::unique_ptr<Activity>&& activity);
@@ -107,6 +116,9 @@ class ActivityManager {
   bool preventAutoSleep() const;
   bool requiresExclusiveStorageLoop() const;
   bool isReaderActivity() const;
+  // True while a replace into a reader is tearing the old screen down, so an
+  // onExit() that must reboot can reboot into the book instead of Home.
+  bool isEnteringReader() const;
   bool handleForcedRefresh();
   bool skipLoopDelay() const;
   ScreenshotInfo getScreenshotInfo() const;
