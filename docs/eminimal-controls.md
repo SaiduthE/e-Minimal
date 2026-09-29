@@ -93,9 +93,32 @@ Select opens search when the feed offers one (no synthetic row, which would
 shift every entry's index). Back climbs the feed hierarchy.
 
 ## Power
-Hold Power ~0.7 s while awake for the power menu (sleep, shutdown, restart).
-Hold Power ~1 s while asleep to wake. A short tap does nothing either way —
-no double-click frontlight shortcut here.
+Hold Power ~0.7 s while awake for the power menu. Hold Power ~1 s while
+asleep to wake. A short tap does nothing either way — no double-click
+frontlight shortcut here.
+
+The power menu opens on Sleep, so hold Power then Select still sleeps. Above
+the rows (Sleep, Go Home, Refresh Screen) sit three app tiles: **Reader**,
+**Dashboard**, **Games**. Up/Down walk one ring through the tiles and then the
+rows. The app that is open has a heavier frame and says "Open"; Select on it
+just closes the menu, Select on another switches to it. Reader resumes the book
+that was on screen when the reader was left, else opens Home; Games opens Game
+Night. Go Home is the reader's Home, so it also switches to Reader.
+
+## Apps and boot
+The device boots and wakes into the app last opened (`lastApp` in
+`/.crosspoint/state.json`): the reader as before (the book it slept in, or
+Home), the Dashboard, or Game Night. Hold Back through boot or wake to land on
+Home whichever app it was. Game Night reboots when it is left (to shed the
+WiFi heap), so switching away from Games shows the loading popup first.
+
+## Dashboard
+Today's date (when the board has a clock), a count of open and done tasks,
+and the to-do list (`/.crosspoint/todo.json`, up to 50 tasks of 80
+characters). The first row adds a task through the usual text entry (reader
+keyboard or phone). Select on a task ticks it done or not done; hold Select on
+a task for Mark Done / Not Done, Edit Task, Delete and Clear Done Tasks. Back
+does nothing here: the Dashboard is an app root, switched from the power menu.
 
 ## Hidden on this board, and why
 Settings hides Menu Style in the reader section (forced to List; Toolbar

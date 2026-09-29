@@ -52,8 +52,15 @@ void GameNightActivity::onExit() {
   portal.end();
 
   // Tearing WiFi down leaves the heap fragmented enough to hurt the reader, and
-  // file transfer already answers that the same way.
-  if (wifiWasOn) silentRestart();
+  // file transfer already answers that the same way. Switching apps to a book
+  // lands back in that book.
+  if (wifiWasOn) {
+    if (activityManager.isEnteringReader()) {
+      silentRestartToReader();
+    } else {
+      silentRestart();
+    }
+  }
   LOG_DBG("GAMES", "Free heap at onExit: %d bytes", ESP.getFreeHeap());
 }
 
