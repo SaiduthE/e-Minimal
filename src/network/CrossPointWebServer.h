@@ -110,6 +110,14 @@ class CrossPointWebServer {
   void handleGetSettings() const;
   void handlePostSettings();
 
+  // Dashboard handlers: layouts, widget settings, the to-do list, pictures for the Image tile
+  void handleDashboardsPage() const;
+  void handlePicturesPage() const;
+  void handleGetDashboards() const;
+  void handlePostDashboards();
+  void handleGetTodo() const;
+  void handlePostTodo();
+
   // Font management handlers
   void handleFontsPage() const;
   void handleFontList() const;

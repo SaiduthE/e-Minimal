@@ -7,13 +7,16 @@
 #include <Logging.h>
 #include <Memory.h>
 
+#include <algorithm>
 #include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <new>
 
 #include "DirectPixelWriter.h"
 #include "DitherUtils.h"
 #include "PixelCache.h"
+#include "ToneCurve.h"
 
 namespace {
 
@@ -26,9 +29,13 @@ struct JpegContext {
   int screenWidth{0};
   int screenHeight{0};
 
-  // Source dimensions after JPEGDEC's built-in scaling
-  int scaledSrcWidth{0};
-  int scaledSrcHeight{0};
+  // Visible (cropped) part of the source after JPEGDEC's built-in scaling, in
+  // scaled-source pixels. The draw callback shifts block origins by the crop, so
+  // all scaling math runs relative to the visible region's top-left corner.
+  int cropLeft{0};
+  int cropTop{0};
+  int visibleWidth{0};
+  int visibleHeight{0};
 
   // Final output dimensions
   int dstWidth{0};
@@ -47,7 +54,21 @@ struct JpegContext {
   PixelCache cache;
   bool caching{false};
 
+  // Photo path (fullGrayLevels / autoContrast); nullptr: the default 2bpp path.
+  const image_tone::TonedSink* toned{nullptr};
+
   uint32_t lastYieldMs{0};  // throttle state for yieldDuringDecode()
+};
+
+// Auto-contrast pre-pass: a 1/8-scale grey decode of the visible crop that only
+// counts grey levels.
+struct JpegHistogramContext {
+  uint32_t* histogram{nullptr};
+  int cropLeft{0};
+  int cropTop{0};
+  int visibleWidth{0};
+  int visibleHeight{0};
+  uint32_t lastYieldMs{0};
 };
 
 // File I/O callbacks use pFile->fHandle to access the HalFile*,
@@ -115,6 +136,45 @@ int chooseJpegScale(float targetScale, int& jpegScaleOption) {
   return 1;
 }
 
+// RenderConfig crop fraction (total, half per side), clamped as the PNG
+// converter does; NaN and negatives mean no crop.
+float cropFraction(const float fraction) {
+  if (!(fraction > 0.0f)) return 0.0f;
+  return fraction < 0.99f ? fraction : 0.99f;
+}
+
+// A per-side source crop in scaled-source pixels, rounded to the nearest whole
+// pixel and kept small enough that at least one pixel stays visible.
+int scaledCrop(const int cropPixels, const int scaleDenom, const int scaledSize) {
+  int crop = (cropPixels + scaleDenom / 2) / scaleDenom;
+  if (2 * crop >= scaledSize) crop = (scaledSize - 1) / 2;
+  return crop;
+}
+
+int jpegHistogramCallback(JPEGDRAW* pDraw) {
+  JpegHistogramContext* hc = reinterpret_cast<JpegHistogramContext*>(pDraw->pUser);
+  if (!hc || !hc->histogram) return 0;
+
+  ImageToFramebufferDecoder::yieldDuringDecode(hc->lastYieldMs);
+
+  const uint8_t* pixels = reinterpret_cast<const uint8_t*>(pDraw->pPixels);
+  const int stride = pDraw->iWidth;
+  const int blockX = pDraw->x - hc->cropLeft;
+  const int blockY = pDraw->y - hc->cropTop;
+  // Raster MCU order: once a block starts below the visible region, so do the rest.
+  if (blockY >= hc->visibleHeight) return 0;
+
+  const int x0 = blockX < 0 ? -blockX : 0;
+  const int y0 = blockY < 0 ? -blockY : 0;
+  const int x1 = std::min(pDraw->iWidthUsed, hc->visibleWidth - blockX);
+  const int y1 = std::min(pDraw->iHeight, hc->visibleHeight - blockY);
+  for (int y = y0; y < y1; y++) {
+    const uint8_t* row = pixels + y * stride;
+    for (int x = x0; x < x1; x++) hc->histogram[row[x]]++;
+  }
+  return 1;
+}
+
 // Fixed-point 16.16 arithmetic avoids software float emulation on ESP32-C3 (no FPU).
 constexpr int FP_SHIFT = 16;
 constexpr int32_t FP_ONE = 1 << FP_SHIFT;
@@ -136,6 +196,7 @@ int jpegDrawCallback(JPEGDRAW* pDraw) {
   if (stride <= 0 || blockH <= 0 || validW <= 0) return 1;
 
   const bool useDithering = ctx->config->useDithering;
+  const image_tone::TonedSink* const toned = ctx->toned;
   bool caching = ctx->caching;
   const int32_t fineScaleFPX = ctx->fineScaleFPX;
   const int32_t invScaleFPX = ctx->invScaleFPX;
@@ -144,17 +205,26 @@ int jpegDrawCallback(JPEGDRAW* pDraw) {
   GfxRenderer& renderer = *ctx->renderer;
   const int cfgX = ctx->config->x;
   const int cfgY = ctx->config->y;
-  const int blockX = pDraw->x;
-  const int blockY = pDraw->y;
+  // Block origin relative to the visible region; negative when the block starts in the crop.
+  const int blockX = pDraw->x - ctx->cropLeft;
+  const int blockY = pDraw->y - ctx->cropTop;
 
   // Determine destination pixel range covered by this source block
   const int srcYEnd = blockY + blockH;
   const int srcXEnd = blockX + validW;
 
+  // Blocks arrive in raster MCU order, so once one starts below the visible
+  // region every later one does too: stop the decode. Blocks above or beside it
+  // draw nothing.
+  if (blockY >= ctx->visibleHeight) return 0;
+  if (srcYEnd <= 0 || srcXEnd <= 0 || blockX >= ctx->visibleWidth) return 1;
+
   int dstYStart = (int)((int64_t)blockY * fineScaleFPY >> FP_SHIFT);
-  int dstYEnd = (srcYEnd >= ctx->scaledSrcHeight) ? ctx->dstHeight : (int)((int64_t)srcYEnd * fineScaleFPY >> FP_SHIFT);
+  int dstYEnd = (srcYEnd >= ctx->visibleHeight) ? ctx->dstHeight : (int)((int64_t)srcYEnd * fineScaleFPY >> FP_SHIFT);
   int dstXStart = (int)((int64_t)blockX * fineScaleFPX >> FP_SHIFT);
-  int dstXEnd = (srcXEnd >= ctx->scaledSrcWidth) ? ctx->dstWidth : (int)((int64_t)srcXEnd * fineScaleFPX >> FP_SHIFT);
+  int dstXEnd = (srcXEnd >= ctx->visibleWidth) ? ctx->dstWidth : (int)((int64_t)srcXEnd * fineScaleFPX >> FP_SHIFT);
+  if (dstYStart < 0) dstYStart = 0;
+  if (dstXStart < 0) dstXStart = 0;
 
   // Pre-clamp destination ranges to screen bounds (eliminates per-pixel screen checks)
   int clampYMax = ctx->dstHeight;
@@ -200,6 +270,10 @@ int jpegDrawCallback(JPEGDRAW* pDraw) {
       for (int dstX = dstXStart; dstX < dstXEnd; dstX++) {
         const int outX = cfgX + dstX;
         uint8_t gray = row[dstX - blockX];
+        if (toned) {
+          toned->put(pw, dstX, dstY, outX, outY, gray);
+          continue;
+        }
         uint8_t dithered;
         if (useDithering) {
           dithered = applyBayerDither4Level(gray, outX, outY);
@@ -258,6 +332,10 @@ int jpegDrawCallback(JPEGDRAW* pDraw) {
         int top = ((int)row0[lx0] * fxInv + (int)row0[lx1] * fx) >> FP_SHIFT;
         int bot = ((int)row1[lx0] * fxInv + (int)row1[lx1] * fx) >> FP_SHIFT;
         uint8_t gray = (uint8_t)((top * fyInv + bot * fy) >> FP_SHIFT);
+        if (toned) {
+          toned->put(pw, dstX, dstY, outX, outY, gray);
+          continue;
+        }
 
         uint8_t dithered;
         if (useDithering) {
@@ -281,6 +359,10 @@ int jpegDrawCallback(JPEGDRAW* pDraw) {
         int top = ((int)row0[lx0] * fxInv + (int)row0[lx0 + 1] * fx) >> FP_SHIFT;
         int bot = ((int)row1[lx0] * fxInv + (int)row1[lx0 + 1] * fx) >> FP_SHIFT;
         uint8_t gray = (uint8_t)((top * fyInv + bot * fy) >> FP_SHIFT);
+        if (toned) {
+          toned->put(pw, dstX, dstY, outX, outY, gray);
+          continue;
+        }
 
         uint8_t dithered;
         if (useDithering) {
@@ -307,6 +389,10 @@ int jpegDrawCallback(JPEGDRAW* pDraw) {
         int top = ((int)row0[lx0] * fxInv + (int)row0[lx1] * fx) >> FP_SHIFT;
         int bot = ((int)row1[lx0] * fxInv + (int)row1[lx1] * fx) >> FP_SHIFT;
         uint8_t gray = (uint8_t)((top * fyInv + bot * fy) >> FP_SHIFT);
+        if (toned) {
+          toned->put(pw, dstX, dstY, outX, outY, gray);
+          continue;
+        }
 
         uint8_t dithered;
         if (useDithering) {
@@ -340,6 +426,10 @@ int jpegDrawCallback(JPEGDRAW* pDraw) {
       if (lx < 0) lx = 0;
       if (lx >= validW) lx = validW - 1;
       uint8_t gray = row[lx];
+      if (toned) {
+        toned->put(pw, dstX, dstY, outX, outY, gray);
+        continue;
+      }
 
       uint8_t dithered;
       if (useDithering) {
@@ -354,6 +444,41 @@ int jpegDrawCallback(JPEGDRAW* pDraw) {
   }
 
   return 1;
+}
+
+// Auto-contrast without a PSRAM stage: close `jpeg`, run a 1/8-scale grey
+// decode of the visible crop on it into the histogram (DC only for baseline
+// and progressive alike, no IDCT), then reopen it for the main decode and
+// return the reopen's rc. A failed pre-pass leaves the histogram empty (the
+// curve is then the gamma alone). Nothing may return between the close and
+// the reopen: the caller's cleanup closes whatever `jpeg` holds.
+int histogramPrepassThenReopen(JPEGDEC& jpeg, const std::string& imagePath, const int srcWidth, const int srcHeight,
+                               const int cropLeft, const int cropTop, image_tone::ToneMap& toneMap) {
+  jpeg.close();
+  const unsigned long start = millis();
+  bool counted = false;
+  if (jpeg.open(imagePath.c_str(), jpegOpen, jpegClose, jpegRead, jpegSeek, jpegHistogramCallback) == 1) {
+    constexpr int SCALE_DENOM = 8;
+    const int scaledWidth = (srcWidth + SCALE_DENOM - 1) / SCALE_DENOM;
+    const int scaledHeight = (srcHeight + SCALE_DENOM - 1) / SCALE_DENOM;
+    JpegHistogramContext hc;
+    hc.histogram = toneMap.histogram;
+    hc.cropLeft = scaledCrop(cropLeft, SCALE_DENOM, scaledWidth);
+    hc.cropTop = scaledCrop(cropTop, SCALE_DENOM, scaledHeight);
+    hc.visibleWidth = scaledWidth - 2 * hc.cropLeft;
+    hc.visibleHeight = scaledHeight - 2 * hc.cropTop;
+    hc.lastYieldMs = start;
+    jpeg.setPixelType(EIGHT_BIT_GRAYSCALE);
+    jpeg.setUserPointer(&hc);
+    counted = jpeg.decode(0, 0, JPEG_SCALE_EIGHTH) == 1;
+  }
+  if (!counted) {
+    LOG_ERR("JPG", "Auto-contrast pre-pass failed (err=%d), using the gamma alone", jpeg.getLastError());
+    memset(toneMap.histogram, 0, sizeof(toneMap.histogram));
+  }
+  jpeg.close();
+  LOG_DBG("JPG", "Auto-contrast pre-pass: %lu ms", millis() - start);
+  return jpeg.open(imagePath.c_str(), jpegOpen, jpegClose, jpegRead, jpegSeek, jpegDrawCallback);
 }
 
 }  // namespace
@@ -420,6 +545,17 @@ bool JpegToFramebufferConverter::decodeToFramebuffer(const std::string& imagePat
   const int srcWidth = sourceDimensions.width;
   const int srcHeight = sourceDimensions.height;
 
+  // Whole source pixels cropped from each side; the fit and the coarse scale
+  // below are computed on what remains visible.
+  const int cropLeft = static_cast<int>(srcWidth * cropFraction(config.sourceCropX) / 2.0f);
+  const int cropTop = static_cast<int>(srcHeight * cropFraction(config.sourceCropY) / 2.0f);
+  const int visibleWidth = srcWidth - 2 * cropLeft;
+  const int visibleHeight = srcHeight - 2 * cropTop;
+  if (visibleWidth <= 0 || visibleHeight <= 0) {
+    LOG_ERR("JPG", "JPEG crop leaves no visible pixels");
+    return false;
+  }
+
   bool isProgressive = jpeg->getJPEGType() == JPEG_MODE_PROGRESSIVE;
   if (isProgressive) {
     LOG_INF("JPG", "Progressive JPEG detected - decoding DC coefficients only (lower quality)");
@@ -432,15 +568,17 @@ bool JpegToFramebufferConverter::decodeToFramebuffer(const std::string& imagePat
   if (config.useExactDimensions && config.maxWidth > 0 && config.maxHeight > 0) {
     destWidth = config.maxWidth;
     destHeight = config.maxHeight;
-    targetScale = (float)destWidth / srcWidth;
+    targetScale = (float)destWidth / visibleWidth;
   } else {
-    float scaleX = (config.maxWidth > 0 && srcWidth > config.maxWidth) ? (float)config.maxWidth / srcWidth : 1.0f;
-    float scaleY = (config.maxHeight > 0 && srcHeight > config.maxHeight) ? (float)config.maxHeight / srcHeight : 1.0f;
+    float scaleX =
+        (config.maxWidth > 0 && visibleWidth > config.maxWidth) ? (float)config.maxWidth / visibleWidth : 1.0f;
+    float scaleY =
+        (config.maxHeight > 0 && visibleHeight > config.maxHeight) ? (float)config.maxHeight / visibleHeight : 1.0f;
     targetScale = (scaleX < scaleY) ? scaleX : scaleY;
     if (targetScale > 1.0f) targetScale = 1.0f;
 
-    destWidth = (int)(srcWidth * targetScale);
-    destHeight = (int)(srcHeight * targetScale);
+    destWidth = (int)(visibleWidth * targetScale);
+    destHeight = (int)(visibleHeight * targetScale);
   }
 
   // Choose JPEGDEC built-in scaling for coarse downscaling.
@@ -462,18 +600,64 @@ bool JpegToFramebufferConverter::decodeToFramebuffer(const std::string& imagePat
     return false;
   }
 
-  ctx.scaledSrcWidth = (srcWidth + jpegScaleDenom - 1) / jpegScaleDenom;
-  ctx.scaledSrcHeight = (srcHeight + jpegScaleDenom - 1) / jpegScaleDenom;
+  const int scaledSrcWidth = (srcWidth + jpegScaleDenom - 1) / jpegScaleDenom;
+  const int scaledSrcHeight = (srcHeight + jpegScaleDenom - 1) / jpegScaleDenom;
+  ctx.cropLeft = scaledCrop(cropLeft, jpegScaleDenom, scaledSrcWidth);
+  ctx.cropTop = scaledCrop(cropTop, jpegScaleDenom, scaledSrcHeight);
+  ctx.visibleWidth = scaledSrcWidth - 2 * ctx.cropLeft;
+  ctx.visibleHeight = scaledSrcHeight - 2 * ctx.cropTop;
   ctx.dstWidth = destWidth;
   ctx.dstHeight = destHeight;
-  ctx.fineScaleFPX = (int32_t)((int64_t)destWidth * FP_ONE / ctx.scaledSrcWidth);
-  ctx.invScaleFPX = (int32_t)((int64_t)ctx.scaledSrcWidth * FP_ONE / destWidth);
-  ctx.fineScaleFPY = (int32_t)((int64_t)destHeight * FP_ONE / ctx.scaledSrcHeight);
-  ctx.invScaleFPY = (int32_t)((int64_t)ctx.scaledSrcHeight * FP_ONE / destHeight);
+  ctx.fineScaleFPX = (int32_t)((int64_t)destWidth * FP_ONE / ctx.visibleWidth);
+  ctx.invScaleFPX = (int32_t)((int64_t)ctx.visibleWidth * FP_ONE / destWidth);
+  ctx.fineScaleFPY = (int32_t)((int64_t)destHeight * FP_ONE / ctx.visibleHeight);
+  ctx.invScaleFPY = (int32_t)((int64_t)ctx.visibleHeight * FP_ONE / destHeight);
 
-  LOG_DBG("JPG", "JPEG %dx%d -> %dx%d (scale %.2f, jpegScale 1/%d, fineScale %.2f)%s", srcWidth, srcHeight, destWidth,
-          destHeight, targetScale, jpegScaleDenom, (float)destWidth / ctx.scaledSrcWidth,
-          isProgressive ? " [progressive]" : "");
+  LOG_DBG("JPG", "JPEG %dx%d (visible %dx%d) -> %dx%d (scale %.2f, jpegScale 1/%d, fineScale %.2f)%s", srcWidth,
+          srcHeight, visibleWidth, visibleHeight, destWidth, destHeight, targetScale, jpegScaleDenom,
+          (float)destWidth / ctx.visibleWidth, isProgressive ? " [progressive]" : "");
+
+  // Photo path (RenderConfig::fullGrayLevels / autoContrast). Auto-contrast
+  // needs the histogram before any pixel is written: stage the on-screen output
+  // in PSRAM and write it after the decode, or failing that run a pre-pass.
+  const bool level16 = config.fullGrayLevels && renderer.getGray4Target() != nullptr;
+  std::unique_ptr<image_tone::ToneMap> toneMap;
+  image_tone::GrayStage stage;
+  image_tone::TonedSink toned;
+  bool prepass = false;
+  if (config.autoContrast) {
+    // One ~1.3 KB block per decode (histogram + LUT), kept off the task stack.
+    toneMap = makeUniqueNoThrow<image_tone::ToneMap>();
+    if (!toneMap) {
+      LOG_ERR("JPG", "OOM: tone map, drawing without auto-contrast");
+    } else {
+      // The on-screen part of the output, as the draw callback clamps it.
+      const int stageX0 = std::max(0, -config.x);
+      const int stageY0 = std::max(0, -config.y);
+      const int stageX1 = std::min(destWidth, ctx.screenWidth - config.x);
+      const int stageY1 = std::min(destHeight, ctx.screenHeight - config.y);
+      if (stage.begin(stageX0, stageY0, stageX1 - stageX0, stageY1 - stageY0)) {
+        toned.stage = &stage;
+        toned.histogram = toneMap->histogram;
+      } else {
+        prepass = true;
+      }
+    }
+  }
+  if (level16 || toneMap) {
+    toned.writer.lut = toneMap ? toneMap->lut : nullptr;  // filled before any pixel goes through it
+    toned.writer.level16 = level16;
+    toned.writer.dither = config.useDithering;
+    ctx.toned = &toned;
+  }
+  if (prepass) {
+    rc = histogramPrepassThenReopen(*jpeg, imagePath, srcWidth, srcHeight, cropLeft, cropTop, *toneMap);
+    if (rc != 1) {
+      LOG_ERR("JPG", "Failed to reopen JPEG after the auto-contrast pre-pass (err=%d)", jpeg->getLastError());
+      return false;
+    }
+    toneMap->buildCurve();
+  }
 
   // Set pixel type to 8-bit grayscale (must be after open())
   jpeg->setPixelType(EIGHT_BIT_GRAYSCALE);
@@ -481,8 +665,9 @@ bool JpegToFramebufferConverter::decodeToFramebuffer(const std::string& imagePat
 
   // Start streaming the pixel cache to disk. The band only needs to hold the
   // tallest single decode block: a JPEGDEC MCU cell is at most 16 scaled-source
-  // rows tall, which our fine scale maps to this many output rows.
-  ctx.caching = !config.cachePath.empty();
+  // rows tall, which our fine scale maps to this many output rows. The photo
+  // path writes no cache (see RenderConfig).
+  ctx.caching = !config.cachePath.empty() && !config.autoContrast && !level16;
   if (ctx.caching) {
     const int maxBlockDstRows = (int)(((int64_t)16 * ctx.fineScaleFPY) >> FP_SHIFT) + 2;
     if (!ctx.cache.begin(config.cachePath, destWidth, destHeight, config.x, config.y, maxBlockDstRows)) {
@@ -503,6 +688,13 @@ bool JpegToFramebufferConverter::decodeToFramebuffer(const std::string& imagePat
   }
 
   LOG_DBG("JPG", "JPEG decoding complete - render time: %lu ms", decodeTime);
+
+  if (stage.active()) {
+    const unsigned long writeStart = millis();
+    toneMap->buildCurve();
+    stage.write(renderer, toned.writer, config.x, config.y);
+    LOG_DBG("JPG", "Auto-contrast staged write: %lu ms", millis() - writeStart);
+  }
 
   // Finalize the streamed cache file. Note: a flush failure mid-decode clears
   // ctx.caching (the partial file is dropped), so re-read the flag here.

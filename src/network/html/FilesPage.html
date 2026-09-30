@@ -13,12 +13,72 @@
     body[data-page="files"] #failedUploadsBanner { display: none; }
     body[data-page="files"] #failedUploadsBanner.show { display: block; }
     body[data-page="files"] .failed-actions { margin-top: 12px; }
+    body[data-page="files"] [hidden] { display: none !important; }
     body[data-page="files"] .card-head > .crumbs { flex: 1 1 auto; min-width: 0; }
     body[data-page="files"] .crumbs .current { color: var(--ink); font-weight: 600; }
-    body[data-page="files"] .table a { overflow-wrap: anywhere; }
+    body[data-page="files"] .field-error { color: var(--danger); }
+    body[data-page="files"] [aria-invalid="true"] { border-color: var(--danger); }
+
+    /* Listing: find, sort and type chips over one list; the rows bleed to the card's edges */
+    body[data-page="files"] .files-controls { display: flex; flex-direction: column; gap: 12px; margin: 4px 0 8px; }
+    body[data-page="files"] .files-find { display: flex; gap: 8px; }
+    body[data-page="files"] .files-find input { flex: 1 1 auto; min-width: 0; }
+    body[data-page="files"] .files-find input::-webkit-search-cancel-button { filter: grayscale(1); }
+    body[data-page="files"] .files-find select { flex: 0 0 auto; width: auto; }
+    body[data-page="files"] .type-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    body[data-page="files"] .chip-filter { gap: 6px; border-color: var(--rule); border-radius: 999px; }
+    body[data-page="files"] .chip-filter[aria-pressed="true"] { border-color: var(--ink); }
+    body[data-page="files"] .chip-count { color: var(--ink-2); font-variant-numeric: tabular-nums; }
+    body[data-page="files"] .chip-filter[aria-pressed="true"] .chip-count { color: inherit; opacity: .75; }
+    body[data-page="files"] .fl-head, body[data-page="files"] .fl-row { display: grid; grid-template-columns: 28px 20px minmax(0, 1fr) 44px; align-items: center; column-gap: 10px; padding: 0 6px 0 14px; border-left: 2px solid transparent; }
+    body[data-page="files"] .fl-head, body[data-page="files"] .fl { margin: 0 -16px; }
+    body[data-page="files"] .fl-head { min-height: 44px; border-bottom: 1px solid var(--rule); font-size: .875rem; color: var(--ink-2); }
+    body[data-page="files"] .fl-head > .fl-h-name { grid-column: 2 / 4; }
+    body[data-page="files"] .fl { padding: 0; list-style: none; }
+    body[data-page="files"] .fl-row { min-height: 56px; padding-top: 4px; padding-bottom: 4px; border-bottom: 1px solid var(--rule-2); cursor: default; }
+    body[data-page="files"] .fl-row:last-child { border-bottom: 0; }
+    body[data-page="files"] .fl-row.selected { background: var(--rule-2); border-left-color: var(--ink); }
+    body[data-page="files"] .fl-check { display: flex; align-items: center; align-self: stretch; min-height: 44px; margin-left: -14px; padding-left: 14px; cursor: pointer; }
+    body[data-page="files"] .fl-icon { display: flex; color: var(--ink-2); }
+    body[data-page="files"] .fl svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+    body[data-page="files"] .fl-name { min-width: 0; overflow-wrap: anywhere; line-height: 1.35; }
+    body[data-page="files"] .fl-name a { font-weight: 500; text-decoration: none; }
+    body[data-page="files"] .fl-name a:hover { text-decoration: underline; }
+    body[data-page="files"] .fl-folder .fl-name a { font-weight: 600; }
+    body[data-page="files"] .fl-meta { display: block; margin-top: 2px; font-size: .8125rem; color: var(--ink-2); }
+    body[data-page="files"] .fl-type, body[data-page="files"] .fl-size, body[data-page="files"] .fl-h-wide { display: none; }
+    body[data-page="files"] .fl-more { justify-self: end; color: var(--ink-2); }
+    body[data-page="files"] .fl-more svg { stroke-width: 3; }
+    body[data-page="files"] .fl-more[aria-expanded="true"] { background: var(--rule-2); color: var(--ink); }
+    body[data-page="files"] .fl-empty { padding: 32px 16px; text-align: center; }
+    body[data-page="files"] .fl-empty .empty { padding: 0 0 12px; }
     @media (min-width: 700px) {
-      body[data-page="files"] .table .actions .btn + .btn { margin-left: 8px; }
+      body[data-page="files"] .fl-head, body[data-page="files"] .fl-row { grid-template-columns: 28px 20px minmax(0, 1fr) 72px 88px 44px; }
+      body[data-page="files"] .fl-type, body[data-page="files"] .fl-size, body[data-page="files"] .fl-h-wide { display: block; }
+      body[data-page="files"] .fl-meta, body[data-page="files"] .fl-h-phone { display: none; }
+      body[data-page="files"] .fl-type { font-size: .875rem; color: var(--ink-2); }
+      body[data-page="files"] .fl-size { font-size: .875rem; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+      body[data-page="files"] .fl-head > .fl-size { text-align: right; }
     }
+    @media (min-width: 900px) {
+      body[data-page="files"] .files-controls { flex-direction: row; align-items: flex-start; }
+      body[data-page="files"] .type-chips { order: -1; flex: 1 1 auto; padding-top: 4px; }
+      body[data-page="files"] .files-find { flex: 0 1 380px; }
+      body[data-page="files"] .fl-head, body[data-page="files"] .fl { margin: 0 -24px; }
+      body[data-page="files"] .fl-head, body[data-page="files"] .fl-row { padding-left: 22px; padding-right: 14px; }
+      body[data-page="files"] .fl-check { margin-left: -22px; padding-left: 22px; }
+    }
+
+    /* Row menu: one popover shared by every row's More button */
+    body[data-page="files"] .row-menu { position: fixed; z-index: 35; min-width: 176px; padding: 4px 0; background: var(--surface); border: 1px solid var(--ink); border-radius: 4px; }
+    body[data-page="files"] .row-menu button { display: flex; align-items: center; width: 100%; min-height: 44px; padding: 0 16px; border: 0; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+    body[data-page="files"] .row-menu button:hover, body[data-page="files"] .row-menu button:focus { background: var(--rule-2); outline: 0; }
+    body[data-page="files"] .row-menu .danger { color: var(--danger); }
+
+    /* Selection bar: the savebar component, shown while anything is selected */
+    body[data-page="files"] .selbar { flex-wrap: wrap; gap: 8px 12px; }
+    body[data-page="files"] .selbar-info { display: flex; align-items: center; gap: 8px; font-weight: 500; }
+    body[data-page="files"] .selbar-actions { display: flex; gap: 8px; margin-left: auto; }
 
     /* Upload modal */
     body[data-page="files"] .modal.picker-mode { max-width: 920px; }
@@ -99,7 +159,6 @@
   <div class="toolbar toolbar-sticky">
     <button type="button" class="btn btn-primary" onclick="openUploadModal()">Upload</button>
     <button type="button" class="btn" onclick="openFolderModal()">New folder</button>
-    <button type="button" class="btn btn-danger" onclick="openDeleteSelectedModal()">Delete selected</button>
   </div>
 
   <section class="card card-danger" id="failedUploadsBanner">
@@ -118,10 +177,36 @@
       <nav class="crumbs" id="directory-breadcrumbs" aria-label="Folder path"></nav>
       <span class="small muted" id="folder-summary"></span>
     </div>
+    <div class="files-controls" id="filesControls" hidden>
+      <div class="files-find">
+        <label class="visually-hidden" for="fileSearch">Find in this folder</label>
+        <input type="search" id="fileSearch" placeholder="Find by name" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">
+        <label class="visually-hidden" for="fileSort">Sort by</label>
+        <select id="fileSort">
+          <option value="name">Name A–Z</option>
+          <option value="size">Largest first</option>
+          <option value="type">Type</option>
+        </select>
+      </div>
+      <div class="type-chips" id="typeChips" role="group" aria-label="Show"></div>
+    </div>
     <div id="file-table">
       <p class="empty"><span class="spinner" aria-hidden="true"></span> Loading files…</p>
     </div>
   </section>
+
+  <div class="savebar selbar" id="selectionBar" role="region" aria-label="Selection">
+    <div class="selbar-info">
+      <span id="selectionCount" aria-live="polite"></span>
+      <button type="button" class="btn btn-ghost btn-sm" id="selectionClear">Clear</button>
+    </div>
+    <div class="selbar-actions">
+      <button type="button" class="btn" id="selectionMove">Move</button>
+      <button type="button" class="btn btn-danger" id="selectionDelete">Delete</button>
+    </div>
+  </div>
+
+  <div class="row-menu" id="rowMenu" role="menu" hidden></div>
 
   <div class="modal-backdrop" id="uploadModal">
     <div class="modal">
@@ -243,7 +328,8 @@
         <p class="small muted">Inside <strong id="folderPathDisplay"></strong></p>
         <div class="field">
           <label for="folderName">Folder name</label>
-          <input type="text" id="folderName" oninput="document.getElementById('createFolderBtn').disabled = !this.value.trim();">
+          <input type="text" id="folderName" autocomplete="off" enterkeyhint="done" aria-describedby="folderError">
+          <span class="field-hint field-error" id="folderError" hidden></span>
         </div>
       </div>
       <div class="modal-foot">
@@ -260,8 +346,9 @@
         <button type="button" class="btn btn-ghost btn-icon" onclick="closeDeleteModal()" aria-label="Close">&times;</button>
       </div>
       <div class="modal-body">
-        <p>Delete these items? This cannot be undone.</p>
+        <p id="deletePrompt"></p>
         <div class="list" id="deleteItemList"></div>
+        <p class="small muted" id="deleteFolderNote" hidden>Folders are deleted only when empty.</p>
       </div>
       <div class="modal-foot">
         <button type="button" class="btn" onclick="closeDeleteModal()">Cancel</button>
@@ -281,12 +368,13 @@
         <p class="small muted">Renaming <strong id="renameItemName"></strong></p>
         <div class="field">
           <label for="renameNewName">New name</label>
-          <input type="text" id="renameNewName">
+          <input type="text" id="renameNewName" autocomplete="off" enterkeyhint="done" aria-describedby="renameError">
+          <span class="field-hint field-error" id="renameError" hidden></span>
         </div>
       </div>
       <div class="modal-foot">
         <button type="button" class="btn" onclick="closeRenameModal()">Cancel</button>
-        <button type="button" class="btn btn-primary" onclick="confirmRename()">Rename</button>
+        <button type="button" class="btn btn-primary" id="confirmRenameBtn" onclick="confirmRename()">Rename</button>
       </div>
     </div>
   </div>
@@ -298,17 +386,17 @@
         <button type="button" class="btn btn-ghost btn-icon" onclick="closeMoveModal()" aria-label="Close">&times;</button>
       </div>
       <div class="modal-body">
-        <input type="hidden" id="moveItemPath">
         <p class="small muted">Moving <strong id="moveItemName"></strong></p>
         <div class="field">
           <label for="moveDestPath">Destination folder</label>
-          <input type="text" id="moveDestPath" list="moveFolderOptions" placeholder="/Books">
+          <input type="text" id="moveDestPath" list="moveFolderOptions" placeholder="/Books" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="done" aria-describedby="moveError">
           <datalist id="moveFolderOptions"></datalist>
+          <span class="field-hint field-error" id="moveError" hidden></span>
         </div>
       </div>
       <div class="modal-foot">
         <button type="button" class="btn" onclick="closeMoveModal()">Cancel</button>
-        <button type="button" class="btn btn-primary" onclick="confirmMove()">Move</button>
+        <button type="button" class="btn btn-primary" id="confirmMoveBtn" onclick="confirmMove()">Move</button>
       </div>
     </div>
   </div>
@@ -333,8 +421,8 @@
 </main>
 
 <script>
-  // get current path from query parameter
-  const currentPath = decodeURIComponent(new URLSearchParams(window.location.search).get('path') || '/');
+  // The folder from ?path=; URLSearchParams has already decoded it once, so a name with "%" stays intact.
+  const currentPath = new URLSearchParams(window.location.search).get('path') || '/';
 
   if (currentPath !== '/') {
     const leaf = currentPath.split('/').filter(Boolean).pop();
@@ -383,6 +471,474 @@
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)).toLocaleString() + ' ' + sizes[i];
   }
 
+  // --- The listing: one list of rows, filtered by type and name, with multi-select ---
+
+  const TYPES = [
+    { key: 'all', label: 'All', none: 'Nothing in this folder.' },
+    { key: 'folders', label: 'Folders', none: 'No folders here.' },
+    { key: 'books', label: 'Books', none: 'No books in this folder.' },
+    { key: 'pictures', label: 'Pictures', none: 'No pictures in this folder.' },
+    { key: 'fonts', label: 'Fonts', none: 'No fonts in this folder.' },
+    { key: 'other', label: 'Other', none: 'No other files in this folder.' }
+  ];
+  const TYPE_ORDER = { folders: 0, books: 1, pictures: 2, fonts: 3, other: 4 };
+  const BOOK_EXT = /\.(epub|txt|md|xtch?)$/i;  // what the reader opens (LibraryBuilder isBookName)
+  const FONT_EXT = /\.cpfont$/i;
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const GLYPHS = {
+    folders: 'M3.5 6.5a1 1 0 0 1 1-1h4.3l2 2h8.7a1 1 0 0 1 1 1v9.5a1 1 0 0 1-1 1h-15a1 1 0 0 1-1-1z',
+    books: 'M5.5 18.5v-14a1 1 0 0 1 1-1h12v14h-11a2 2 0 0 0 0 4h11v-4M9 7.5h6',
+    pictures: 'M4.5 5h15a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1h-15a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM3.5 16l5-4.5 4 3.5 3-2.5 5 4M15.5 9h.01',
+    fonts: 'M5.5 19 11 5h2l5.5 14M8 13.5h8',
+    other: 'M7 3.5h6.5l4 4v12a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1v-15a1 1 0 0 1 1-1zM13.5 3.5v4h4',
+    more: 'M6 12h.01M12 12h.01M18 12h.01'
+  };
+
+  const urlType = new URLSearchParams(window.location.search).get('type');
+  const listing = {
+    entries: [],  // [{ name, size, isDirectory, path, kind, type }]
+    visible: [],  // entries after the type chip and the search, sorted
+    type: TYPES.some(t => t.key === urlType) ? urlType : 'all',
+    query: '',
+    sort: 'name',
+    selected: new Set(),  // paths of selected rows; only ever visible ones
+    anchor: -1  // index in visible of the last checkbox clicked, for Shift ranges
+  };
+
+  function $(id) {
+    return document.getElementById(id);
+  }
+
+  function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  function glyph(name) {
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('aria-hidden', 'true');
+    const path = document.createElementNS(SVG_NS, 'path');
+    path.setAttribute('d', GLYPHS[name]);
+    svg.appendChild(path);
+    return svg;
+  }
+
+  function plural(n, word) {
+    return n + ' ' + word + (n === 1 ? '' : 's');
+  }
+
+  function joinPath(folder, name) {
+    return (folder.endsWith('/') ? folder : folder + '/') + name;
+  }
+
+  function folderUrl(path) {
+    return '/files?path=' + encodeURIComponent(path);
+  }
+
+  function kindOf(entry) {
+    if (entry.isDirectory) return 'folders';
+    if (BOOK_EXT.test(entry.name)) return 'books';
+    if (isImageFile(entry.name)) return 'pictures';
+    if (FONT_EXT.test(entry.name)) return 'fonts';
+    return 'other';
+  }
+
+  function typeLabel(entry) {
+    if (entry.isDirectory) return 'Folder';
+    const dot = entry.name.lastIndexOf('.');
+    return dot > 0 && dot < entry.name.length - 1 ? entry.name.slice(dot + 1).toUpperCase() : 'File';
+  }
+
+  function naturalCompare(a, b) {
+    return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+  }
+
+  // Folders first in every order.
+  function compareEntries(a, b) {
+    if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+    if (listing.sort === 'size' && a.size !== b.size) return b.size - a.size;
+    if (listing.sort === 'type') {
+      const byType = TYPE_ORDER[a.kind] - TYPE_ORDER[b.kind] || naturalCompare(a.type, b.type);
+      if (byType) return byType;
+    }
+    return naturalCompare(a.name, b.name);
+  }
+
+  function renderCrumbs() {
+    const crumbs = $('directory-breadcrumbs');
+    const segments = currentPath.split('/').filter(Boolean);
+    crumbs.replaceChildren();
+    const link = function(label, path) {
+      const a = el('a', null, label);
+      a.href = path === '/' ? '/files' : folderUrl(path);
+      crumbs.appendChild(a);
+    };
+    if (!segments.length) {
+      crumbs.appendChild(el('span', 'current', 'Card'));
+      return;
+    }
+    link('Card', '/');
+    segments.forEach(function(segment, i) {
+      if (i === segments.length - 1) crumbs.appendChild(el('span', 'current', segment));
+      else link(segment, '/' + segments.slice(0, i + 1).join('/'));
+    });
+  }
+
+  async function loadFolder() {
+    closeRowMenu(false);
+    let files;
+    try {
+      const response = await fetch('/api/files?path=' + encodeURIComponent(currentPath) + '&_=' + Date.now(), { cache: 'no-store' });
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      files = await response.json();
+    } catch (e) {
+      console.error(e);
+      listing.entries = [];
+      listing.visible = [];
+      listing.selected.clear();
+      $('filesControls').hidden = true;
+      $('folder-summary').textContent = '';
+      $('file-table').replaceChildren(el('p', 'empty', 'Could not load this folder. Reload the page to try again.'));
+      updateSelectionBar();
+      return;
+    }
+    const base = normalizePath(currentPath);
+    listing.entries = (Array.isArray(files) ? files : []).map(function(f) {
+      const entry = { name: String(f.name), size: Number(f.size) || 0, isDirectory: !!f.isDirectory };
+      entry.path = joinPath(base, entry.name);
+      entry.kind = kindOf(entry);
+      entry.type = typeLabel(entry);
+      return entry;
+    });
+    const folders = listing.entries.filter(e => e.isDirectory).length;
+    const fileCount = listing.entries.length - folders;
+    const summary = [];
+    if (folders) summary.push(plural(folders, 'folder'));
+    if (fileCount) summary.push(plural(fileCount, 'file'),formatFileSize(listing.entries.reduce((sum, e) => sum + e.size, 0)));
+    $('folder-summary').textContent = summary.join(', ');
+    $('filesControls').hidden = listing.entries.length === 0;
+    renderChips();
+    renderList();
+  }
+
+  function renderChips() {
+    const counts = { all: listing.entries.length, folders: 0, books: 0, pictures: 0, fonts: 0, other: 0 };
+    listing.entries.forEach(e => counts[e.kind]++);
+    const box = $('typeChips');
+    box.replaceChildren();
+    TYPES.forEach(function(t) {
+      // Types this folder lacks are left out, but never the one being shown.
+      if (t.key !== 'all' && !counts[t.key] && t.key !== listing.type) return;
+      const chip = el('button', 'btn btn-sm chip-filter', t.label);
+      chip.type = 'button';
+      chip.dataset.type = t.key;
+      chip.setAttribute('aria-pressed', t.key === listing.type ? 'true' : 'false');
+      chip.appendChild(el('span', 'chip-count', String(counts[t.key])));
+      box.appendChild(chip);
+    });
+  }
+
+  function setType(type) {
+    listing.type = type;
+    $('typeChips').querySelectorAll('.chip-filter').forEach(function(chip) {
+      chip.setAttribute('aria-pressed', chip.dataset.type === type ? 'true' : 'false');
+    });
+    // The chip lives in the URL, so a reload (and the upload's reload) keeps it.
+    const params = new URLSearchParams(window.location.search);
+    if (type === 'all') params.delete('type');
+    else params.set('type', type);
+    const query = params.toString();
+    history.replaceState(null, '', window.location.pathname + (query ? '?' + query : ''));
+    renderList();
+  }
+
+  function showAll() {
+    listing.query = '';
+    $('fileSearch').value = '';
+    setType('all');
+    $('fileSearch').focus();
+  }
+
+  // Rows the chip and the search leave out drop out of the selection, so a
+  // bulk action never touches something that is not on screen.
+  function computeVisible() {
+    const q = listing.query.trim().toLowerCase();
+    listing.visible = listing.entries
+      .filter(e => (listing.type === 'all' || e.kind === listing.type) && (!q || e.name.toLowerCase().includes(q)))
+      .sort(compareEntries);
+    const shown = new Set(listing.visible.map(e => e.path));
+    listing.selected.forEach(function(path) {
+      if (!shown.has(path)) listing.selected.delete(path);
+    });
+    listing.anchor = -1;
+  }
+
+  function renderList() {
+    closeRowMenu(false);
+    computeVisible();
+    const box = $('file-table');
+    box.replaceChildren();
+    if (!listing.entries.length) {
+      box.appendChild(el('p', 'empty', 'No files yet. Upload a book to start.'));
+    } else if (!listing.visible.length) {
+      const q = listing.query.trim();
+      const note = el('div', 'fl-empty');
+      note.appendChild(el('p', 'empty', q ? 'Nothing here matches “' + q + '”.' : TYPES.find(t => t.key === listing.type).none));
+      const reset = el('button', 'btn btn-sm', 'Show all files');
+      reset.type = 'button';
+      reset.addEventListener('click', showAll);
+      note.appendChild(reset);
+      box.appendChild(note);
+    } else {
+      const head = el('div', 'fl-head');
+      const allLabel = el('label', 'fl-check');
+      const all = el('input');
+      all.type = 'checkbox';
+      all.id = 'selectAllCheckbox';
+      all.setAttribute('aria-label', 'Select all shown');
+      allLabel.appendChild(all);
+      const title = el('span', 'fl-h-name');
+      const phoneLabel = el('label', 'fl-h-phone', 'Select all');
+      phoneLabel.htmlFor = 'selectAllCheckbox';
+      title.append(phoneLabel, el('span', 'fl-h-wide', 'Name'));
+      head.append(allLabel, title, el('span', 'fl-type', 'Type'), el('span', 'fl-size', 'Size'));
+      const list = el('ul', 'fl');
+      list.setAttribute('aria-label', 'Files');
+      listing.visible.forEach((entry, i) => list.appendChild(buildRow(entry, i)));
+      box.append(head, list);
+    }
+    syncSelection();
+  }
+
+  function buildRow(entry, index) {
+    const row = el('li', 'fl-row' + (entry.isDirectory ? ' fl-folder' : ''));
+    row.dataset.index = index;
+    const check = el('label', 'fl-check');
+    const box = el('input');
+    box.type = 'checkbox';
+    box.className = 'fl-select';
+    box.setAttribute('aria-label', 'Select ' + entry.name);
+    check.appendChild(box);
+    const icon = el('span', 'fl-icon');
+    icon.appendChild(glyph(entry.kind));
+    const name = el('div', 'fl-name');
+    const link = el('a', null, entry.name);
+    if (entry.isDirectory) {
+      link.href = folderUrl(entry.path);
+    } else {
+      link.href = downloadUrl(entry.path);
+      if (entry.kind === 'pictures') {
+        link.className = 'image-preview-link';
+      } else {
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+      }
+    }
+    const size = entry.isDirectory ? '' : formatFileSize(entry.size);
+    name.append(link, el('span', 'fl-meta', entry.isDirectory ? 'Folder' : entry.type + ' · ' + size));
+    const more = el('button', 'btn btn-ghost btn-icon fl-more');
+    more.type = 'button';
+    more.setAttribute('aria-haspopup', 'menu');
+    more.setAttribute('aria-expanded', 'false');
+    more.setAttribute('aria-label', 'More actions for ' + entry.name);
+    more.appendChild(glyph('more'));
+    row.append(check, icon, name, el('span', 'fl-type', entry.type), el('span', 'fl-size', size || '–'), more);
+    return row;
+  }
+
+  function entryOf(node) {
+    const row = node.closest('.fl-row');
+    return row ? listing.visible[Number(row.dataset.index)] : null;
+  }
+
+  function selectedEntries() {
+    return listing.visible.filter(e => listing.selected.has(e.path));
+  }
+
+  function setSelected(entry, on) {
+    if (on) listing.selected.add(entry.path);
+    else listing.selected.delete(entry.path);
+  }
+
+  function clearSelection() {
+    listing.selected.clear();
+    listing.anchor = -1;
+    syncSelection();
+  }
+
+  function syncSelection() {
+    $('file-table').querySelectorAll('.fl-row').forEach(function(row) {
+      const on = listing.selected.has(listing.visible[Number(row.dataset.index)].path);
+      row.classList.toggle('selected', on);
+      row.querySelector('.fl-select').checked = on;
+    });
+    const all = $('selectAllCheckbox');
+    if (all) {
+      const n = listing.selected.size;
+      all.checked = n > 0 && n === listing.visible.length;
+      all.indeterminate = n > 0 && n < listing.visible.length;
+    }
+    updateSelectionBar();
+  }
+
+  function updateSelectionBar() {
+    const items = selectedEntries();
+    const files = items.filter(e => !e.isDirectory).length;
+    $('selectionBar').classList.toggle('show', items.length > 0);
+    $('selectionCount').textContent = items.length + ' selected';
+    const move = $('selectionMove');
+    move.disabled = files === 0;
+    move.textContent = files ? 'Move ' + plural(files, 'file') : 'Move';
+    move.title = files === 0 ? 'Folders cannot be moved' : files < items.length ? 'Folders stay where they are' : '';
+    $('selectionDelete').textContent = 'Delete ' + plural(items.length, 'item');
+  }
+
+  function onListClick(e) {
+    const preview = e.target.closest('.image-preview-link');
+    if (preview) {
+      e.preventDefault();
+      openImagePreview(preview.getAttribute('href'), preview.textContent);
+      return;
+    }
+    const more = e.target.closest('.fl-more');
+    if (more) {
+      if (rowMenu && rowMenu.button === more) closeRowMenu(true);
+      else openRowMenu(more, entryOf(more));
+      return;
+    }
+    if (e.target.id === 'selectAllCheckbox') {
+      listing.selected.clear();
+      if (e.target.checked) listing.visible.forEach(entry => listing.selected.add(entry.path));
+      listing.anchor = -1;
+      syncSelection();
+      return;
+    }
+    if (e.target.classList.contains('fl-select')) {
+      const index = Number(e.target.closest('.fl-row').dataset.index);
+      const on = e.target.checked;
+      // Shift+click selects (or clears) everything from the last checkbox clicked.
+      if (e.shiftKey && listing.anchor >= 0) {
+        const from = Math.min(index, listing.anchor);
+        const to = Math.max(index, listing.anchor);
+        for (let i = from; i <= to; i++) setSelected(listing.visible[i], on);
+      } else {
+        setSelected(listing.visible[index], on);
+      }
+      listing.anchor = index;
+      syncSelection();
+      return;
+    }
+    // A tap on a row's empty space toggles it.
+    if (e.target.closest('a, button, input, label')) return;
+    const entry = entryOf(e.target);
+    if (!entry) return;
+    setSelected(entry, !listing.selected.has(entry.path));
+    listing.anchor = listing.visible.indexOf(entry);
+    syncSelection();
+  }
+
+  // --- Row menu: one popover for every row's More button ---
+
+  let rowMenu = null;  // { button, entry, top: the button's top when opened } while open
+
+  function rowActions(entry) {
+    if (entry.isDirectory) {
+      return [
+        ['Open', function() { window.location.href = folderUrl(entry.path); }],
+        ['Delete', function() { openDeleteModalForItems([entry]); }, true]
+      ];
+    }
+    return [
+      ['Download', function() { downloadFile(entry); }],
+      ['Rename', function() { openRenameModal(entry.name, entry.path); }],
+      ['Move', function() { openMoveModal([entry]); }],
+      ['Delete', function() { openDeleteModalForItems([entry]); }, true]
+    ];
+  }
+
+  function openRowMenu(button, entry) {
+    closeRowMenu(false);
+    const menu = $('rowMenu');
+    menu.replaceChildren();
+    rowActions(entry).forEach(function(action) {
+      const item = el('button', action[2] ? 'danger' : null, action[0]);
+      item.type = 'button';
+      item.tabIndex = -1;
+      item.setAttribute('role', 'menuitem');
+      item.addEventListener('click', function() {
+        closeRowMenu(true);
+        action[1]();
+      });
+      menu.appendChild(item);
+    });
+    menu.setAttribute('aria-label', entry.name);
+    menu.hidden = false;
+    // Under the button, or above it when there is no room below; always on screen.
+    const r = button.getBoundingClientRect();
+    const vw = document.documentElement.clientWidth;
+    const vh = window.innerHeight;
+    let top = r.bottom + 4;
+    if (top + menu.offsetHeight > vh - 8) top = Math.max(8, r.top - menu.offsetHeight - 4);
+    menu.style.top = top + 'px';
+    menu.style.left = Math.max(8, Math.min(r.right - menu.offsetWidth, vw - menu.offsetWidth - 8)) + 'px';
+    button.setAttribute('aria-expanded', 'true');
+    rowMenu = { button: button, entry: entry, top: r.top };
+    menu.firstChild.focus({ preventScroll: true });
+  }
+
+  function closeRowMenu(returnFocus) {
+    if (!rowMenu) return;
+    const button = rowMenu.button;
+    rowMenu = null;
+    $('rowMenu').hidden = true;
+    button.setAttribute('aria-expanded', 'false');
+    if (returnFocus && button.isConnected) button.focus({ preventScroll: true });
+  }
+
+  function onMenuKey(e) {
+    const items = Array.from($('rowMenu').children);
+    const at = items.indexOf(document.activeElement);
+    const next = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: items.length - 1 }[e.key];
+    if (next !== undefined) {
+      e.preventDefault();
+      items[(next + items.length) % items.length].focus();
+    } else if (e.key === 'Escape' || e.key === 'Tab') {
+      e.preventDefault();
+      closeRowMenu(true);
+    }
+  }
+
+  function downloadFile(entry) {
+    const link = el('a');
+    link.href = downloadUrl(entry.path);
+    link.download = entry.name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
+
+  function postForm(url, fields) {
+    const form = new FormData();
+    Object.keys(fields).forEach(key => form.append(key, fields[key]));
+    return fetch(url, { method: 'POST', body: form });
+  }
+
+  function showFieldError(inputId, errorId, message) {
+    const input = $(inputId);
+    input.setAttribute('aria-invalid', 'true');
+    $(errorId).textContent = message;
+    $(errorId).hidden = false;
+    input.focus();
+  }
+
+  function clearFieldError(inputId, errorId) {
+    $(inputId).removeAttribute('aria-invalid');
+    $(errorId).hidden = true;
+  }
+
   async function hydrate() {
     // Fetch CrossPoint version
     fetchVersion();
@@ -403,127 +959,51 @@
       });
     });
 
-    const breadcrumbs = document.getElementById('directory-breadcrumbs');
-    const fileTable = document.getElementById('file-table');
-
-    const segments = currentPath.split('/').filter(Boolean);
-    breadcrumbs.replaceChildren();
-
-    const appendLink = function(label, href) {
-      const link = document.createElement('a');
-      link.href = href;
-      link.textContent = label;
-      breadcrumbs.appendChild(link);
-    };
-
-    const appendCurrent = function(label) {
-      const current = document.createElement('span');
-      current.className = 'current';
-      current.textContent = label;
-      breadcrumbs.appendChild(current);
-    };
-
-    if (segments.length === 0) {
-      appendCurrent('Card');
-    } else {
-      appendLink('Card', '/files');
-      segments.forEach(function(segment, index) {
-        if (index === segments.length - 1) {
-          appendCurrent(segment);
-        } else {
-          const path = '/' + segments.slice(0, index + 1).join('/');
-          appendLink(segment, '/files?path=' + encodeURIComponent(path));
-        }
+    renderCrumbs();
+    $('file-table').addEventListener('click', onListClick);
+    $('fileSearch').addEventListener('input', function() {
+      listing.query = this.value;
+      renderList();
+    });
+    $('fileSort').addEventListener('change', function() {
+      listing.sort = this.value;
+      renderList();
+    });
+    $('typeChips').addEventListener('click', function(e) {
+      const chip = e.target.closest('.chip-filter');
+      if (chip) setType(chip.dataset.type);
+    });
+    $('selectionClear').addEventListener('click', clearSelection);
+    $('selectionMove').addEventListener('click', function() { openMoveModal(selectedEntries()); });
+    $('selectionDelete').addEventListener('click', function() { openDeleteModalForItems(selectedEntries()); });
+    $('rowMenu').addEventListener('keydown', onMenuKey);
+    document.addEventListener('pointerdown', function(e) {
+      if (rowMenu && !$('rowMenu').contains(e.target) && !rowMenu.button.contains(e.target)) closeRowMenu(false);
+    }, true);
+    // A scroll that moved the row closes the menu; one still settling from before it opened does not.
+    window.addEventListener('scroll', function() {
+      if (rowMenu && Math.abs(rowMenu.button.getBoundingClientRect().top - rowMenu.top) > 2) closeRowMenu(false);
+    }, true);
+    window.addEventListener('resize', function() { closeRowMenu(false); });
+    // Runs before app.js's handler (this script is parsed first), so an open
+    // modal is still open here and keeps its Esc.
+    document.addEventListener('keydown', function(e) {
+      if (e.key !== 'Escape' || rowMenu || !listing.selected.size) return;
+      if (document.querySelector('.modal-backdrop.open') || document.body.classList.contains('drawer-open')) return;
+      if (e.target.id === 'fileSearch' && e.target.value) return;
+      clearSelection();
+    });
+    ['folderName', 'renameNewName', 'moveDestPath'].forEach(function(id) {
+      const errorId = { folderName: 'folderError', renameNewName: 'renameError', moveDestPath: 'moveError' }[id];
+      $(id).addEventListener('input', function() { clearFieldError(id, errorId); });
+      $(id).addEventListener('keydown', function(e) {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        ({ folderName: createFolder, renameNewName: confirmRename, moveDestPath: confirmMove })[id]();
       });
-    }
-
-    let files = [];
-    try {
-      const response = await fetch('/api/files?path=' + encodeURIComponent(currentPath) + '&_=' + Date.now());
-      if (!response.ok) {
-        throw new Error('Failed to load files: ' + response.status + ' ' + response.statusText);
-      }
-      files = await response.json();
-    } catch (e) {
-      console.error(e);
-      fileTable.innerHTML = '<p class="empty">Could not load this folder. Reload the page to try again.</p>';
-      return;
-    }
-
-    let folderCount = 0;
-    let totalSize = 0;
-    files.forEach(file => {
-      if (file.isDirectory) folderCount++;
-      totalSize += file.size;
     });
 
-    const fileCount = files.length - folderCount;
-    const folderLabel = folderCount === 1 ? 'folder' : 'folders';
-    const fileLabel = fileCount === 1 ? 'file' : 'files';
-    document.getElementById('folder-summary').innerHTML = `${folderCount} ${folderLabel}, ${fileCount} ${fileLabel}, ${formatFileSize(totalSize)}`;
-
-    if (files.length === 0) {
-      fileTable.innerHTML = '<p class="empty">No files yet. Upload a book to start.</p>';
-    } else {
-      let fileTableContent = '<table class="table"><thead>';
-
-      // Add select-all checkbox column
-      fileTableContent += '<tr><th class="cell-check"><input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll(this)" aria-label="Select all"></th><th>Name</th><th>Type</th><th class="num">Size</th><th class="actions">Actions</th></tr></thead><tbody>';
-
-
-      const sortedFiles = files.sort((a, b) => {
-        // Directories first, then epub files, then other files, alphabetically within each group
-        if (a.isDirectory && !b.isDirectory) return -1;
-        if (!a.isDirectory && b.isDirectory) return 1;
-        if (a.isEpub && !b.isEpub) return -1;
-        if (!a.isEpub && b.isEpub) return 1;
-        return a.name.localeCompare(b.name);
-      });
-
-      sortedFiles.forEach(file => {
-        if (file.isDirectory) {
-          let folderPath = currentPath;
-          if (!folderPath.endsWith("/")) folderPath += "/";
-          folderPath += file.name;
-
-         // Checkbox cell + folder row
-          fileTableContent += '<tr>';
-          fileTableContent += `<td class="cell-check"><input type="checkbox" class="select-item" data-path="${encodeURIComponent(folderPath)}" data-name="${escapeHtml(file.name)}" data-type="folder" aria-label="Select ${escapeHtml(file.name)}"></td>`;
-          fileTableContent += `<td><a href="/files?path=${encodeURIComponent(folderPath)}">${escapeHtml(file.name)}</a></td>`;
-          fileTableContent += '<td data-label="Type">Folder</td>';
-          fileTableContent += '<td class="num" data-label="Size">–</td>';
-          fileTableContent += `<td class="actions"><button type="button" class="btn btn-sm btn-danger" data-action="delete" data-name="${escapeHtml(file.name)}" data-path="${escapeHtml(folderPath)}" data-folder="true">Delete</button></td>`;
-          fileTableContent += '</tr>';
-        } else {
-          let filePath = currentPath;
-          if (!filePath.endsWith("/")) filePath += "/";
-          filePath += file.name;
-
-          // Checkbox cell + file row
-          fileTableContent += '<tr>';
-          fileTableContent += `<td class="cell-check"><input type="checkbox" class="select-item" data-path="${encodeURIComponent(filePath)}" data-name="${escapeHtml(file.name)}" data-type="file" aria-label="Select ${escapeHtml(file.name)}"></td>`;
-          const fileIsImage = isImageFile(file.name);
-          fileTableContent += '<td>';
-          if (fileIsImage) {
-            fileTableContent += `<a href="${downloadUrl(filePath)}" class="image-preview-link">${escapeHtml(file.name)}</a>`;
-          } else {
-            fileTableContent += `<a rel="noopener noreferrer" target="_blank" href="${downloadUrl(filePath)}">${escapeHtml(file.name)}</a>`;
-          }
-          fileTableContent += '</td>';
-          fileTableContent += file.isEpub ? '<td data-label="Type">EPUB</td>' : `<td data-label="Type">${escapeHtml(file.name.split('.').pop().toUpperCase())}</td>`;
-          fileTableContent += `<td class="num" data-label="Size">${formatFileSize(file.size)}</td>`;
-          fileTableContent += `<td class="actions">`;
-          fileTableContent += `<button type="button" class="btn btn-sm" data-action="move" data-name="${escapeHtml(file.name)}" data-path="${escapeHtml(filePath)}">Move</button>`;
-          fileTableContent += `<button type="button" class="btn btn-sm" data-action="rename" data-name="${escapeHtml(file.name)}" data-path="${escapeHtml(filePath)}">Rename</button>`;
-          fileTableContent += `<button type="button" class="btn btn-sm btn-danger" data-action="delete" data-name="${escapeHtml(file.name)}" data-path="${escapeHtml(filePath)}" data-folder="false">Delete</button>`;
-          fileTableContent += `</td>`;
-          fileTableContent += '</tr>';
-        }
-      });
-
-      fileTableContent += '</tbody></table>';
-      fileTable.innerHTML = fileTableContent;
-    }
+    await loadFolder();
   }
 
   // Image preview
@@ -1410,29 +1890,6 @@
 
   // Initialize quality settings handlers
   document.addEventListener('DOMContentLoaded', function() {
-    // Delegated so it survives file-table re-renders. Names and paths are
-    // user-controlled text, so they travel as data attributes rather than
-    // being interpolated into inline onclick strings.
-    document.getElementById('file-table').addEventListener('click', function(e) {
-      const link = e.target.closest('.image-preview-link');
-      if (link) {
-        e.preventDefault();
-        openImagePreview(link.getAttribute('href'), link.textContent);
-        return;
-      }
-      const btn = e.target.closest('[data-action]');
-      if (!btn) return;
-      const name = btn.dataset.name;
-      const path = btn.dataset.path;
-      if (btn.dataset.action === 'move') {
-        openMoveModal(name, path);
-      } else if (btn.dataset.action === 'rename') {
-        openRenameModal(name, path);
-      } else if (btn.dataset.action === 'delete') {
-        openDeleteModal(name, path, btn.dataset.folder === 'true');
-      }
-    });
-
     const qualitySlider = document.getElementById('qualitySlider');
     const qualityInput = document.getElementById('qualityInput');
 
@@ -1481,64 +1938,39 @@
 
   function openFolderModal() {
     document.getElementById('folderPathDisplay').textContent = currentPath === '/' ? '/' : currentPath;
+    $('folderName').value = '';
+    $('createFolderBtn').disabled = false;
+    clearFieldError('folderName', 'folderError');
     ui.openModal(document.getElementById('folderModal'));
-    document.getElementById('folderName').value = '';
-    setTimeout(() => document.getElementById('folderName').focus(), 50);
-    document.getElementById('folderName').onkeydown = (e) => { if (e.key === 'Enter' && e.target.value.trim()) createFolder(); };
   }
 
   function closeFolderModal() {
     ui.closeModal(document.getElementById('folderModal'));
   }
 
-  // Toggle select-all checkbox
-  function toggleSelectAll(master) {
-    const checked = master.checked;
-    document.querySelectorAll('.select-item').forEach(cb => {
-      cb.checked = checked;
-    });
-  }
+  // --- Delete: one item from its menu, or the selection ---
 
-  function getSelectedItems() {
-    const items = [];
-    document.querySelectorAll('.select-item:checked').forEach(cb => {
-      items.push({
-        name: cb.dataset.name || decodeURIComponent(cb.dataset.path).split('/').pop(),
-        path: decodeURIComponent(cb.dataset.path),
-        isFolder: cb.dataset.type === 'folder'
-      });
-    });
-    return items;
-  }
-
-  // Open delete modal for currently selected checkboxes
-  function openDeleteSelectedModal() {
-    const items = getSelectedItems();
-    if (items.length === 0) {
-      alert('Please select at least one item to delete.');
-      return;
-    }
-    openDeleteModalForItems(items);
-  }
-
-  // Open delete modal for a single item (keeps backwards compatibility with per-row delete button)
-  function openDeleteModal(name, path, isFolder) {
-    openDeleteModalForItems([{ name: name, path: path, isFolder: !!isFolder }]);
-  }
-
-  let deleteItemsGlobal = [];
+  let deleteItems = [];
 
   function openDeleteModalForItems(items) {
-    deleteItemsGlobal = items;
-    const listEl = document.getElementById('deleteItemList');
-    listEl.innerHTML = '';
-    items.forEach(it => {
-      const div = document.createElement('div');
-      div.className = 'row';
-      div.innerHTML = `<span class="row-main">${escapeHtml(it.path)}</span>` + (it.isFolder ? '<span class="row-meta">Folder</span>' : '');
-      listEl.appendChild(div);
+    if (!items.length) return;
+    deleteItems = items;
+    const one = items.length === 1;
+    const where = normalizePath(currentPath);
+    $('deletePrompt').textContent = 'Delete ' + (one ? items[0].name : plural(items.length, 'item')) + ' from ' + where + '? This cannot be undone.';
+    const list = $('deleteItemList');
+    list.replaceChildren();
+    list.hidden = one;
+    items.forEach(function(item) {
+      const row = el('div', 'row');
+      row.appendChild(el('span', 'row-main', item.name));
+      if (item.isDirectory) row.appendChild(el('span', 'row-meta', 'Folder'));
+      list.appendChild(row);
     });
-    document.getElementById('confirmDeleteBtn').textContent = 'Delete ' + items.length + (items.length === 1 ? ' item' : ' items');
+    $('deleteFolderNote').hidden = !items.some(item => item.isDirectory);
+    const confirm = $('confirmDeleteBtn');
+    confirm.disabled = false;
+    confirm.textContent = one ? 'Delete' : 'Delete ' + plural(items.length, 'item');
     ui.openModal(document.getElementById('deleteModal'));
   }
 
@@ -1546,36 +1978,39 @@
     ui.closeModal(document.getElementById('deleteModal'));
   }
 
-  function confirmDelete() {
-    if (!deleteItemsGlobal || deleteItemsGlobal.length === 0) {
-      closeDeleteModal();
-      return;
+  // "Failed to delete some items: /a (folder not empty); /b (not found); " as "a (folder not empty), b (not found)".
+  function deleteFailure(text) {
+    const m = /^Failed to delete some items:\s*(.*)$/s.exec(String(text).trim());
+    if (!m) return 'Could not delete: ' + (text || 'the reader refused');
+    const parts = m[1].split(';').map(s => s.trim()).filter(Boolean).map(s => s.replace(/^.*\/(?=[^/]* \()/, ''));
+    return 'Could not delete ' + parts.join(', ');
+  }
+
+  async function confirmDelete() {
+    const items = deleteItems;
+    if (!items.length) return closeDeleteModal();
+    const confirm = $('confirmDeleteBtn');
+    confirm.disabled = true;
+    confirm.textContent = 'Deleting…';
+    let message;
+    let ok = false;
+    try {
+      const response = await fetch('/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'paths=' + encodeURIComponent(JSON.stringify(items.map(item => item.path)))
+      });
+      ok = response.ok;
+      message = ok ? 'Deleted ' + (items.length === 1 ? items[0].name : plural(items.length, 'item')) : deleteFailure(await response.text());
+    } catch (e) {
+      console.error(e);
+      message = 'Could not reach the reader. Reload the page to see what was deleted.';
     }
-
-    const paths = deleteItemsGlobal.map(it => {
-      // Ensure path starts with /
-      let p = it.path;
-      if (!p.startsWith('/')) p = '/' + p;
-      return p;
-    });
-
-    const body = 'paths=' + encodeURIComponent(JSON.stringify(paths));
-    fetch('/delete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: body
-    }).then(async res => {
-      if (res.ok) {
-        window.location.reload();
-      } else {
-        const text = await res.text();
-        alert('Failed to delete: ' + text);
-        closeDeleteModal();
-      }
-    }).catch(() => {
-      alert('Failed to delete - network error');
-      closeDeleteModal();
-    });
+    deleteItems = [];
+    closeDeleteModal();
+    listing.selected.clear();
+    await loadFolder();
+    showNotification(message, ok ? 'success' : 'error');
   }
 
   // Helper to clear image picker state
@@ -4421,95 +4856,77 @@ function retryAllFailedUploads() {
   validateFile();
 }
 
-  function createFolder() {
-    const folderName = document.getElementById('folderName').value.trim();
-
-    if (!folderName) {
-      alert('Please enter a folder name!');
-      return;
+  async function createFolder() {
+    const folderName = $('folderName').value.trim();
+    if (!folderName) return showFieldError('folderName', 'folderError', 'Enter a name for the folder.');
+    if (!/^(?!\.{1,2}$)[^"*:<>?\/\\|]+$/.test(folderName)) {
+      return showFieldError('folderName', 'folderError', 'Folder names cannot contain " * : < > ? / \\ | and cannot be . or ..');
     }
-
-    // Validate folder name
-    const validName = /^(?!\.{1,2}$)[^"*:<>?\/\\|]+$/.test(folderName);
-    if (!validName) {
-      alert('Folder name cannot contain \" * : < > ? / \\ | and must not be . or ..');
-      return;
-    }
-
-    const formData = new FormData();
-    formData.append('name', folderName);
-    formData.append('path', currentPath);
-
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', '/mkdir', true);
-
-    xhr.onload = function() {
-      if (xhr.status === 200) {
-        window.location.reload();
+    const button = $('createFolderBtn');
+    button.disabled = true;
+    try {
+      const response = await postForm('/mkdir', { name: folderName, path: currentPath });
+      if (!response.ok) {
+        showFieldError('folderName', 'folderError', (await response.text()) || 'The reader could not make the folder.');
       } else {
-        alert('Failed to create folder: ' + xhr.responseText);
+        closeFolderModal();
+        listing.selected.clear();
+        await loadFolder();
+        showNotification('Created ' + folderName, 'success');
       }
-    };
-
-    xhr.onerror = function() {
-      alert('Failed to create folder - network error');
-    };
-
-    xhr.send(formData);
+    } catch (e) {
+      console.error(e);
+      showFieldError('folderName', 'folderError', 'Could not reach the reader. Try again.');
+    }
+    button.disabled = false;
   }
 
   // Rename functions
   function openRenameModal(name, path) {
-    document.getElementById('renameItemName').textContent = name;
-    document.getElementById('renameItemPath').value = path;
-    document.getElementById('renameNewName').value = name;
+    $('renameItemName').textContent = name;
+    $('renameItemPath').value = path;
+    $('renameNewName').value = name;
+    $('confirmRenameBtn').disabled = false;
+    clearFieldError('renameNewName', 'renameError');
     ui.openModal(document.getElementById('renameModal'));
+    // The name without its extension is picked, ready to type over.
     setTimeout(() => {
-      const input = document.getElementById('renameNewName');
+      const input = $('renameNewName');
+      const dot = name.lastIndexOf('.');
       input.focus();
-      input.select();
-    }, 50);
+      input.setSelectionRange(0, dot > 0 ? dot : name.length);
+    }, 0);
   }
 
   function closeRenameModal() {
     ui.closeModal(document.getElementById('renameModal'));
   }
 
-  function confirmRename() {
-    const path = document.getElementById('renameItemPath').value;
-    const newName = document.getElementById('renameNewName').value.trim();
-
-    if (!newName) {
-      alert('Please enter a new name.');
-      return;
-    }
-    if (newName.includes('/') || newName.includes('\\')) {
-      alert('File name cannot include slashes.');
-      return;
-    }
-
-    const formData = new FormData();
-    formData.append('path', path);
-    formData.append('name', newName);
-
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', '/rename', true);
-
-    xhr.onload = function() {
-      if (xhr.status === 200) {
-        window.location.reload();
+  async function confirmRename() {
+    const path = $('renameItemPath').value;
+    const oldName = $('renameItemName').textContent;
+    const newName = $('renameNewName').value.trim();
+    if (!newName) return showFieldError('renameNewName', 'renameError', 'Enter a new name.');
+    if (newName.includes('/') || newName.includes('\\')) return showFieldError('renameNewName', 'renameError', 'Names cannot contain / or \\.');
+    if (newName === oldName) return closeRenameModal();
+    const button = $('confirmRenameBtn');
+    button.disabled = true;
+    try {
+      const response = await postForm('/rename', { path: path, name: newName });
+      if (!response.ok) {
+        const text = await response.text();
+        showFieldError('renameNewName', 'renameError', /already exists/i.test(text) ? 'Something named ' + newName + ' is already in this folder.' : text || 'The reader could not rename it.');
       } else {
-        alert('Failed to rename: ' + xhr.responseText);
+        closeRenameModal();
+        listing.selected.clear();
+        await loadFolder();
+        showNotification('Renamed to ' + newName, 'success');
       }
-      closeRenameModal();
-    };
-
-    xhr.onerror = function() {
-      alert('Failed to rename - network error');
-      closeRenameModal();
-    };
-
-    xhr.send(formData);
+    } catch (e) {
+      console.error(e);
+      showFieldError('renameNewName', 'renameError', 'Could not reach the reader. Try again.');
+    }
+    button.disabled = false;
   }
 
   // Move functions
@@ -4574,53 +4991,59 @@ function retryAllFailedUploads() {
     });
   }
 
-  function openMoveModal(name, path) {
-    document.getElementById('moveItemName').textContent = name;
-    document.getElementById('moveItemPath').value = path;
-    document.getElementById('moveDestPath').value = currentPath === '/' ? '/' : currentPath;
+  // Folders cannot be moved (POST /move answers 400), so they are left out of the set.
+  let moveItems = [];
+  let moveSkipped = 0;
+
+  function openMoveModal(items) {
+    moveItems = items.filter(item => !item.isDirectory);
+    moveSkipped = items.length - moveItems.length;
+    if (!moveItems.length) return;
+    $('moveItemName').textContent = moveItems.length === 1 ? moveItems[0].name : plural(moveItems.length, 'file');
+    $('moveDestPath').value = normalizePath(currentPath);
+    $('confirmMoveBtn').disabled = false;
+    clearFieldError('moveDestPath', 'moveError');
     ui.openModal(document.getElementById('moveModal'));
     loadMoveFolderOptions();
-    setTimeout(() => {
-      document.getElementById('moveDestPath').focus();
-    }, 50);
+    setTimeout(() => $('moveDestPath').select(), 0);
   }
 
   function closeMoveModal() {
     ui.closeModal(document.getElementById('moveModal'));
   }
 
-  function confirmMove() {
-    const path = document.getElementById('moveItemPath').value;
-    const destPath = normalizePath(document.getElementById('moveDestPath').value);
-
-    if (!destPath) {
-      alert('Please enter a destination folder.');
-      return;
-    }
-
-    const formData = new FormData();
-    formData.append('path', path);
-    formData.append('dest', destPath);
-
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', '/move', true);
-
-    xhr.onload = function() {
-      if (xhr.status === 200) {
-        window.location.reload();
-      } else {
-        alert('Failed to move: ' + xhr.responseText);
+  // One POST /move per file, in turn: the reader serves one request at a time.
+  async function confirmMove() {
+    if (!$('moveDestPath').value.trim()) return showFieldError('moveDestPath', 'moveError', 'Enter a destination folder, such as /Books.');
+    const dest = normalizePath($('moveDestPath').value);
+    if (dest === normalizePath(currentPath)) return showFieldError('moveDestPath', 'moveError', 'Pick another folder: this is where they are now.');
+    const button = $('confirmMoveBtn');
+    button.disabled = true;
+    const failed = [];
+    let moved = 0;
+    for (const item of moveItems) {
+      try {
+        const response = await postForm('/move', { path: item.path, dest: dest });
+        if (response.ok) moved++;
+        else failed.push([item.name, (await response.text()) || 'HTTP ' + response.status]);
+      } catch (e) {
+        console.error(e);
+        failed.push([item.name, 'the reader did not answer']);
       }
-      closeMoveModal();
-    };
-
-    xhr.onerror = function() {
-      alert('Failed to move - network error');
-      closeMoveModal();
-    };
-
-    xhr.send(formData);
+    }
+    button.disabled = false;
+    const why = failed.map(f => f[0] + ': ' + f[1]).join('; ');
+    // Nothing moved: say why in the dialog (once, when every file failed alike) and let the folder be corrected.
+    if (!moved) return showFieldError('moveDestPath', 'moveError', failed.every(f => f[1] === failed[0][1]) ? failed[0][1] : why);
+    const count = moveItems.length === 1 ? moveItems[0].name : plural(moved, 'file');
+    const skipped = moveSkipped ? ' Folders stay where they are.' : '';
+    closeMoveModal();
+    listing.selected.clear();
+    await loadFolder();
+    if (failed.length) showNotification('Moved ' + moved + ' of ' + plural(moveItems.length, 'file') + ' to ' + dest + '. Not moved: ' + why, 'error');
+    else showNotification('Moved ' + count + ' to ' + dest + '.' + skipped, 'success');
   }
+
   hydrate();
 </script>
 </body>

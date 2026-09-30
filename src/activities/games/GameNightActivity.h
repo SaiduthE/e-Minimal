@@ -6,21 +6,28 @@
 #include <string>
 
 #include "activities/Activity.h"
+#include "components/OptionPopup.h"
 #include "components/themes/BaseTheme.h"
 #include "network/GameServer.h"
 #include "network/PhonePortal.h"
 
 // Game night: the reader becomes the table.
 //
-// It raises an open access point through PhonePortal, shows the join card
-// (one QR joins the Wi-Fi, one opens the page), and serves every phone a view
-// of the same session. The e-ink panel is the board everyone looks at; the
-// phones hold whatever has to stay private - a dice cup, a secret word, a
-// spymaster's key.
+// Opened from the Games picker (GamesActivity) with the game already chosen, it
+// raises an open access point through PhonePortal, shows the join card (one QR
+// joins the Wi-Fi, one opens the page), and serves every phone a view of the
+// same session. The e-ink panel is the board everyone looks at; the phones hold
+// whatever has to stay private - a dice cup, a secret word, a spymaster's key.
+// Back never throws a round away by accident: mid-round it opens a menu
+// (resume, end the round, leave), after a round it returns to the lobby, and in
+// the lobby it asks before leaving for the picker, which reboots on the way to
+// shed the WiFi heap. On a test build (GAMES_TEST_MODE) the lobby's
+// previous/next keys seat and drop test players, so one person can open any
+// game and play every seat from a single phone.
 class GameNightActivity final : public Activity {
  public:
-  explicit GameNightActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
-      : Activity("GameNight", renderer, mappedInput) {}
+  explicit GameNightActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, party::GameId game)
+      : Activity("GameNight", renderer, mappedInput), initialGame(game) {}
 
   void onEnter() override;
   void onExit() override;
@@ -42,15 +49,35 @@ class GameNightActivity final : public Activity {
   // Reads this frame's button events. Returns true when the activity is on its
   // way out and the caller must stop touching it.
   bool handleInput();
+  // handleInput()'s body, run under the render lock; true asks to leave.
+  bool applyInput(bool staleMenu);
+  void openRoundMenu();
+  void openLeaveConfirm();
+  // Acts on the row the menu's callback recorded; true asks to leave.
+  bool applyMenuChoice();
+  // The open popup still fits the table: the round menu only over a round,
+  // the leave question only in the lobby.
+  bool menuMatchesTable() const { return menu.isActive() && menuForRound != session.inLobby(); }
 
   State state = State::AP_STARTING;
+  // The game picked in the Games picker. The host's phone may still switch it
+  // from the lobby.
+  const party::GameId initialGame;
   party::GameSession session;
   std::unique_ptr<GameServer> server;
   PhonePortal portal;
 
+  // The device's own popup: the round menu, or the lobby's leave confirmation.
+  // Its callback only records the picked row; handleInput() acts on it.
+  OptionPopup menu;
+  bool menuForRound = false;
+  int menuPick = -1;
+
   // Repaints are driven by the session version, not by polling: a phone asking
   // for state 8 times a second must not cost a panel refresh.
   uint32_t paintedVersion = 0;
+  // Lobby seats shown as away, one bit per seat: going away bumps no version.
+  uint8_t paintedAway = 0;
   unsigned long lastPaintMs = 0;
   uint8_t paintsSinceFullRefresh = 0;
   static constexpr unsigned long MIN_REPAINT_INTERVAL_MS = 700;

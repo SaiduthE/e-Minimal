@@ -243,6 +243,15 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     QUICK_RESUME_SLEEP_SCREEN_COUNT
   };
 
+  // Which way the launched dashboard is turned: landscape with the keys on one
+  // side or the other, or portrait like the rest of the UI.
+  enum DASHBOARD_ORIENTATION {
+    DASHBOARD_LANDSCAPE_CW = 0,
+    DASHBOARD_LANDSCAPE_CCW = 1,
+    DASHBOARD_PORTRAIT = 2,
+    DASHBOARD_ORIENTATION_COUNT
+  };
+
   // Sleep screen settings
   uint8_t sleepScreen = DARK;
   // Night mode: inverted output polarity, applied to every activity per
@@ -369,8 +378,9 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   char sdFontFamilyName[32] = "";
   // Dictionary folder name under /dictionaries (empty = no dictionary)
   char dictionaryName[32] = "";
-  // Phone text-entry hotspot passphrase, generated once so Android remembers
-  // the network. Not in SettingsList.h: never shown in Settings or /api/settings.
+  // The shared "eMinimal" hotspot's passphrase (PhonePortal::sharedPassphrase),
+  // generated once so phones remember the one network every portal raises. Not
+  // in SettingsList.h: never shown in Settings or /api/settings.
   char phoneTextPassphrase[9] = "";
   // Show hidden files/directories (starting with '.') in the file browser (0 = hidden, 1 = show)
   uint8_t showHiddenFiles = 0;
@@ -418,6 +428,7 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   uint8_t textEntryMethod = TEXT_ENTRY_ASK;
   // Quick Resume: keep current content visible with moon icon instead of showing a static sleep screen.
   uint8_t quickResumeSleepScreen = QUICK_RESUME_NEVER;
+  uint8_t dashboardOrientation = DASHBOARD_LANDSCAPE_CW;
 
   static constexpr uint8_t MIN_SLEEP_TIMEOUT_MINUTES = 1;
   static constexpr uint8_t SLEEP_TIMEOUT_NEVER_MINUTES = 31;

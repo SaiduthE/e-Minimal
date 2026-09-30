@@ -4,6 +4,7 @@
 #include <Logging.h>
 #include <PowerManager.h>
 #include <WiFi.h>
+#include <driver/gpio.h>
 #include <esp_sleep.h>
 #include <soc/soc_caps.h>
 
@@ -131,6 +132,38 @@ void HalPowerManager::startDeepSleep(HalGPIO& gpio) const {
   // Waits for the power button to be physically released (so holding it doesn't
   // immediately wake the device again), then arms the wake source and sleeps.
   freeink::PowerManager::deepSleepUntilPowerButton();
+}
+
+HalPowerManager::LightSleepWake HalPowerManager::lightSleep(const uint32_t maxMs) const {
+  const auto& input = BoardConfig::ACTIVE.input;
+  if (input.adcLadderPin >= 0) return LightSleepWake::NotSupported;
+
+  const int8_t keys[] = {input.back, input.confirm, input.left, input.right, input.up, input.down, input.power};
+  bool armed = false;
+  for (const int8_t pin : keys) {
+    if (pin < 0) continue;
+    const bool activeHigh = pin == input.power && input.powerActiveHigh;
+    gpio_wakeup_enable(static_cast<gpio_num_t>(pin), activeHigh ? GPIO_INTR_HIGH_LEVEL : GPIO_INTR_LOW_LEVEL);
+    armed = true;
+  }
+  if (!armed) return LightSleepWake::NotSupported;
+  esp_sleep_enable_gpio_wakeup();
+  if (maxMs > 0) esp_sleep_enable_timer_wakeup(static_cast<uint64_t>(maxMs) * 1000ULL);
+
+#ifdef ENABLE_SERIAL_LOG
+  logSerial.flush();
+#endif
+  esp_light_sleep_start();
+  const esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
+
+  // The keys are polled, not interrupt-driven, so disarming leaves them as the
+  // input driver configured them.
+  esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
+  esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_GPIO);
+  for (const int8_t pin : keys) {
+    if (pin >= 0) gpio_wakeup_disable(static_cast<gpio_num_t>(pin));
+  }
+  return cause == ESP_SLEEP_WAKEUP_TIMER ? LightSleepWake::Timer : LightSleepWake::Button;
 }
 
 uint16_t HalPowerManager::getBatteryPercentage() const {

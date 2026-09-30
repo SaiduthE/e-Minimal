@@ -23,6 +23,13 @@ struct RenderConfig {
   float sourceCropY = 0.0f;         // Fraction cropped equally from the top and bottom edges
   bool preserveAlpha = false;       // Skip transparent pixels instead of compositing them against white
   std::string cachePath;            // If non-empty, decoder will write pixel cache to this path
+
+  // Photo quality, JPEG and PNG (defaults render exactly as before). While
+  // either is in effect no pixel cache is written: cachePath is ignored, since
+  // the 2bpp .pxc holds neither 16 levels nor a curve a later default render
+  // of the same path expects.
+  bool fullGrayLevels = false;  // On a 16-level target (beginGray4Target): all 16 levels. Else no effect.
+  bool autoContrast = false;    // Stretch the 1st..99th percentile to full range, then darken mid greys
 };
 
 class ImageToFramebufferDecoder {
@@ -49,12 +56,19 @@ class ImageToFramebufferDecoder {
   // Size validation helpers. The cap bounds decode TIME, not memory: both decoders
   // stream (JPEG in MCU bands at 1/2..1/8 coarse scale, PNG scanline-by-scanline
   // with its own width-based row-buffer guard), so RAM never scales with source
-  // area. 8 MP admits real-world ebook covers (KDP recommends 1600x2560 and
-  // 2000x3000) while keeping a worst-case single decode in single-digit seconds;
-  // the row callbacks yield periodically so a long decode cannot starve the idle
-  // task's watchdog.
+  // area. Without PSRAM (ESP32-C3) 8 MP admits real-world ebook covers (KDP
+  // recommends 1600x2560 and 2000x3000) while keeping a worst-case single decode
+  // in single-digit seconds. PSRAM builds run on the faster ESP32-S3 and show
+  // phone photos (12 MP 4032x3024, 24 MP 5712x4284, 50 MP 8160x6120), so they
+  // accept up to 50 MP and the longer decode that comes with it. The row
+  // callbacks yield periodically so a long decode cannot starve the idle task's
+  // watchdog.
   static constexpr int64_t MAX_SOURCE_DIMENSION = INT16_MAX;
+#ifdef BOARD_HAS_PSRAM
+  static constexpr int64_t MAX_SOURCE_PIXELS = 52428800;  // 50 MP (e.g. 8160 * 6120)
+#else
   static constexpr int64_t MAX_SOURCE_PIXELS = 8388608;  // 8 MP (e.g. 2048 * 4096)
+#endif
 
   void warnUnsupportedFeature(const std::string& feature, const std::string& imagePath);
 };

@@ -41,6 +41,7 @@
 #include "images/LoadingIcon.h"
 #include "platform/UsbSerialJtagHandoff.h"
 #include "util/ButtonNavigator.h"
+#include "util/CardFolders.h"
 #include "util/ScreenshotUtil.h"
 #include "util/Timezones.h"
 
@@ -504,6 +505,10 @@ void setup() {
   timezones::applyToClock();
   RECENT_BOOKS.loadFromFile();
   I18N.setLanguage(static_cast<Language>(SETTINGS.language));
+  // A fresh card gets the standard folders (books, manga, pictures, fonts...).
+  // After the language is set: this first loads the Dashboard settings, whose
+  // starting layouts take their names from I18N.
+  card_folders::ensure();
   KOREADER_STORE.loadFromFile();
   OPDS_STORE.loadFromFile();
   UITheme::getInstance().reload();
@@ -623,19 +628,21 @@ void setup() {
     // Back out of the WiFi rows and the user is where they left off, not on Home.
     activityManager.goToSettings();
   } else if (resume == BootResume::Silent && APP_STATE.lastApp == AppId::DASHBOARD) {
-    // Leaving Game Night for the dashboard restarts to shed the WiFi heap.
+    // A WiFi screen's exit restarted to shed its heap (Game Night switching to
+    // the Dashboard): land on the dashboard.
     activityManager.goToDashboard();
+  } else if (resume == BootResume::Silent && APP_STATE.lastApp == AppId::GAMES) {
+    // Back out of a Game Night lobby: its exit restarted, the picker is next.
+    activityManager.goToGames();
   } else if (resume == BootResume::Silent) {
     // target == home (or reader with no open book): land on home — don't fall
     // through to the sleep-wake "resume reader" logic, which fires on stale
-    // openEpubPath + lastSleepFromReader from a prior session. Games also lands
-    // here: its own exit is what restarted.
+    // openEpubPath + lastSleepFromReader from a prior session.
     activityManager.goHome();
-  } else if (APP_STATE.lastApp == AppId::DASHBOARD && !backHeldAtBoot) {
-    // Boot and wake return to the app last opened; Back held is the way to Home.
-    activityManager.goToDashboard(needsWakeRefresh);
-  } else if (APP_STATE.lastApp == AppId::GAMES && !backHeldAtBoot) {
-    activityManager.goToGameNight();
+  } else if (APP_STATE.lastApp != AppId::READER && !backHeldAtBoot) {
+    // Last in the Dashboard or Games: offer the apps rather than reopen one
+    // unasked (Games would bring its hotspot up). Back held is the way to Home.
+    activityManager.goToAppLauncher(needsWakeRefresh);
   } else if (APP_STATE.openEpubPath.empty() || !APP_STATE.lastSleepFromReader || backHeldAtBoot ||
              APP_STATE.readerActivityLoadCount > 0) {
     // Boot to home screen if no book is open, last sleep was not from reader, back button is held, or reader activity

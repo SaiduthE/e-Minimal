@@ -1,4 +1,4 @@
-#include "DashboardActivity.h"
+#include "TodoDashboardActivity.h"
 
 #include <GfxRenderer.h>
 #include <HalClock.h>
@@ -24,11 +24,11 @@ constexpr StrId TASK_ACTIONS[TASK_ACTION_COUNT] = {StrId::STR_TODO_TOGGLE, StrId
                                                    StrId::STR_TODO_CLEAR_DONE};
 }  // namespace
 
-DashboardActivity::DashboardActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
-                                     const bool cleanInitialRefresh)
-    : UiListActivity("Dashboard", renderer, mappedInput), cleanInitialRefresh(cleanInitialRefresh) {}
+TodoDashboardActivity::TodoDashboardActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
+                                             const bool cleanInitialRefresh)
+    : UiListActivity("TodoDashboard", renderer, mappedInput), cleanInitialRefresh(cleanInitialRefresh) {}
 
-void DashboardActivity::onEnter() {
+void TodoDashboardActivity::onEnter() {
   {
     RenderLock lock(*this);
     TODO_STORE.load();
@@ -37,18 +37,26 @@ void DashboardActivity::onEnter() {
     rebuildRows();
   }
   UiListActivity::onEnter();
+  standby.reset();
 }
 
-void DashboardActivity::onExit() {
+void TodoDashboardActivity::loop() {
+  if (standby.poll(mappedInput, actionsPopup.isActive())) return;
+  UiListActivity::loop();
+}
+
+void TodoDashboardActivity::onExit() {
   UiListActivity::onExit();
   rowItems.clear();
   rowItems.shrink_to_fit();
   TODO_STORE.unload();
 }
 
-const char* DashboardActivity::headerTitle() const { return tr(STR_APP_DASHBOARD); }
+const char* TodoDashboardActivity::headerTitle() const { return tr(STR_TODO); }
 
-void DashboardActivity::rebuildRows() {
+void TodoDashboardActivity::onBackButton() { finish(); }
+
+void TodoDashboardActivity::rebuildRows() {
   rowItems.clear();
   fui::ListItem add;
   add.label = TODO_STORE.isFull() ? tr(STR_TODO_FULL) : tr(STR_TODO_ADD);
@@ -70,7 +78,7 @@ void DashboardActivity::rebuildRows() {
   refreshSummary();
 }
 
-void DashboardActivity::refreshSummary() {
+void TodoDashboardActivity::refreshSummary() {
   const size_t done = TODO_STORE.doneCount();
   const size_t open = TODO_STORE.count() - done;
   if (TODO_STORE.count() == 0) {
@@ -81,7 +89,7 @@ void DashboardActivity::refreshSummary() {
   }
 }
 
-void DashboardActivity::refreshDate() {
+void TodoDashboardActivity::refreshDate() {
   date[0] = '\0';
   struct tm now{};
   if (!halClock.isAvailable() || !halClock.localTime(now)) return;
@@ -93,7 +101,7 @@ void DashboardActivity::refreshDate() {
 }
 
 template <typename Edit>
-void DashboardActivity::editList(Edit&& edit) {
+void TodoDashboardActivity::editList(Edit&& edit) {
   bool changed;
   {
     // The render task reads rowItems, whose labels point into the store.
@@ -108,7 +116,7 @@ void DashboardActivity::editList(Edit&& edit) {
   requestUpdate();
 }
 
-void DashboardActivity::activateIndex(const int index) {
+void TodoDashboardActivity::activateIndex(const int index) {
   if (actionsPopup.isActive()) return;
   if (index < 0 || index >= listCount()) return;
   app.clearTapFlash();
@@ -122,18 +130,18 @@ void DashboardActivity::activateIndex(const int index) {
   editList([task] { return TODO_STORE.toggle(task); });
 }
 
-void DashboardActivity::onRowLongPress(const int index) {
+void TodoDashboardActivity::onRowLongPress(const int index) {
   if (actionsPopup.isActive() || index < FIRST_TASK_ROW || index >= listCount()) return;
   app.clearTapFlash();
   nav.selected = index;
   showTaskActions(taskIndexForRow(index));
 }
 
-bool DashboardActivity::handleCustomInput() {
+bool TodoDashboardActivity::handleCustomInput() {
   return actionsPopup.handleInput(mappedInput, [this] { requestUpdate(); });
 }
 
-bool DashboardActivity::handleButtons() {
+bool TodoDashboardActivity::handleButtons() {
   if (mappedInput.wasLongPressed(MappedInputManager::Button::Confirm, ACTIONS_HOLD_MS)) {
     const int selected = nav.selected;
     if (selected >= FIRST_TASK_ROW && selected < listCount()) showTaskActions(taskIndexForRow(selected));
@@ -143,11 +151,14 @@ bool DashboardActivity::handleButtons() {
     activateIndex(nav.selected);
     return true;
   }
-  // Back is swallowed: the dashboard is an app root.
-  return mappedInput.wasReleased(MappedInputManager::Button::Back);
+  if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+    onBackButton();
+    return true;
+  }
+  return false;
 }
 
-void DashboardActivity::promptForTask(const int taskIndex) {
+void TodoDashboardActivity::promptForTask(const int taskIndex) {
   const bool editing = taskIndex >= 0;
   if (!editing && TODO_STORE.isFull()) {
     LOG_DBG("DASH", "To-do list full");
@@ -175,7 +186,7 @@ void DashboardActivity::promptForTask(const int taskIndex) {
   });
 }
 
-void DashboardActivity::showTaskActions(const int taskIndex) {
+void TodoDashboardActivity::showTaskActions(const int taskIndex) {
   if (taskIndex < 0 || taskIndex >= static_cast<int>(TODO_STORE.count())) return;
   const char* options[TASK_ACTION_COUNT];
   for (int i = 0; i < TASK_ACTION_COUNT; i++) options[i] = I18N.get(TASK_ACTIONS[i]);
@@ -202,11 +213,11 @@ void DashboardActivity::showTaskActions(const int taskIndex) {
   requestUpdate();
 }
 
-void DashboardActivity::buildScreen(UiScreen& screen) {
+void TodoDashboardActivity::buildScreen(UiScreen& screen) {
   const auto& metrics = UITheme::getInstance().getMetrics();
   const auto& theme = screen.theme();
   screen.setContentMarginFromScreen(fui::Insets{static_cast<int16_t>(metrics.topPadding + metrics.headerHeight), 0,
-                                                static_cast<int16_t>(metrics.buttonHintsHeight), 0});
+                                                static_cast<int16_t>(metrics.verticalSpacing), 0});
   screen.spacer(static_cast<int16_t>(metrics.verticalSpacing));
 
   const int16_t inset = static_cast<int16_t>(metrics.contentSidePadding);
@@ -243,12 +254,12 @@ void DashboardActivity::buildScreen(UiScreen& screen) {
   screen.list(props);
 }
 
-void DashboardActivity::drawFooter() {
-  const auto labels = mappedInput.mapLabels("", tr(STR_SELECT), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
-  GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+void TodoDashboardActivity::drawFooter() {
+  // The dashboard is landscape: key hints would be drawn sideways along the key
+  // edge, over the list, so the help line under the list stands in for them.
 }
 
-void DashboardActivity::render(RenderLock&&) {
+void TodoDashboardActivity::render(RenderLock&&) {
   renderer.clearScreen();
   drawChrome();
   renderUi();

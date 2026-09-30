@@ -5,8 +5,9 @@
 
 #include <memory>
 
-// The HTTP half of game night: one page for the phones, three endpoints, and
-// the captive-portal redirect that makes "join the Wi-Fi" enough to be playing.
+// The HTTP half of game night: one page and its stylesheet for the phones, four
+// endpoints, and the captive-portal redirect that makes "join the Wi-Fi" enough
+// to be playing.
 //
 // Deliberately not CrossPointWebServer: that one carries WebDAV, WebSockets and
 // the file manager, none of which belong in front of a room full of guests, and
@@ -31,16 +32,22 @@ class GameServer {
 
  private:
   void handlePlayPage();
+  void handleStylesheet();
   void handleJoin();
   void handleState();
   void handleAction();
   void handleLeave();
   void handleNotFound();
 
-  // Resolves ?t= to a seat, refreshing that phone's last-seen stamp. Returns -1
-  // for a browser that has not joined, which still gets the spectator view.
+  // Resolves ?t= to the caller's own seat, refreshing that phone's last-seen
+  // stamp. Returns -1 for a browser that has not joined, which still gets the
+  // spectator view.
   int8_t seatFromRequest();
-  void sendState(int8_t seat);
+  // The seat a request from `own` is served as: the test seat named in ?as=
+  // (digits only) when test mode is on and `own` is the host, else `own`.
+  int8_t viewSeat(int8_t own);
+  // `seat` is the view served; `self` is the caller's own seat, sent as "me".
+  void sendState(int8_t seat, int8_t self);
 
   party::GameSession& session_;
   std::unique_ptr<WebServer> server_;

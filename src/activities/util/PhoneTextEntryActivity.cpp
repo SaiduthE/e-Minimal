@@ -7,16 +7,12 @@
 #include <WiFi.h>
 
 #include <cstdio>
-#include <cstring>
 
-#include "CrossPointSettings.h"
 #include "MappedInputManager.h"
 #include "components/PhoneJoinPanel.h"
 #include "components/UITheme.h"
 
 namespace {
-constexpr const char* TEXT_AP_SSID = "eMinimal Text";
-constexpr const char* TEXT_AP_HOSTNAME = "eminimal";
 constexpr uint8_t TEXT_AP_CHANNEL = 1;
 constexpr uint8_t TEXT_AP_MAX_CLIENTS = 2;
 constexpr unsigned long STATION_POLL_MS = 500;
@@ -115,14 +111,13 @@ bool PhoneTextEntryActivity::start() {
     stationUrl = url;
     LOG_INF("TXT", "Already on a network: serving at %s", url);
   } else {
-    ensurePassphrase();
     PhonePortal::Config config;
-    config.ssid = TEXT_AP_SSID;
-    config.passphrase = SETTINGS.phoneTextPassphrase;
+    config.ssid = PhonePortal::SHARED_SSID;
+    config.passphrase = PhonePortal::sharedPassphrase();
     config.channel = TEXT_AP_CHANNEL;
     config.maxClients = TEXT_AP_MAX_CLIENTS;
     config.keepStation = !radioWasOff;
-    config.hostname = TEXT_AP_HOSTNAME;
+    config.hostname = PhonePortal::SHARED_HOSTNAME;
     if (!portal.begin(config)) {
       LOG_ERR("TXT", "Hotspot would not come up");
       return false;
@@ -140,21 +135,6 @@ bool PhoneTextEntryActivity::start() {
     return false;
   }
   return true;
-}
-
-void PhoneTextEntryActivity::ensurePassphrase() {
-  // WPA2 needs at least 8 characters; a shorter stored value (hand-edited
-  // settings) is replaced the same way as a missing one.
-  if (strnlen(SETTINGS.phoneTextPassphrase, sizeof(SETTINGS.phoneTextPassphrase)) >= PhonePortal::PASSPHRASE_LENGTH) {
-    return;
-  }
-  const std::string fresh = PhonePortal::generatePassphrase();
-  snprintf(SETTINGS.phoneTextPassphrase, sizeof(SETTINGS.phoneTextPassphrase), "%s", fresh.c_str());
-  if (!SETTINGS.saveToFile()) {
-    LOG_ERR("TXT", "Could not save the hotspot passphrase; the phone will ask to join again next time");
-    return;
-  }
-  LOG_INF("TXT", "Generated the text-entry hotspot passphrase");
 }
 
 void PhoneTextEntryActivity::onExit() {
@@ -282,7 +262,7 @@ void PhoneTextEntryActivity::render(RenderLock&&) {
         // phone that does not pop it.
         content.portal = &portal;
         content.pageUrl = portal.pageUrl();
-        altUrl = std::string(tr(STR_OR_HTTP_PREFIX)) + TEXT_AP_HOSTNAME + ".local/";
+        altUrl = std::string(tr(STR_OR_HTTP_PREFIX)) + PhonePortal::SHARED_HOSTNAME + ".local/";
         content.pageAlt = altUrl.c_str();
       }
       break;

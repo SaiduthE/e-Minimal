@@ -1,5 +1,6 @@
 add_executable(PartyGamesTest
   PartyGamesTest.cpp
+  LudoTest.cpp
   ${REPO_ROOT}/lib/PartyGames/PartyGames.cpp
   ${REPO_ROOT}/lib/PartyGames/WordBank.cpp
   ${REPO_ROOT}/lib/PartyGames/Undercover.cpp

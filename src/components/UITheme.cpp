@@ -101,11 +101,11 @@ namespace {
 // The theme metrics are pixel sizes tuned on ~220 PPI 4" panels. The fui
 // components derive their rows and headers from the UI font's line height, so
 // they follow a board's larger font tier by themselves, but the hand-placed
-// chrome (battery glyph, status bar lane, hint bar, home cover tile, popups,
-// keyboard) does not -- on the e-Minimal 7.8" the 1.5x fonts left the battery
-// squeezed and the reader footer against the glass edge. Scale those pixel
-// fields by the profile's uiScale. Ratios, percentages, enums and booleans
-// are left alone.
+// chrome (battery glyph, hint bar, home cover tile, popups, keyboard) does not
+// -- on the e-Minimal 7.8" the 1.5x fonts left the battery squeezed. Scale
+// those pixel fields by the profile's uiScale. Ratios, percentages, enums and
+// booleans are left alone; the reader footer's text lane follows its font
+// instead (UITheme::getMetrics).
 void scaleMetrics(ThemeMetrics& m, const float s) {
   if (s == 1.0f) return;
   const auto sc = [s](int& v) { v = static_cast<int>(std::lround(v * s)); };
@@ -142,7 +142,6 @@ void scaleMetrics(ThemeMetrics& m, const float s) {
   sc(m.progressBarHeight);
   sc(m.progressBarMarginTop);
   sc(m.statusBarHorizontalMargin);
-  sc(m.statusBarVerticalMargin);
   sc(m.keyboardKeyHeight);
   sc(m.keyboardKeySpacing);
   sc(m.keyboardVerticalOffset);
@@ -179,6 +178,11 @@ const ThemeMetrics& UITheme::getMetrics() const {
     // CMD:METRIC: 0 (glyph centred on the band's top edge) is right. Lyra's
     // detached 40 px strip is right as it is.
     if (currentMetrics == &RoundedRaffMetrics::values) adjustedMetrics.batteryBarHeight = 0;
+    // The reader footer's text lane follows the small font, which is the 2x
+    // tier here, not uiScale: BaseTheme::drawStatusBar sets that font's line at
+    // screenHeight - lane - 4 above the bottom inset, so lane + 4 must hold its
+    // ascender + descender (stock: 19 + 4 = 18 + 5; here 42 + 4 = 36 + 10).
+    adjustedMetrics.statusBarVerticalMargin = (currentMetrics->statusBarVerticalMargin + 4) * 2 - 4;
 #endif
     if (touch) {
       adjustedMetrics.buttonHintsHeight = 0;

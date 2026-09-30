@@ -18,6 +18,8 @@ the IP address shown on the device screen.
 | `GET` | `/` | Home/status page |
 | `GET` | `/files` | File manager page |
 | `GET` | `/settings` | Web settings page |
+| `GET` | `/dashboards` | Dashboards page: layouts and their editor, orientation, widget settings, to-do list |
+| `GET` | `/pictures` | Pictures page: photos shrunk and greyed on the phone, then uploaded into the Image widget's folder |
 | `GET` | `/fonts` | SD-card font manager page |
 | `GET` | `/js/jszip.min.js` | JavaScript asset used by the file manager |
 
@@ -252,6 +254,160 @@ Successful response:
 ```text
 Applied 2 setting(s)
 ```
+
+## Dashboards API
+
+Every Dashboard setting lives here, behind the web UI's Dashboards page; the
+reader only launches the dashboard and shows QR codes that open that page.
+The settings are stored on the SD card in `/.crosspoint/dashboards.json`; a
+missing file means the defaults below. Which way the dashboard is turned is
+the device setting `dashboardOrientation` (`POST /api/settings`): `0`
+landscape with the keys on the left, `1` landscape with the keys on the right,
+`2` portrait with the keys at the bottom.
+
+The dashboard shows one layout. Layouts are drawn in the page's layout editor
+on a grid of square cells: `grid.long` by `grid.short` in landscape (today 14
+by 10), the other way round in portrait. Each has a `shape`; on a dashboard
+turned the other way it is shown turned on its side (x and y swapped). Widget
+keys: `weather`, `todo`, `image`, `date`.
+
+Every layout can be edited, renamed and deleted, the last one too. Without a
+settings file there are three, "Wide top", "Grid" and "Picture top", ordinary
+layouts like any other; `restoreDefaults` adds back the ones that are gone. A
+file saved by older firmware, with presets A/B/C beside custom layouts, is
+read with its presets turned into ordinary layouts and its custom layouts kept.
+
+### `GET /api/dashboards`
+
+```bash
+curl http://crosspoint.local/api/dashboards
+```
+
+Response (arrays shortened):
+
+```json
+{
+  "layout": {"active": 4},
+  "orientation": 0,
+  "grid": {"long": 14, "short": 10, "minCells": 2, "maxTiles": 8, "maxName": 32, "maxLayouts": 12},
+  "layouts": [
+    {
+      "id": 1,
+      "name": "Wide top",
+      "shape": "landscape",
+      "tiles": [
+        {"widget": "weather", "x": 0, "y": 0, "w": 14, "h": 4},
+        {"widget": "todo", "x": 0, "y": 4, "w": 7, "h": 6},
+        {"widget": "image", "x": 7, "y": 4, "w": 7, "h": 6}
+      ]
+    },
+    {
+      "id": 4,
+      "name": "Desk",
+      "shape": "landscape",
+      "tiles": [
+        {"widget": "todo", "x": 0, "y": 0, "w": 7, "h": 10},
+        {"widget": "weather", "x": 7, "y": 0, "w": 7, "h": 4}
+      ]
+    }
+  ],
+  "weather": {"hasLocation": true, "place": "Berlin", "lat": 52.5244, "lon": 13.4105, "units": "c"},
+  "carousel": {"folder": "/carousel", "intervalMinutes": 30, "minMinutes": 5, "maxMinutes": 1440}
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `layout.active` | number | Id of the layout on the dashboard; `0` when none is (every layout was deleted) |
+| `orientation` | number | The device setting `dashboardOrientation` (read only here) |
+| `grid` | object | `long`, `short` (grid sides in cells), `minCells` (smallest tile side), `maxTiles` (per layout), `maxName` (name bytes), `maxLayouts` (layouts kept) |
+| `layouts` | array | Every layout, in the order they were made: `id`, `name`, `shape` (`landscape` / `portrait`), `tiles` (`widget`, `x`, `y`, `w`, `h` in cells from the top left) |
+| `weather.hasLocation` | boolean | Whether a place is set; without one the Weather tile asks for it |
+| `weather.place` | string | Name shown on the dashboard; `""` with no location |
+| `weather.lat`, `weather.lon` | number | Coordinates in decimal degrees, rounded to 4 places; `0` with no location |
+| `weather.units` | string | `"c"` or `"f"` |
+| `carousel.folder` | string | SD folder of BMP, PNG or JPEG images for the Image tile; default `/carousel` |
+| `carousel.intervalMinutes` | number | Minutes each image stays up; default `30` |
+| `carousel.minMinutes`, `carousel.maxMinutes` | number | Allowed interval range |
+
+### `POST /api/dashboards`
+
+Applies a partial update; every key is optional. The keys are applied in the
+order of this table, and a rejected one saves nothing.
+
+```bash
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"layout":{"active":4}}' \
+  http://crosspoint.local/api/dashboards
+```
+
+| Field | Rule |
+|-------|------|
+| `layout.active` | Puts that layout on the dashboard. An unknown id is rejected as `layout.active`; `0` (a GET's "none") passes only while no layout is in use |
+| `saveLayout` | `{id, name, shape, tiles}`: `id` `0` (or none) adds a layout, another id replaces that one, name included. Saved, then put in use; the answer carries its id. The name must be 1 to 32 bytes of UTF-8 without control characters; 1 to 8 tiles, each a widget other than `none`, at least `minCells` on a side, inside the grid of its `shape` and clear of the others. Problems are rejected as `saveLayout.name`, `saveLayout.shape`, `saveLayout.tiles`, `saveLayout.tiles[i]` or `saveLayout.id` (not on the reader); a full list (`grid.maxLayouts`) as `saveLayout`, with the error "No room for another layout" |
+| `deleteLayout` | Deletes that layout, whichever it is. When it was in use, the first remaining layout takes over; after the last one, none is in use (`layout.active` `0`). An unknown id is rejected as `deleteLayout` |
+| `restoreDefaults` | `true` adds back each starting layout (Wide top, Grid, Picture top) whose name is missing, while there is room, drawn for the current `dashboardOrientation`; if no layout was in use, the first one is then. The answer carries `restored`, how many were added (`0` when all are there or the list is full). A value that is not a boolean is rejected as `restoreDefaults` |
+| `weather.lat`, `weather.lon` | Set the location only when present, and then both are required: latitude -90 to 90, longitude -180 to 180. `place` goes with them (missing means `""`; the reader keeps 64 bytes). Ignored when `weather.hasLocation` is `false`, so an echoed GET with no location does not set 0,0 |
+| `weather.clearLocation` | `true` clears the location; it wins over `lat`/`lon` in the same body |
+| `weather.units` | `"c"` or `"f"` |
+| `carousel.folder` | Absolute SD path without `..`, at most 128 bytes; a trailing `/` is dropped |
+| `carousel.intervalMinutes` | Whole minutes, 5 to 1440 |
+
+Successful response, with `id` only after a `saveLayout` and `restored` only
+after `restoreDefaults`:
+
+```json
+{"ok":true,"id":3}
+```
+
+```json
+{"ok":true,"restored":2}
+```
+
+A rejected value answers `400` and saves nothing; `field` names the first bad
+key:
+
+```json
+{"error":"Invalid value","field":"saveLayout.tiles[1]"}
+```
+
+A missing or malformed body also answers `400` with an `error`; a failed SD
+write answers `500`.
+
+## To-do API
+
+The To-do tile's list, on the SD card in `/.crosspoint/todo.json`: up to 50
+tasks of up to 80 bytes of UTF-8 each. Each request reads the file, acts and
+saves it.
+
+### `GET /api/todo`
+
+```json
+{"items":[{"text":"Buy milk","done":false},{"text":"Call Anna","done":true}],"max":50,"maxText":80}
+```
+
+### `POST /api/todo`
+
+```bash
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"op":"add","text":"Water the plants"}' \
+  http://crosspoint.local/api/todo
+```
+
+| `op` | Also needs | Does |
+|------|------------|------|
+| `add` | `text` | Adds a task at the end |
+| `edit` | `index`, `text` | Replaces a task's text |
+| `toggle` | `index` | Ticks or unticks a task |
+| `delete` | `index` | Removes a task |
+| `clearDone` | | Removes every ticked task (none is not an error) |
+
+`index` counts from 0 in the list's order. `text` must be 1 to 80 bytes of
+well-formed UTF-8 without control characters. Success answers the updated list
+in `GET`'s shape. A problem answers `400` with `field`: `op`, `text`, `index`,
+or `items` when the list is full (`{"error":"The list is full","field":"items"}`).
 
 ## Font Management API
 

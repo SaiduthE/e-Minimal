@@ -1,470 +1,1035 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>CrossPoint Games</title>
+    <meta name="color-scheme" content="light dark" />
+    <title>Game Night – e-Minimal</title>
+    <link rel="stylesheet" href="/css/app.css" />
     <style>
-      :root {
-        --font-color: #333;
-        --bg: #f5f5f5;
-        --title-color: #2c3e50;
-        --card-bg: #fff;
-        --label-color: #7f8c8d;
-        --border-color: #ddd;
-        --accent-color: rgb(110, 154, 130);
-        --accent-hover-color: #5a8c73;
-        --red: #b5433a;
-        --blue: #3a5fb5;
-      }
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --font-color: #f5f5f5;
-          --bg: #262626;
-          --title-color: #ecf0f1;
-          --card-bg: #3a3a3a;
-          --label-color: #bdc3c7;
-          --border-color: #555;
-          --red: #e0736a;
-          --blue: #7f9be0;
-          color-scheme: dark;
-        }
-      }
-      * { box-sizing: border-box; }
-      body {
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Ubuntu, sans-serif;
-        max-width: 560px;
-        margin: 0 auto;
-        padding: 16px;
-        padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
-        background: var(--bg);
-        color: var(--font-color);
-      }
-      h1 { font-size: 1.3rem; color: var(--title-color); margin: 0 0 4px; }
-      .sub { color: var(--label-color); font-size: 0.9rem; margin-bottom: 12px; }
-      .card {
-        background: var(--card-bg);
-        border-radius: 10px;
-        padding: 14px;
-        margin-bottom: 12px;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
-      }
-      button {
-        font: inherit;
-        padding: 12px 14px;
-        border: 1px solid var(--border-color);
-        border-radius: 8px;
-        background: var(--card-bg);
-        color: var(--font-color);
-        cursor: pointer;
-        min-height: 44px;
-      }
-      button.primary { background: var(--accent-color); border-color: var(--accent-color); color: #fff; }
-      button.primary:active { background: var(--accent-hover-color); }
-      button:disabled { opacity: 0.45; cursor: default; }
-      input {
-        font: inherit;
-        padding: 11px;
-        width: 100%;
-        border: 1px solid var(--border-color);
-        border-radius: 8px;
-        background: var(--bg);
-        color: var(--font-color);
-      }
-      .row { display: flex; gap: 8px; flex-wrap: wrap; }
-      .row > * { flex: 1 1 auto; }
-      .stack > * + * { margin-top: 8px; }
-      .word { font-size: 1.8rem; font-weight: 700; text-align: center; padding: 18px 8px; letter-spacing: 0.02em; }
-      .muted { color: var(--label-color); font-size: 0.85rem; }
-      .pill { display: inline-block; padding: 2px 8px; border-radius: 99px; background: var(--bg); font-size: 0.8rem; }
-      ul.players { list-style: none; padding: 0; margin: 0; }
-      ul.players li { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--border-color); }
-      ul.players li:last-child { border-bottom: none; }
-      .grid5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; }
-      .grid5 button { padding: 6px 2px; min-height: 52px; font-size: 0.68rem; font-weight: 600; word-break: break-word; }
-      .tile-red { background: var(--red); color: #fff; border-color: var(--red); }
-      .tile-blue { background: var(--blue); color: #fff; border-color: var(--blue); }
-      .tile-neutral { background: #c9bda6; color: #2b2b2b; border-color: #b6a98c; }
-      .tile-assassin { background: #1e1e1e; color: #fff; border-color: #000; }
-      .tile-done { opacity: 0.55; text-decoration: line-through; }
-      .grid10 { display: grid; grid-template-columns: repeat(10, 1fr); gap: 2px; }
-      .grid10 button { padding: 0; min-height: 0; aspect-ratio: 1; font-size: 0.6rem; border-radius: 4px; }
-      .cell-ship { background: var(--accent-color); border-color: var(--accent-color); color: #fff; }
-      .cell-hit { background: var(--red); border-color: var(--red); color: #fff; }
-      .cell-miss { background: var(--border-color); color: var(--label-color); }
-      .die { font-size: 3rem; text-align: center; font-weight: 700; }
-      .err { color: var(--red); font-size: 0.85rem; min-height: 1.2em; }
+  /* Game Night; the rest is /css/app.css. Fills follow the reader's board legend. */
+  /* Fallbacks if /css/app.css fails to load; app.css wins when it loads. */
+  :where(:root) { --paper: #f2f2ef; --surface: #fff; --ink: #000; --ink-2: #555; --ink-3: #8a8a8a; --rule: #d6d6d2; --rule-2: #eaeae6; --danger: #b3261e; --focus: #000; --serif: Georgia, serif; --sans: system-ui, sans-serif; --gutter: 16px; --topbar-h: 52px; --ctl-h: 40px; }
+  :where(body) { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); }
+  :where(main) { display: block; margin: 0 auto; padding: 0 var(--gutter) 48px; }
+  :where(.toast:not(.show)) { visibility: hidden; }
+  :where(.topbar, .row) { display: flex; gap: 12px; justify-content: space-between; padding: 8px var(--gutter); }
+  :root {
+    --hatch: repeating-linear-gradient(-45deg, var(--ink) 0 1px, transparent 1px 5px);
+    --cross: linear-gradient(to top right, transparent calc(50% - 1px), var(--paper) 0 calc(50% + 1px), transparent 0),
+      linear-gradient(to bottom right, transparent calc(50% - 1px), var(--paper) 0 calc(50% + 1px), transparent 0);
+  }
+  main { max-width: calc(560px + 2 * var(--gutter)); padding-top: 16px; }
+  [hidden] { display: none !important; }
+  #status:empty { display: none; }
+  #defs { position: absolute; width: 0; height: 0; color: var(--ink); }
+  #sw { margin-top: -16px; }
+  #sw .btn-group { flex-wrap: wrap; }
+  #snd svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  #snd[aria-pressed="true"] .off, #snd[aria-pressed="false"] .on { display: none; }
+  main .card { display: flex; flex-direction: column; gap: 12px; }
+  main .card > * { margin: 0; }
+  .row > .chip + .chip { margin-left: -6px; }
+  .chip-on { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+  .sunk { text-decoration: line-through; }
+  .vote { justify-content: space-between; }
+  .word { padding: 12px 0; font: 600 2rem/1.2 var(--serif); text-align: center; overflow-wrap: anywhere; }
+  .die { align-self: center; display: flex; align-items: center; justify-content: center; width: 96px; height: 96px; border: 2px solid var(--ink); border-radius: 4px; font: 600 3.5rem/1 var(--serif); }
+  .field-row > .num { flex: 0 0 72px; }
+
+  .shp { flex: none; width: 26px; height: 26px; vertical-align: middle; }
+  .shp * { fill: var(--surface); stroke: var(--ink); stroke-width: 2; }
+  .shp text { fill: var(--ink); stroke: none; font: 700 11px var(--sans); text-anchor: middle; }
+  h2 .shp { margin-right: 8px; }
+  .chip .shp { width: 18px; height: 18px; margin-left: -6px; }
+  .tile .shp { width: 56px; height: 56px; margin-bottom: 6px; }
+  .lg span { display: inline-flex; align-items: center; gap: 6px; margin-right: 12px; white-space: nowrap; }
+
+  .tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .tile { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 12px 8px; border: 1px solid var(--rule); border-radius: 4px; background: var(--surface); color: var(--ink); font: inherit; text-align: center; cursor: pointer; }
+  .tile:hover:not(:disabled) { border-color: var(--ink); }
+  .tile:disabled { cursor: default; }
+  .tile:disabled:not([aria-pressed="true"]) { opacity: .4; }
+  .tile[aria-pressed="true"] { padding: 11px 7px; border: 2px solid var(--ink); outline: 3px solid var(--ink); outline-offset: 3px; }
+  .tile:focus-visible { outline: 2px dashed var(--focus); outline-offset: 3px; }
+  .tile b { font: 600 1rem/1.3 var(--serif); }
+  .tile small { font-size: .8125rem; color: var(--ink-2); }
+
+  /* Thumbnails, viewBox 0 0 100 100: f solid, o outline, h/d light/dark hatch, p paper */
+  .th { display: block; width: 100%; max-width: 96px; height: auto; margin-bottom: 6px; }
+  .th * { fill: none; }
+  .th .f { fill: currentColor; }
+  .th .p { fill: var(--surface); }
+  .th .h { fill: url(#h1); }
+  .th .d { fill: url(#h2); }
+  .th .o { stroke: currentColor; stroke-width: 2; }
+  .th .t { stroke-width: 1.3; }
+  .th .w { stroke-width: 3; }
+  .th .x { stroke: var(--surface); stroke-width: 2.2; }
+  .th .g { stroke: currentColor; stroke-width: .8; }
+  .th .q { fill: currentColor; stroke: var(--surface); stroke-width: 3; paint-order: stroke; font: 700 18px var(--sans); text-anchor: middle; }
+
+  /* Codenames: k<kind> tile, t<kind> fill; rv revealed, key the spymaster's hidden key */
+  .cn { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
+  .ct { position: relative; display: flex; align-items: center; justify-content: center; min-width: 0; min-height: 52px; padding: 4px 1px; border: 1px solid var(--rule); border-radius: 4px; background: var(--surface); color: var(--ink); font: 600 .6875rem/1.2 var(--sans); letter-spacing: -.01em; overflow-wrap: anywhere; }
+  .ct:not(:disabled) { border-color: var(--ink); cursor: pointer; }
+  .ct[aria-pressed="true"] { padding: 4px 3px; box-shadow: inset 0 0 0 3px var(--ink); }
+  .ct > i { position: absolute; inset: 0; border-radius: 3px; }
+  .ct > span { position: relative; border-radius: 2px; }
+  .rv { border-color: var(--ink); }
+  .rv.k1, .rv.k3 { color: var(--paper); }
+  .rv.k2 { border-width: 2px; }
+  .rv.k3 > span, .k2 > span { padding: 0 1px; background: var(--surface); }
+  .rv.k3 > span { background: var(--ink); }
+  .key > i { opacity: .3; }
+  .t0 { background: linear-gradient(var(--ink), var(--ink)) center / calc(100% - 6px) 2px no-repeat; }
+  .t1 { background: var(--ink); }
+  .t2 { background: var(--hatch); }
+  .t3 { background: var(--cross), var(--ink); }
+  .lg i { display: inline-block; width: 14px; height: 14px; border: 1px solid var(--ink); border-radius: 2px; }
+
+  .bs { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 2px; }
+  .bs > button { min-width: 0; aspect-ratio: 1; padding: 0; border: 1px solid var(--rule); border-radius: 2px; background: var(--surface); }
+  .bs > button:not(:disabled) { cursor: pointer; }
+  .bs > .wa:not(:disabled) { border-color: var(--ink-3); }
+  .bs > .sh { background: var(--ink); border-color: var(--ink); }
+  .bs > .cur { background: var(--hatch); border-color: var(--ink); }
+  .bs > .hit { background: var(--cross), var(--ink); border-color: var(--ink); }
+  .bs > .ms { background: radial-gradient(circle, var(--ink) 0 2.5px, transparent 3px); }
     </style>
   </head>
   <body>
-    <h1 id="title">CrossPoint Games</h1>
-    <div class="sub" id="status">Connecting to the reader...</div>
-    <div id="main"></div>
-    <div class="err" id="err"></div>
+    <svg id="defs" aria-hidden="true" focusable="false">
+      <pattern id="h1" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+        <path d="M1 0V5" stroke="currentColor" stroke-width="1.2" />
+      </pattern>
+      <pattern id="h2" width="3" height="3" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+        <path d="M1 0V3" stroke="currentColor" stroke-width="1.6" />
+      </pattern>
+    </svg>
+    <header class="topbar">
+      <div class="topbar-title" id="title">Game Night</div>
+      <div class="topbar-status" id="chip"></div>
+      <button type="button" class="btn btn-sm btn-icon" id="snd" aria-pressed="true" aria-label="Sound">
+        <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3 9h4l5-4v14l-5-4H3z" />
+          <path class="on" d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" />
+          <path class="off" d="M16 9l6 6M22 9l-6 6" />
+        </svg>
+      </button>
+    </header>
+    <main>
+      <div class="toolbar toolbar-sticky" id="sw" hidden></div>
+      <p class="muted" id="status">Connecting to the reader…</p>
+      <div id="view"></div>
+      <div id="table"></div>
+    </main>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <script>
-      var token = null;
-      try { token = localStorage.getItem("cpgToken"); } catch (e) { token = null; }
-      var state = null;
-      var lastVersion = -1;
-      var lastRender = "";
-      var orientation = "h";
-      var placingShip = 0;
-      var clueWord = "";
-      var clueCount = 1;
+  // A closure: a global var cannot shadow the read-only window.orientation phones have.
+  (function () {
+  var token = null;
+  try { token = localStorage.getItem("cpgToken"); } catch (e) { token = null; }
+  var state = null;
+  var prev = null; // the last reply for this view, for sound diffs
+  var mySeat = -1; // s.me
+  var asSeat = -1, asName = ""; // the test seat being played, -1 for my own
+  var gen = 0; // bumped to drop replies in flight
+  var sigSw = "", sigView = "", sigTable = "";
+  var shipDir = "h", placingShip = 0, clueWord = "", clueCount = 1, nameDraft = "", joinError = "", joinOffer = "";
+  var picked = -1; // the Codenames tile picked on this phone; it reaches the reader only on Guess
+  var lost = false, pollAt = 0, toastTimer = 0;
+  var KIND = ["bystander", "red", "blue", "assassin"];
+  var CLUE_UNLIMITED = 10; // Codenames::UNLIMITED
+  var SHAPES = ["Circle", "Square", "Triangle", "Diamond"];
+  var CORNERS = ["Top left", "Top right", "Bottom right", "Bottom left"];
 
-      function el(id) { return document.getElementById(id); }
-      function esc(s) { return String(s == null ? "" : s); }
-      function fail(msg) { el("err").textContent = msg || ""; }
+  function el(id) { return document.getElementById(id); }
 
-      function api(path, then) {
-        fetch(path, { method: "POST" })
-          .then(function (r) { return r.json(); })
-          .then(function (data) { fail(""); apply(data); if (then) then(data); })
-          .catch(function () { fail("Lost the reader - retrying"); });
-      }
+  function text(tag, content, cls) {
+    var e = document.createElement(tag);
+    e.textContent = content;
+    if (cls) e.className = cls;
+    return e;
+  }
 
-      function act(verb, a, b, c, text) {
-        if (!token) return;
-        var url = "/api/game/act?t=" + token + "&v=" + verb;
-        if (a !== undefined && a !== null) url += "&a=" + a;
-        if (b !== undefined && b !== null) url += "&b=" + b;
-        if (c !== undefined && c !== null) url += "&c=" + c;
-        if (text) url += "&s=" + encodeURIComponent(text);
-        api(url);
-      }
+  function div(cls) { return text("div", "", cls); }
 
-      function join() {
-        var name = el("nameInput").value.trim();
-        if (!name) { fail("Pick a name first"); return; }
-        api("/api/game/join?name=" + encodeURIComponent(name), function (data) {
-          if (data.t) {
-            token = data.t;
-            try { localStorage.setItem("cpgToken", token); } catch (e) {}
-          } else {
-            fail(data.error || "The table is full");
-          }
-        });
-      }
+  function button(label, cls, onClick, disabled) {
+    var b = text("button", label, cls);
+    b.type = "button";
+    if (disabled) b.disabled = true;
+    else b.onclick = onClick;
+    return b;
+  }
 
-      function leave() {
-        if (token) api("/api/game/leave?t=" + token);
-        token = null;
-        try { localStorage.removeItem("cpgToken"); } catch (e) {}
-        poll();
-      }
+  function input(id, type, value, onInput) {
+    var i = document.createElement("input");
+    i.id = id;
+    i.type = type;
+    i.value = value;
+    i.oninput = function () { onInput(i.value); };
+    return i;
+  }
 
-      function poll() {
-        fetch("/api/game/state" + (token ? "?t=" + token : ""))
-          .then(function (r) { return r.json(); })
-          .then(function (data) { fail(""); apply(data); })
-          .catch(function () { fail("Lost the reader - retrying"); });
-      }
+  function card(box, title, chip) {
+    var c = text("section", "", "card"), h = text("h2", title);
+    if (chip) {
+      var head = div("card-head");
+      head.appendChild(h);
+      head.appendChild(text("span", chip, "chip"));
+      c.appendChild(head);
+    } else {
+      c.appendChild(h);
+    }
+    box.appendChild(c);
+    return c;
+  }
 
-      function apply(data) {
-        if (!data || data.v === undefined) return;
-        // The device rejoins a phone whose seat was recycled, so trust the reply.
-        if (data.seat === -1 && token && data.phase === "lobby") {
-          token = null;
-          try { localStorage.removeItem("cpgToken"); } catch (e) {}
+  function toast(msg, sticky, fine) {
+    var t = el("toast");
+    clearTimeout(toastTimer);
+    t.textContent = msg;
+    t.className = fine ? "toast show" : "toast toast-danger show";
+    if (!sticky) toastTimer = setTimeout(hideToast, 3000);
+  }
+
+  function hideToast() { el("toast").classList.remove("show"); }
+
+  // app.js is not loaded: a small confirm in app.css's modal markup (Esc, backdrop, Tab, focus).
+  function ask(title, body, ok, then) {
+    if (el("askTitle")) return;
+    var back = div("modal-backdrop open"), box = div("modal"), head = div("modal-head"), foot = div("modal-foot");
+    var opener = document.activeElement, id = opener && opener.id, h = text("h2", title), mid = div("modal-body");
+    var no = button("Cancel", "btn", close), yes = button(ok, "btn btn-danger", function () { close(); then(); });
+    function close() {
+      document.removeEventListener("keydown", key);
+      document.body.removeChild(back);
+      var f = (id && el(id)) || opener;
+      if (f && f.focus) f.focus();
+    }
+    function key(e) {
+      if (e.key === "Escape") close();
+      else if (e.key === "Tab") { e.preventDefault(); (document.activeElement === no ? yes : no).focus(); }
+    }
+    h.id = "askTitle";
+    box.setAttribute("role", "dialog");
+    box.setAttribute("aria-modal", "true");
+    box.setAttribute("aria-labelledby", "askTitle");
+    head.appendChild(h);
+    mid.appendChild(text("p", body));
+    foot.appendChild(no);
+    foot.appendChild(yes);
+    box.appendChild(head);
+    box.appendChild(mid);
+    box.appendChild(foot);
+    back.appendChild(box);
+    back.onclick = function (e) { if (e.target === back) close(); };
+    document.addEventListener("keydown", key);
+    document.body.appendChild(back);
+    no.focus();
+  }
+
+  function player(s, seat) {
+    var ps = s.players || [];
+    for (var i = 0; i < ps.length; i++) if (ps[i].s === seat) return ps[i];
+    return null;
+  }
+
+  function nameOf(s, seat) {
+    var p = player(s, seat);
+    return p ? p.n : "Seat " + (seat + 1);
+  }
+
+  // Only the host of a test-mode build plays test seats.
+  function canSwitch(s) {
+    var p = player(s, mySeat);
+    return s.testMode === true && !!token && !!p && !!p.host;
+  }
+
+  function hostLine(s, what) {
+    var h = (s.players || []).filter(function (p) { return p.host; })[0];
+    return asSeat >= 0 && canSwitch(s) ? "Switch back to " + nameOf(s, mySeat) + " to " + what + "."
+      : "Only " + (h ? h.n : "the host") + ", the host, can " + what + ".";
+  }
+
+  function rejoinable(s) {
+    return (s.players || []).filter(function (p) { return p.away && !p.test; }).map(function (p) { return p.n; });
+  }
+
+  // Rebuilds a section and restores focus and caret, so a repaint keeps the keyboard up.
+  function rebuild(box, fill) {
+    var a = document.activeElement, id = a && a.id && box.contains(a) ? a.id : "", from = null, to = null;
+    try { from = a.selectionStart; to = a.selectionEnd; } catch (e) {}
+    box.innerHTML = "";
+    fill(box);
+    var f = id && el(id);
+    if (f) {
+      f.focus();
+      try { if (from != null) f.setSelectionRange(from, to); } catch (e) {}
+    }
+  }
+
+  function call(path, method, then) {
+    var g = gen;
+    return fetch(path, { method: method, cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (lost) { lost = false; hideToast(); }
+        if (g !== gen) return;
+        try {
+          (then || apply)(data);
+        } catch (e) {
+          // A bug, not the network: log it and let the next poll rebuild everything.
+          sigSw = sigView = sigTable = "";
+          console.error(e);
         }
-        state = data;
+      }, function () { lost = true; toast("Lost the reader – retrying", true); });
+  }
+
+  function stale() {
+    gen++;
+    prev = null;
+  }
+
+  function asQuery() { return asSeat >= 0 ? "&as=" + asSeat : ""; }
+
+  function poll(force) {
+    // One poll at a time, unless the last hung for 5 s.
+    if (!force && Date.now() - pollAt < 5000) return;
+    pollAt = Date.now();
+    call("/api/game/state" + (token ? "?t=" + token + asQuery() : ""), "GET").then(function () { pollAt = 0; });
+  }
+
+  function act(verb, a, b, c, words, own) {
+    if (!token) return;
+    var url = "/api/game/act?t=" + token + (own ? "" : asQuery()) + "&v=" + verb;
+    if (a != null) url += "&a=" + a;
+    if (b != null) url += "&b=" + b;
+    if (c != null) url += "&c=" + c;
+    if (words) url += "&s=" + encodeURIComponent(words);
+    call(url, "POST");
+  }
+
+  // Host-only verbs go as this phone: the reader refuses them for a test seat.
+  function hostAct(verb, a) { act(verb, a, null, null, "", true); }
+
+  // The captive-portal sheet and the browser keep separate storage; rejoining by name recovers the seat.
+  function join(name, again) {
+    name = (name || nameDraft).trim();
+    if (!name) return toast("Pick a name first");
+    call("/api/game/join?name=" + encodeURIComponent(name) + (again ? "&rejoin=1" : ""), "POST", function (data) {
+      if (!data.t) {
+        joinError = data.error || "The table is full";
+        joinOffer = data.rejoin || "";
+        sigView = "";
+        return state && render();
+      }
+      token = data.t;
+      joinError = joinOffer = "";
+      stale(); // drops tokenless polls in flight
+      try { localStorage.setItem("cpgToken", token); } catch (e) {}
+      if (data.rejoined) toast("Welcome back, " + name, false, true);
+      poll(true);
+    });
+  }
+
+  function forget() {
+    token = null;
+    mySeat = asSeat = -1;
+    stale();
+    try { localStorage.removeItem("cpgToken"); } catch (e) {}
+  }
+
+  function leave() {
+    ask("Leave the table?", "You give up your seat. Join again from this page to play.", "Leave", function () {
+      if (!token || state.phase !== "lobby") return; // the reader keeps seats while a round is on
+      call("/api/game/leave?t=" + token, "POST", function (data) {
+        if (data.error) return toast(data.error);
+        forget();
+        poll(true);
+      });
+    });
+  }
+
+  function switchTo(seat, name) {
+    if (seat === asSeat) return;
+    asSeat = seat;
+    asName = name;
+    stale();
+    placingShip = 0;
+    clueWord = "";
+    picked = -1;
+    if (state) render();
+    poll(true);
+  }
+
+  function apply(s) {
+    if (!s || s.v === undefined) return;
+    if (s.me !== undefined) mySeat = s.me;
+    else if (asSeat < 0) mySeat = s.seat;
+    // A token the reader no longer knows (it rebooted) is dead.
+    if (mySeat === -1 && token) forget();
+    if (asSeat >= 0) {
+      var p = player(s, asSeat), next = asSeat;
+      if (!canSwitch(s)) {
+        next = -1;
+      } else if (!p || !p.test || p.n !== asName) {
+        // Seats are packed at a round start: follow the test player by name.
+        next = -1;
+        (s.players || []).forEach(function (q) { if (q.test && q.n === asName) next = q.s; });
+      } else if (s.seat !== asSeat) {
+        next = -1; // the reader answered as this phone
+      }
+      if (next !== asSeat) {
+        asSeat = next;
+        if (next < 0) asName = "";
+        stale();
+        return poll(true);
+      }
+    }
+    try {
+      if (prev) cues(prev, s).filter(String).slice(0, 3).forEach(function (n, i) { play(n, i * .18); });
+    } catch (e) {
+      console.error(e);
+    }
+    prev = s;
+    state = s;
+    render();
+  }
+
+
+  function render() {
+    var s = state, ps = s.players || [];
+    // A pick lasts while this phone can still guess that tile.
+    var tile = s.game === "codenames" && s.g && (s.g.tiles || [])[picked];
+    if (!tile || tile.r || !myTurn(s) || s.g.spymaster) picked = -1;
+    el("title").textContent = s.phase === "lobby" ? "Game Night" : s.title || "Game Night";
+    el("status").textContent = s.status || "";
+
+    var chip = el("chip");
+    var label = s.seat < 0 ? "Watching" : asSeat >= 0 ? "Playing as " + nameOf(s, asSeat) : s.host ? "Host" : "Seat " + (s.seat + 1);
+    if (chip.textContent !== label) {
+      chip.innerHTML = "";
+      chip.appendChild(text("span", label, asSeat >= 0 ? "chip chip-on" : "chip"));
+    }
+
+    // Rebuild only what changed, so polls do not steal focus.
+    var tests = ps.filter(function (p) { return p.test; });
+    var on = canSwitch(s) && tests.length > 0;
+    var sig = on ? [mySeat, asSeat, nameOf(s, mySeat)].concat(tests.map(function (p) { return p.s + p.n; })).join() : "";
+    if (sig !== sigSw) {
+      sigSw = sig;
+      rebuild(el("sw"), function (box) {
+        box.hidden = !on;
+        if (on) switcher(box, s, tests);
+      });
+    }
+    // The join card and the game views skip s.v, so typing a name or a clue survives other players' polls.
+    sig = s.seat < 0 ? ["join", s.phase === "lobby", joinError, joinOffer, rejoinable(s)].join()
+      : [s.phase === "lobby" ? s.v : JSON.stringify(s.g), s.seat, s.phase, s.over, s.host, s.canStart, s.testMode, mySeat, asSeat,
+        shipDir, placingShip, picked, ps.map(function (p) { return p.n + p.host; })].join();
+    if (sig !== sigView) {
+      sigView = sig;
+      rebuild(el("view"), function (box) { view(box, s); });
+    }
+    sig = JSON.stringify(ps) + [s.seat, mySeat, s.phase, s.game].join() + JSON.stringify(s.g && s.g.seats);
+    if (sig !== sigTable) {
+      sigTable = sig;
+      rebuild(el("table"), function (box) { table(box, s); });
+    }
+  }
+
+  function switcher(box, s, tests) {
+    box.appendChild(text("span", "Playing as", "small muted"));
+    var group = div("btn-group");
+    group.setAttribute("role", "group");
+    group.setAttribute("aria-label", "Playing as");
+    [{ s: mySeat, n: nameOf(s, mySeat) }].concat(tests).forEach(function (p) {
+      var mine = p.s === mySeat;
+      var b = button(p.n, "btn btn-sm", function () { switchTo(mine ? -1 : p.s, p.n); });
+      b.id = "sw" + p.s;
+      b.setAttribute("aria-pressed", mine ? asSeat < 0 : asSeat === p.s);
+      group.appendChild(b);
+    });
+    box.appendChild(group);
+  }
+
+  function view(box, s) {
+    if (s.seat < 0) return joinCard(box, s);
+    if (s.phase === "lobby") return lobby(box, s);
+    if (s.over) overCard(box, s);
+    var draw = { undercover: undercover, codenames: codenames, battleship: battleship, ludo: ludo }[s.game];
+    if (draw) draw(box, s, s.g || {});
+    if (!s.over) roundCard(box, s);
+  }
+
+  function joinCard(box, s) {
+    var open = s.phase === "lobby", c = card(box, open ? "Join the table" : "A round is on"), back = rejoinable(s);
+    if (!open) c.appendChild(text("p", "Rejoin under your name, or watch it on the reader.", "small muted"));
+    var f = div("field"), label = text("label", "Your name");
+    var name = input("nameInput", "text", nameDraft, function (v) { nameDraft = v; });
+    label.htmlFor = "nameInput";
+    name.maxLength = 12;
+    name.autocomplete = "nickname";
+    name.setAttribute("enterkeyhint", "go");
+    name.onkeydown = function (e) { if (e.key === "Enter") join(); };
+    f.appendChild(label);
+    f.appendChild(name);
+    c.appendChild(f);
+    if (joinError) {
+      var err = text("p", joinError, "small text-danger");
+      err.setAttribute("role", "alert");
+      c.appendChild(err);
+    }
+    if (joinOffer) c.appendChild(button("Rejoin as " + joinOffer, "btn btn-block", function () { join(joinOffer, true); }));
+    c.appendChild(button("Join", "btn btn-primary btn-block", function () { join(); })).id = "joinBtn";
+    back = back.filter(function (n) { return n !== joinOffer; });
+    if (back.length) c.appendChild(text("h3", "Were you playing?"));
+    back.forEach(function (n) { c.appendChild(button("Rejoin as " + n, "btn btn-block", function () { join(n, true); })); });
+  }
+
+  function lobby(box, s) {
+    var ps = s.players || [], c = card(box, s.host ? "Pick a game" : "Up next"), grid = div("tiles");
+    grid.setAttribute("role", "group");
+    grid.setAttribute("aria-label", "Games");
+    (s.games || []).forEach(function (g) {
+      var b = button("", "tile", function () { if (g.k !== s.game) hostAct("pick", g.i); }, !s.host);
+      b.id = "game" + g.i;
+      b.setAttribute("aria-pressed", g.k === s.game);
+      b.innerHTML = thumb(g.k);
+      b.appendChild(text("b", g.t));
+      b.appendChild(text("small", (g.min === g.max ? g.min : g.min + "–" + g.max) + " players"));
+      grid.appendChild(b);
+    });
+    c.appendChild(grid);
+    if (s.host) c.appendChild(button("Start " + s.title, "btn btn-primary btn-block", function () { hostAct("next"); }, !s.canStart));
+    else c.appendChild(text("p", hostLine(s, "pick the game and start it"), "small muted"));
+    var hint = !s.canStart ? "Needs " + s.minPlayers + " players – " + ps.length + " here"
+      : ps.length > s.maxPlayers ? "The first " + s.maxPlayers + " play; the others watch the reader." : "";
+    if (hint) c.appendChild(text("span", hint, "field-hint"));
+    if (!s.host || s.testMode !== true) return;
+
+    var t = card(box, "Testing alone?"), row = div("toolbar");
+    t.appendChild(text("p", "Test players fill empty seats. Play their turns from this phone.", "small muted"));
+    row.appendChild(button("Add a test player", "btn", function () { hostAct("addtest"); }, ps.length >= 8));
+    row.appendChild(button("Remove one", "btn", function () { hostAct("droptest"); }, !ps.some(function (p) { return p.test; })));
+    t.appendChild(row);
+  }
+
+  function overCard(box, s) {
+    var c = card(box, "Round over");
+    if (s.host) {
+      c.appendChild(button("Play again", "btn btn-primary btn-block", function () { hostAct("next"); }));
+      c.appendChild(button("Back to the lobby", "btn btn-block", function () { hostAct("ready"); }));
+    } else {
+      c.appendChild(text("p", hostLine(s, "deal again or go back to the lobby"), "small muted"));
+    }
+  }
+
+  function roundCard(box, s) {
+    if (!s.host) return box.appendChild(text("p", hostLine(s, "end the round"), "small muted"));
+    var c = card(box, "Round"), b = button("End the round", "btn btn-block", function () {
+      ask("End the round?", "Everyone goes back to the lobby, and this round is lost.", "End the round", function () {
+        var me = player(state, mySeat);
+        if (state.phase !== "lobby" && me && me.host) hostAct("end");
+      });
+    });
+    b.id = "endBtn";
+    c.appendChild(text("p", "Ending it sends everyone back to the lobby.", "small muted"));
+    c.appendChild(b);
+  }
+
+  function table(box, s) {
+    var ps = s.players || [], seats = s.game === "undercover" && s.g && s.g.seats;
+    var c = card(box, "At the table", ps.length + (ps.length === 1 ? " player" : " players")), list = div("list");
+    ps.forEach(function (p) {
+      var row = div("row"), u = seats && seats[p.s], tags = [];
+      row.appendChild(text("span", p.n, "row-main"));
+      if (p.s === mySeat) tags.push("you");
+      if (p.host) tags.push("host");
+      if (p.test) tags.push("test");
+      else if (p.away) tags.push("away");
+      if (u && !u.alive) tags.push("out");
+      if (u && u.role >= 0) tags.push(u.role ? "undercover" : "civilian");
+      tags.forEach(function (tag) { row.appendChild(text("span", tag, "chip")); });
+      list.appendChild(row);
+    });
+    c.appendChild(ps.length ? list : text("p", "Nobody yet. Join to take the first seat.", "small muted"));
+    if (s.phase === "lobby" && token && mySeat >= 0) {
+      var b = button("Leave the table", "btn btn-block", leave);
+      b.id = "leaveBtn";
+      c.appendChild(b);
+    }
+  }
+
+  function seatsOnly(box, game, n) {
+    var c = card(box, "Watching");
+    c.appendChild(text("p", game + " seats the first " + n + " players – watch the reader.", "small muted"));
+    return c;
+  }
+
+
+  function undercover(box, s, g) {
+    var c = card(box, "Your word", g.round ? "Round " + g.round : "");
+    c.appendChild(text("div", g.word || "–", "word"));
+    if (g.msg) c.appendChild(text("p", g.msg, "small muted"));
+    if (!g.alive) {
+      c.appendChild(text("p", "You are out – enjoy the show.", "small muted"));
+    } else if (g.phase === "describe") {
+      c.appendChild(button(g.ready ? "Waiting for the others" : "I have described mine", "btn btn-primary btn-block",
+        function () { act("ready"); }, g.ready));
+    } else if (g.phase === "vote") {
+      c.appendChild(text("h3", "Vote for the undercover"));
+      (g.seats || []).forEach(function (u, i) {
+        if (!u.alive || i === s.seat) return;
+        var b = button("", "btn btn-block vote", function () { act("vote", i); });
+        b.setAttribute("aria-pressed", g.myVote === i);
+        b.appendChild(text("span", nameOf(s, i)));
+        if (u.votes) b.appendChild(text("span", u.votes + (u.votes > 1 ? " votes" : " vote")));
+        c.appendChild(b);
+      });
+    }
+    if (s.host && /^(describe|vote|reveal)$/.test(g.phase)) {
+      c.appendChild(button(g.phase === "reveal" ? "Next round" : "Move it along", "btn btn-block", function () { hostAct("next"); }));
+    }
+  }
+
+  // The reader refuses a clue that is a word still on the board, or its plural; say which.
+  function onBoard(clue) {
+    var c = clue.toUpperCase(), hit = "";
+    ((state.g || {}).tiles || []).forEach(function (t) {
+      var a = c, b = t.w;
+      if (a.length > b.length) { a = t.w; b = c; }
+      if (!t.r && b.indexOf(a) === 0 && /^(E?S)?$/.test(b.slice(a.length))) hit = t.w;
+    });
+    return hit;
+  }
+
+  function giveClue() {
+    var w = clueWord.trim(), n = parseInt(clueCount, 10) || 0, hit = w && onBoard(w);
+    if (!w) return toast("A clue needs a word");
+    if (hit) return toast(hit + " is on the board – pick another clue");
+    clueWord = "";
+    act("clue", Math.max(0, Math.min(CLUE_UNLIMITED, n)), null, null, w);
+  }
+
+  function codenames(box, s, g) {
+    var mine = g.myTeam === g.turn, live = g.phase !== "over";
+    var c = card(box, (g.myTeam === 1 ? "Red" : "Blue") + (g.spymaster ? " spymaster" : " operative"),
+      live ? (mine ? "Your team is up" : "Their turn") : "");
+    if (g.msg) c.appendChild(text("p", g.msg, "small muted"));
+
+    if (g.spymaster && mine && g.phase === "clue") {
+      var f = div("field"), label = text("label", "Your clue"), row = div("field-row");
+      var word = input("clueWord", "text", clueWord, function (v) { clueWord = v; });
+      var count = text("select", "", "num");
+      label.htmlFor = "clueWord";
+      word.maxLength = 16;
+      word.placeholder = "One word";
+      word.autocomplete = "off";
+      word.onkeydown = function (e) { if (e.key === "Enter") giveClue(); };
+      for (var n = 0; n <= CLUE_UNLIMITED; n++) count.appendChild(text("option", n === CLUE_UNLIMITED ? "∞" : n)).value = n;
+      count.id = "clueCount";
+      count.value = clueCount;
+      count.onchange = function () { clueCount = count.value; };
+      count.setAttribute("aria-label", "How many tiles it points to");
+      row.appendChild(word);
+      row.appendChild(count);
+      f.appendChild(label);
+      f.appendChild(row);
+      f.appendChild(text("span", "One word, and how many tiles it points to. 0 or ∞ lets your team guess until it misses.",
+        "field-hint"));
+      c.appendChild(f);
+      c.appendChild(button("Give the clue", "btn btn-primary btn-block", giveClue));
+    }
+
+    var canGuess = mine && !g.spymaster && g.phase === "guess", grid = div("cn");
+    (g.tiles || []).forEach(function (t, i) {
+      var known = t.k >= 0;
+      var b = button("", "ct" + (known ? " k" + t.k + (t.r ? " rv" : " key") : ""), function () {
+        picked = picked === i ? -1 : i;
         render();
+      }, !canGuess || t.r);
+      b.id = "ct" + i;
+      if (canGuess && !t.r) b.setAttribute("aria-pressed", picked === i);
+      b.setAttribute("aria-label", t.w + (known ? ", " + KIND[t.k] : "") + (t.r ? ", revealed" : ""));
+      if (known) b.appendChild(text("i", "", "t" + t.k));
+      // Soft hyphen mid-word: CHOCO-LATE, not CHOCOLAT-E.
+      var half = (t.w.length + 1) >> 1;
+      b.appendChild(text("span", t.w.length > 6 ? t.w.slice(0, half) + "­" + t.w.slice(half) : t.w));
+      grid.appendChild(b);
+    });
+    c.appendChild(grid);
+
+    var legend = text("p", "", "small muted lg");
+    [[1, "Red " + g.red + " left"], [2, "Blue " + g.blue + " left"], [0, "bystander"], [3, "assassin"]].forEach(function (e) {
+      var item = text("span", e[1]);
+      item.insertBefore(text("i", "", "t" + e[0]), item.firstChild);
+      legend.appendChild(item);
+    });
+    c.appendChild(legend);
+    if (!canGuess) return;
+    var pick = (g.tiles || [])[picked];
+    var go = button(pick ? "Guess " + pick.w : "Pick a word to guess", "btn btn-primary btn-block", function () {
+      act("guess", picked);
+      picked = -1;
+      render(); // disables Guess until the reply lands
+    }, !pick);
+    go.id = "guessBtn";
+    c.appendChild(go);
+    c.appendChild(text("span", "Tap a word to pick it, again to drop it; only Guess sends it." +
+      (g.guessed ? "" : " Your team guesses at least once before it can stop."), "field-hint"));
+    c.appendChild(button("Stop guessing", "btn btn-block", function () { act("pass"); }, !g.guessed));
+  }
+
+  // Cells: 0 water, 1 miss, 2 hit, S ship, C the ship being placed.
+  function sea(cells, can, tap) {
+    var grid = div("bs"), names = { ms: "miss", hit: "hit", sh: "ship", cur: "ship", wa: "water" };
+    for (var i = 0; i < 100; i++) {
+      (function (i) {
+        var cls = { 1: "ms", 2: "hit", S: "sh", C: "cur" }[cells.charAt(i)] || "wa";
+        var b = button("", cls, function () { tap(i % 10, (i / 10) | 0); }, !can(i));
+        b.setAttribute("aria-label", "ABCDEFGHIJ".charAt(i % 10) + (((i / 10) | 0) + 1) + " " + names[cls]);
+        grid.appendChild(b);
+      })(i);
+    }
+    return grid;
+  }
+
+  // The rules refuse an off-grid or overlapping ship without a word; say why instead.
+  function place(g, x, y, dir) {
+    var ship = g.ships[placingShip];
+    for (var i = 0; i < ship.len; i++) {
+      var cx = x + (dir === "h" ? i : 0), cy = y + (dir === "v" ? i : 0), d = g.fleet.charAt(cy * 10 + cx);
+      if (cx > 9 || cy > 9 || (d !== "0" && d !== String(placingShip + 1))) return toast("The " + ship.n + " does not fit there");
+    }
+    act("place", placingShip, x, y, dir);
+  }
+
+  function battleship(box, s, g) {
+    if (g.me < 0) return seatsOnly(box, "Battleship", 2);
+    var ships = g.ships || [], fleet = g.fleet || "", c;
+
+    if (g.phase === "place") {
+      c = card(box, "Place your fleet", g.ready ? "Ready" : "");
+      if (g.ready && g.msg) c.appendChild(text("p", g.msg, "small muted"));
+      if (!g.ready) {
+        c.appendChild(text("p", "Pick a ship, then tap the square it starts from. Across and Down turn it.", "small muted"));
+        var pick = div("toolbar"), turn = div("btn-group");
+        ships.forEach(function (sh, i) {
+          var b = button(sh.n + " " + sh.len, "btn btn-sm", function () { placingShip = i; render(); });
+          b.id = "ship" + i;
+          b.setAttribute("aria-pressed", i === placingShip);
+          pick.appendChild(b);
+        });
+        turn.setAttribute("role", "group");
+        turn.setAttribute("aria-label", "Direction");
+        [["h", "Across"], ["v", "Down"]].forEach(function (o) {
+          var b = button(o[1], "btn btn-sm", function () {
+            shipDir = o[0];
+            // A placed ship turns where it stands.
+            var at = fleet.indexOf(String(placingShip + 1));
+            if (at >= 0) place(g, at % 10, (at / 10) | 0, shipDir);
+            render();
+          });
+          b.id = "dir" + o[0];
+          b.setAttribute("aria-pressed", shipDir === o[0]);
+          turn.appendChild(b);
+        });
+        c.appendChild(pick);
+        c.appendChild(turn);
       }
-
-      function button(label, cls, onClick, disabled) {
-        var b = document.createElement("button");
-        b.textContent = label;
-        if (cls) b.className = cls;
-        if (disabled) b.disabled = true;
-        else b.onclick = onClick;
-        return b;
+      var own = fleet.replace(/[1-5]/g, function (d) { return +d === placingShip + 1 && !g.ready ? "C" : "S"; });
+      c.appendChild(sea(own, function () { return !g.ready; }, function (x, y) { place(g, x, y, shipDir); }));
+      if (!g.ready) {
+        c.appendChild(button("Ready", "btn btn-primary btn-block", function () { act("ready"); }));
+        c.appendChild(text("span", "Ships you have not placed go in at random.", "field-hint"));
       }
+      return;
+    }
 
-      function card(children) {
-        var d = document.createElement("div");
-        d.className = "card";
-        for (var i = 0; i < children.length; i++) if (children[i]) d.appendChild(children[i]);
-        return d;
+    var myTurn = g.turn === g.me && g.phase === "fire", out = g.outgoing || "", inc = g.incoming || "", mine = "";
+    c = card(box, "Your shots", g.phase === "fire" ? (myTurn ? "Your turn" : "Their turn") : "");
+    if (g.msg) c.appendChild(text("p", g.msg, "small muted"));
+    c.appendChild(sea(out, function (i) { return myTurn && out.charAt(i) === "0"; }, function (x, y) { act("fire", x, y); }));
+    c.appendChild(text("h3", "Your waters"));
+    for (var i = 0; i < 100; i++) mine += inc.charAt(i) !== "0" ? inc.charAt(i) : fleet.charAt(i) !== "0" ? "S" : "0";
+    c.appendChild(sea(mine, function () { return false; }));
+    var fl = div("toolbar");
+    fl.appendChild(text("span", "Your fleet", "small muted"));
+    ships.forEach(function (sh) {
+      var chip = text("span", sh.n, sh.sunk ? "chip sunk" : "chip");
+      if (sh.sunk) chip.appendChild(text("span", " sunk", "visually-hidden"));
+      fl.appendChild(chip);
+    });
+    c.appendChild(fl);
+  }
+
+  function where(at, short) {
+    return at < 0 ? (short ? "yard" : "in the yard") : at >= 57 ? "home"
+      : at >= 52 ? (short ? "home run" : "on the home run") : (short ? "square " : "on square ") + (at + 1);
+  }
+
+  // Ludo shapes, 24-unit box: 0 circle, 1 square, 2 triangle, 3 diamond.
+  function outline(k, cls) {
+    return ['<circle cx="12" cy="12" r="10.5"', '<rect x="2" y="2" width="20" height="20"',
+      '<path d="M12 1.5 23 22H1z"', '<path d="M12 1 23 12 12 23 1 12z"'][k] + (cls ? ' class="' + cls + '"' : "") + "/>";
+  }
+
+  function shape(k, n) {
+    return '<svg class="shp" viewBox="0 0 24 24" aria-hidden="true">' + outline(k) +
+      (n ? '<text x="12" y="' + (k === 2 ? 19.5 : 16) + '">' + n + "</text>" : "") + "</svg>";
+  }
+
+  function ludo(box, s, g) {
+    if (g.me < 0) {
+      c = seatsOnly(box, "Ludo", 4);
+      if (s.host && g.phase === "pick") c.appendChild(button("Deal the rest", "btn btn-block", function () { hostAct("next"); }));
+      return;
+    }
+    var shapes = g.shapes || [], mine = shapes[g.me] >= 0 ? shapes[g.me] : -1, tokens = (g.tokens || [])[g.me] || [], c;
+
+    if (g.phase === "pick") {
+      c = card(box, "Pick your shape");
+      c.appendChild(text("p", "Your tokens start in your shape's corner. You can change until everyone has picked.", "small muted"));
+      var grid = div("tiles");
+      SHAPES.forEach(function (name, k) {
+        var who = shapes.indexOf(k), taken = who >= 0 && who !== g.me;
+        var b = button("", "tile", function () { act("shape", k); }, taken);
+        b.id = "shape" + k;
+        b.setAttribute("aria-pressed", who === g.me);
+        b.innerHTML = shape(k);
+        b.appendChild(text("b", name));
+        b.appendChild(text("small", taken ? "Taken by " + nameOf(s, who) : CORNERS[k]));
+        grid.appendChild(b);
+      });
+      c.appendChild(grid);
+      if (s.host) c.appendChild(button("Deal the rest", "btn btn-block", function () { hostAct("next"); }));
+      c.appendChild(text("span", s.host ? "Deal the rest gives anyone still choosing a free shape." : hostLine(s, "deal the rest"), "field-hint"));
+      return;
+    }
+
+    c = card(box, mine >= 0 ? SHAPES[mine] + "s" : "Seat " + (g.me + 1), g.myTurn && g.phase !== "over" ? "Your turn" : "");
+    if (mine >= 0) c.querySelector("h2").insertAdjacentHTML("afterbegin", shape(mine));
+    c.appendChild(text("div", g.die ? String(g.die) : "–", "die"));
+    if (g.msg) c.appendChild(text("p", g.msg, "small muted"));
+    if (g.myTurn && g.phase === "roll") c.appendChild(button("Roll", "btn btn-primary btn-block", function () { act("roll"); }));
+    if (g.myTurn && g.phase === "move") {
+      (g.moves || []).forEach(function (t) {
+        var b = button("Token " + (t + 1) + " – " + where(tokens[t]), "btn btn-block", function () { act("move", t); });
+        b.insertAdjacentHTML("afterbegin", shape(mine < 0 ? 0 : mine, t + 1));
+        c.appendChild(b);
+      });
+    }
+    var row = div("toolbar");
+    row.appendChild(text("span", "Your tokens", "small muted"));
+    tokens.forEach(function (at, t) {
+      var chip = text("span", where(at, 1), "chip");
+      chip.insertAdjacentHTML("afterbegin", shape(mine < 0 ? 0 : mine, t + 1));
+      row.appendChild(chip);
+    });
+    c.appendChild(row);
+    var legend = text("p", "", "small muted lg");
+    shapes.forEach(function (k, i) {
+      if (k < 0) return;
+      var item = text("span", nameOf(s, i));
+      item.insertAdjacentHTML("afterbegin", shape(k));
+      legend.appendChild(item);
+    });
+    c.appendChild(legend);
+  }
+
+
+  var ac = null, noise = null, soundOn = true, snd = el("snd");
+  try { soundOn = localStorage.getItem("cpgSound") !== "0"; } catch (e) {}
+
+  // Phones allow sound only after a tap.
+  function unlock() {
+    var A = window.AudioContext || window.webkitAudioContext;
+    if (!ac && soundOn && A) ac = new A();
+    try { if (ac && ac.state !== "running") ac.resume().catch(function () {}); } catch (e) {}
+  }
+  // pointerdown is not a user activation on touch screens; these are.
+  ["touchend", "pointerup", "click", "keydown"].forEach(function (e) { document.addEventListener(e, unlock, true); });
+  snd.setAttribute("aria-pressed", soundOn);
+  snd.onclick = function () {
+    soundOn = !soundOn;
+    try { localStorage.setItem("cpgSound", soundOn ? "1" : "0"); } catch (e) {}
+    snd.setAttribute("aria-pressed", soundOn);
+    unlock();
+  };
+
+  // Voice: s|t|q|w oscillator or n noise, Hz[>Hz], seconds, volume[, delay].
+  var SFX = {
+    start: "t523,.15,.2 t659,.15,.2,.12 t784,.3,.2,.24",
+    win: "t523,.12,.2 t659,.12,.2,.1 t784,.12,.2,.2 t1047,.3,.2,.3",
+    lose: "t392,.2,.2 t330,.2,.2,.18 t262,.25,.2,.36",
+    tick: "q1800,.03,.06",
+    roll: "n3000,.04,.3 n3000,.04,.3,.07 n3000,.04,.3,.14 n3000,.05,.3,.21",
+    six: "s1568,.08,.1,.1 s2093,.08,.1,.16 s2637,.15,.1,.22",
+    peg: "s900>300,.06,.3",
+    thud: "s150>50,.25,.5 n400,.1,.3",
+    bell: "s1320,.5,.2 s1980,.4,.08",
+    splash: "n1500>300,.45,.35",
+    boom: "s120>40,.45,.6 n600,.3,.4",
+    sunk: "s100>30,.6,.7 n500,.5,.5 s70>30,.5,.5,.1",
+    flip: "n5000,.05,.2 s700>1100,.06,.1",
+    ding: "s1175,.4,.25",
+    buzz: "w110,.3,.15",
+    alarm: "q880,.12,.1 q660,.12,.1,.14 q880,.12,.1,.28 q660,.12,.1,.42",
+    chime: "s784,.3,.18 s1175,.35,.15,.1",
+    sting: "w220>110,.5,.15"
+  };
+
+  function play(name, delay) {
+    if (!ac || !soundOn || ac.state !== "running") return; // dropped, not queued
+    if (!noise) {
+      noise = ac.createBuffer(1, ac.sampleRate / 2, ac.sampleRate);
+      for (var d = noise.getChannelData(0), i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    }
+    SFX[name].split(" ").forEach(function (v) {
+      var p = v.slice(1).split(","), f = p[0].split(">"), t = ac.currentTime + (delay || 0) + (+p[3] || 0), end = t + +p[1];
+      var gain = ac.createGain(), src, hz;
+      if (v[0] === "n") {
+        src = ac.createBufferSource();
+        src.buffer = noise;
+        var lp = ac.createBiquadFilter();
+        src.connect(lp);
+        lp.connect(gain);
+        hz = lp.frequency;
+      } else {
+        src = ac.createOscillator();
+        src.type = { s: "sine", t: "triangle", q: "square", w: "sawtooth" }[v[0]];
+        src.connect(gain);
+        hz = src.frequency;
       }
+      hz.setValueAtTime(+f[0], t);
+      if (f[1]) hz.exponentialRampToValueAtTime(+f[1], end);
+      gain.gain.setValueAtTime(+p[2], t);
+      gain.gain.exponentialRampToValueAtTime(.001, end);
+      gain.connect(ac.destination);
+      src.start(t);
+      src.stop(end);
+    });
+  }
 
-      function text(tag, content, cls) {
-        var e = document.createElement(tag);
-        e.textContent = content;
-        if (cls) e.className = cls;
-        return e;
+  function count(list, test) { return (list || []).filter(test).length; }
+
+  function myTurn(s) {
+    var g = s.g || {};
+    return s.game === "ludo" ? !!g.myTurn : s.game === "battleship" ? g.phase === "fire" && g.turn === g.me
+      : s.game === "codenames" && g.myTeam === g.turn && g.phase === (g.spymaster ? "clue" : "guess");
+  }
+
+  function won(s) {
+    var g = s.g || {}, u = (g.seats || [])[s.seat];
+    return s.game === "undercover" ? (u && u.role >= 0 ? g.winner === u.role + 1 : null)
+      : s.game === "codenames" ? (g.myTeam ? g.winner === g.myTeam : null) : g.me >= 0 ? g.winner === g.me : null;
+  }
+
+  // Sounds for what changed between two replies for the same view.
+  function cues(a, b) {
+    var x = a.g || {}, y = b.g || {}, out = [];
+    if ((b.players || []).length > (a.players || []).length) out.push("tick");
+    if (a.phase === "lobby" && b.phase === "play") out.push("start");
+    if (!a.over && b.over) out.push(won(b) == null ? "chime" : won(b) ? "win" : "lose");
+    else if (!myTurn(a) && myTurn(b)) out.push("chime");
+    if (a.game !== b.game || !a.g || !b.g) return out;
+    var changed = y.msg !== x.msg;
+    if (b.game === "ludo") {
+      if (y.die !== x.die || (changed && /rolled/.test(y.msg))) out.push("roll", y.die === 6 ? "six" : "");
+      var was = [].concat.apply([], x.tokens || []), now = [].concat.apply([], y.tokens || []), cue = "";
+      now.forEach(function (at, i) {
+        if (was[i] === undefined || was[i] === at) return;
+        cue = at < 0 ? "thud" : cue === "thud" ? cue : at >= 57 ? "bell" : cue || "peg";
+      });
+      out.push(cue);
+    } else if (b.game === "battleship") {
+      var shots = function (g, c) { return ((g.outgoing || "") + (g.incoming || "")).split(c).length; };
+      if (y.phase === "place" && (y.fleet !== x.fleet || y.ready !== x.ready)) out.push("tick");
+      if (changed && /sunk|sank/.test(y.msg)) out.push("sunk");
+      else if (shots(y, "2") > shots(x, "2")) out.push("boom");
+      else if (shots(y, "1") > shots(x, "1")) out.push("splash");
+    } else if (b.game === "codenames") {
+      if (x.phase === "clue" && y.phase === "guess") out.push("chime");
+      (y.tiles || []).forEach(function (t, i) {
+        if (!t.r || ((x.tiles || [])[i] || {}).r) return;
+        out.push("flip");
+        if (t.k === 3) out.push("alarm");
+        else if (y.myTeam) out.push(t.k === y.myTeam ? "ding" : "buzz");
+      });
+    } else if (b.game === "undercover") {
+      var alive = function (u) { return u.alive; }, ready = function (u) { return u.ready; };
+      if (x.phase !== "vote" && y.phase === "vote") out.push("bell");
+      if (count(y.seats, alive) < count(x.seats, alive)) out.push("sting");
+      else if (count(y.seats, ready) > count(x.seats, ready)) out.push("tick");
+    }
+    return out;
+  }
+
+  // The reader's picker art, from the same layouts (viewBox 0 0 100 100).
+
+  function rect(x, y, w, h, cls, rx) {
+    return '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" rx="' + (rx || 0) + '" class="' + cls + '"/>';
+  }
+  function path(d, cls) { return '<path d="' + d + '" class="' + cls + '"/>'; }
+  function dot(x, y, r, cls) { return '<circle cx="' + x + '" cy="' + y + '" r="' + r + '" class="' + cls + '"/>'; }
+  function cross(x, y, n, cls) { return path("M" + x + " " + y + "l" + n + " " + n + "m0-" + n + "l-" + n + " " + n, cls); }
+
+  var ART = {
+    undercover: function () {
+      var o = "";
+      for (var i = 0; i < 4; i++) {
+        var x = 4 + i * 24, cls = i === 2 ? "h o" : "f";
+        o += dot(x + 10, 37, 6, cls) + path("M" + x + " 69V53a8 8 0 0 1 8-8h4a8 8 0 0 1 8 8V69Z", cls);
       }
-
-      function rowOf(buttons) {
-        var d = document.createElement("div");
-        d.className = "row";
-        for (var i = 0; i < buttons.length; i++) if (buttons[i]) d.appendChild(buttons[i]);
-        return d;
+      return o + '<text x="62" y="64" class="q">?</text>';
+    },
+    // R solid, B hatched, N struck, A crossed, . plain.
+    codenames: function () {
+      var map = "R.B.N" + ".RA.B" + "B.R.." + ".N.BR" + "R..B.", o = "";
+      for (var i = 0; i < 25; i++) {
+        var x = 1 + (i % 5) * 20, y = 1 + ((i / 5) | 0) * 20, k = map.charAt(i);
+        o += rect(x, y, 18, 18, k === "R" || k === "A" ? "f" : k === "B" ? "h o t" : "o t");
+        if (k === "N") o += path("M" + (x + 3) + " " + (y + 9) + "h12", "o");
+        if (k === "A") o += cross(x + 3.5, y + 3.5, 11, "x");
       }
-
-      function render() {
-        var s = state;
-        el("title").textContent = s.title || "CrossPoint Games";
-        el("status").textContent = s.status || "";
-        var main = el("main");
-
-        // Repainting on every poll would eat the focus in the name and clue
-        // fields, so only rebuild when the device says something changed.
-        var signature = s.v + "|" + s.seat + "|" + s.phase + "|" + orientation + "|" + placingShip;
-        if (signature === lastRender) return;
-        lastRender = signature;
-        main.innerHTML = "";
-
-        if (s.seat === -1) { main.appendChild(joinCard(s)); main.appendChild(playerCard(s)); return; }
-        if (s.phase === "lobby") { main.appendChild(lobbyCard(s)); main.appendChild(playerCard(s)); return; }
-
-        var g = s.g || {};
-        if (s.game === "undercover") main.appendChild(undercoverCard(s, g));
-        else if (s.game === "codenames") main.appendChild(codenamesCard(s, g));
-        else if (s.game === "battleship") main.appendChild(battleshipCard(s, g));
-        else if (s.game === "ludo") main.appendChild(ludoCard(s, g));
-
-        if (s.over) main.appendChild(overCard(s, g));
-        main.appendChild(playerCard(s));
+      return o;
+    },
+    battleship: function () {
+      var map = "......" + ".SSSX." + "....o." + ".o...." + "...X.S" + ".....S", lines = "", o = "";
+      for (var i = 1; i < 6; i++) lines += "M" + (2 + i * 16) + " 2V98M2 " + (2 + i * 16) + "H98";
+      for (i = 0; i < 36; i++) {
+        var x = 2 + (i % 6) * 16, y = 2 + ((i / 6) | 0) * 16, k = map.charAt(i);
+        if (k === "S") o += rect(x, y, 16, 16, "f");
+        if (k === "X") o += cross(x + 3, y + 3, 10, "o");
+        if (k === "o") o += dot(x + 8, y + 8, 2, "f");
       }
-
-      function joinCard(s) {
-        var input = document.createElement("input");
-        input.id = "nameInput";
-        input.placeholder = "Your name";
-        input.maxLength = 12;
-        input.onkeydown = function (e) { if (e.key === "Enter") join(); };
-        var wrap = document.createElement("div");
-        wrap.className = "stack";
-        wrap.appendChild(text("div", s.phase === "lobby" ? "Join the table" : "A round is in progress - you can watch", "muted"));
-        wrap.appendChild(input);
-        wrap.appendChild(button("Join", "primary", join, s.phase !== "lobby"));
-        return card([wrap]);
+      return path(lines, "g") + o + rect(2, 2, 96, 96, "o w");
+    },
+    // Yards clockwise from top left, each nest holding that corner's shape; a die in the middle.
+    ludo: function () {
+      var yards = [[0, 0, "f"], [60, 0, "o"], [60, 60, "h o t"], [0, 60, "d o t"]], o = "";
+      for (var i = 0; i < 4; i++) {
+        var x = yards[i][0], y = yards[i][1];
+        o += rect(x, y, 40, 40, yards[i][2]) + rect(x + 8, y + 8, 24, 24, "p o t") +
+          '<g transform="translate(' + (x + 10.4) + " " + (y + 10.4) + ') scale(.8)">' + outline(i, "p o") + "</g>";
       }
+      o += rect(42, 42, 16, 16, "p o", 2.5);
+      var pips = [46, 46, 54, 46, 50, 50, 46, 54, 54, 54];
+      for (i = 0; i < 10; i += 2) o += dot(pips[i], pips[i + 1], 1.4, "f");
+      return o + rect(1.5, 1.5, 97, 97, "o w");
+    }
+  };
 
-      function lobbyCard(s) {
-        var kids = [text("div", s.host ? "You are the host" : "Waiting for the host to start", "muted")];
-        if (s.host && s.games) {
-          var picker = document.createElement("div");
-          picker.className = "row";
-          for (var i = 0; i < s.games.length; i++) {
-            (function (game) {
-              var b = button(game.t + " (" + game.min + "+)", game.k === s.game ? "primary" : "", function () {
-                act("pick", game.i);
-              });
-              picker.appendChild(b);
-            })(s.games[i]);
-          }
-          kids.push(picker);
-          kids.push(button("Start " + s.title, "primary", function () { act("next"); }, !s.canStart));
-        }
-        kids.push(button("Leave the table", "", leave));
-        var wrap = document.createElement("div");
-        wrap.className = "stack";
-        for (var k = 0; k < kids.length; k++) wrap.appendChild(kids[k]);
-        return card([wrap]);
-      }
+  function thumb(key) {
+    return '<svg class="th" viewBox="0 0 100 100" aria-hidden="true">' + (ART[key] ? ART[key]() : rect(5, 5, 90, 90, "o")) + "</svg>";
+  }
 
-      function playerCard(s) {
-        var list = document.createElement("ul");
-        list.className = "players";
-        for (var i = 0; i < (s.players || []).length; i++) {
-          var p = s.players[i];
-          var li = document.createElement("li");
-          li.appendChild(text("span", p.n + (p.s === s.seat ? " (you)" : "")));
-          var tags = document.createElement("span");
-          if (p.host) tags.appendChild(text("span", "host", "pill"));
-          if (p.away) tags.appendChild(text("span", " away", "pill"));
-          li.appendChild(tags);
-          list.appendChild(li);
-        }
-        return card([text("div", (s.players || []).length + " at the table", "muted"), list]);
-      }
-
-      function overCard(s) {
-        if (!s.host) return card([text("div", "Round over - the host decides what is next", "muted")]);
-        return card([
-          rowOf([
-            button("Play again", "primary", function () { act("next"); }),
-            button("Back to the lobby", "", function () { act("ready"); }),
-          ]),
-        ]);
-      }
-
-      function undercoverCard(s, g) {
-        var wrap = document.createElement("div");
-        wrap.className = "stack";
-        wrap.appendChild(text("div", "Your word", "muted"));
-        wrap.appendChild(text("div", g.word || "-", "word"));
-        if (g.msg) wrap.appendChild(text("div", g.msg, "muted"));
-
-        if (!g.alive) {
-          wrap.appendChild(text("div", "You are out - enjoy the show", "muted"));
-        } else if (g.phase === "describe") {
-          wrap.appendChild(button(g.ready ? "Waiting for the others" : "I have described mine", "primary",
-            function () { act("ready"); }, g.ready));
-        } else if (g.phase === "vote") {
-          wrap.appendChild(text("div", "Vote for the undercover", "muted"));
-          for (var i = 0; i < (g.seats || []).length; i++) {
-            (function (idx, seatInfo) {
-              if (!seatInfo.alive || idx === s.seat) return;
-              var name = (s.players.filter(function (p) { return p.s === idx; })[0] || {}).n || "Seat " + (idx + 1);
-              wrap.appendChild(button(name + (seatInfo.votes ? "  (" + seatInfo.votes + ")" : ""),
-                g.myVote === idx ? "primary" : "", function () { act("vote", idx); }));
-            })(i, g.seats[i]);
-          }
-        }
-        if (s.host && (g.phase === "describe" || g.phase === "vote" || g.phase === "reveal")) {
-          wrap.appendChild(button(g.phase === "reveal" ? "Next round" : "Move it along", "", function () { act("next"); }));
-        }
-        return card([wrap]);
-      }
-
-      function codenamesCard(s, g) {
-        var wrap = document.createElement("div");
-        wrap.className = "stack";
-        var mine = g.myTeam === g.turn;
-        wrap.appendChild(text("div",
-          (g.myTeam === 1 ? "Red" : "Blue") + (g.spymaster ? " spymaster" : " operative") +
-          " - " + (mine ? "your team is up" : "waiting for the other team"), "muted"));
-        if (g.msg) wrap.appendChild(text("div", g.msg, "muted"));
-
-        if (g.spymaster && mine && g.phase === "clue") {
-          var word = document.createElement("input");
-          word.placeholder = "Clue word";
-          word.maxLength = 16;
-          word.value = clueWord;
-          word.oninput = function () { clueWord = word.value; };
-          var count = document.createElement("input");
-          count.type = "number";
-          count.min = "0";
-          count.max = "9";
-          count.value = String(clueCount);
-          count.oninput = function () { clueCount = count.value; };
-          wrap.appendChild(word);
-          wrap.appendChild(count);
-          wrap.appendChild(button("Give the clue", "primary", function () {
-            var w = (clueWord || "").trim();
-            if (!w) { fail("A clue needs a word"); return; }
-            clueWord = "";
-            act("clue", parseInt(clueCount, 10) || 0, null, null, w);
-          }));
-        }
-
-        var grid = document.createElement("div");
-        grid.className = "grid5";
-        for (var i = 0; i < (g.tiles || []).length; i++) {
-          (function (idx, tile) {
-            var cls = "";
-            if (tile.k === 1) cls = "tile-red";
-            else if (tile.k === 2) cls = "tile-blue";
-            else if (tile.k === 3) cls = "tile-assassin";
-            else if (tile.k === 0) cls = "tile-neutral";
-            if (tile.r) cls += " tile-done";
-            var canGuess = mine && !g.spymaster && g.phase === "guess" && !tile.r;
-            grid.appendChild(button(tile.w, cls, function () { act("guess", idx); }, !canGuess));
-          })(i, g.tiles[i]);
-        }
-        wrap.appendChild(grid);
-
-        if (mine && !g.spymaster && g.phase === "guess") {
-          wrap.appendChild(button("Stop guessing", "", function () { act("pass"); }));
-        }
-        return card([wrap]);
-      }
-
-      function shipGrid(cells, onTap, enabled) {
-        var grid = document.createElement("div");
-        grid.className = "grid10";
-        for (var i = 0; i < 100; i++) {
-          (function (idx) {
-            var v = cells.charAt(idx);
-            var cls = v === "1" ? "cell-miss" : v === "2" ? "cell-hit" : v === "S" ? "cell-ship" : "";
-            var label = v === "2" ? "X" : v === "1" ? "·" : "";
-            grid.appendChild(button(label, cls, function () { onTap(idx % 10, Math.floor(idx / 10)); }, !enabled(idx)));
-          })(i);
-        }
-        return grid;
-      }
-
-      function battleshipCard(s, g) {
-        var wrap = document.createElement("div");
-        wrap.className = "stack";
-        if (g.me === -1) {
-          wrap.appendChild(text("div", "Battleship seats the first two players - watch the reader", "muted"));
-          return card([wrap]);
-        }
-        if (g.msg) wrap.appendChild(text("div", g.msg, "muted"));
-
-        if (g.phase === "place") {
-          var names = (g.ships || []).map(function (sh, i) { return (i === placingShip ? "> " : "") + sh.n + " (" + sh.len + ")"; });
-          wrap.appendChild(text("div", g.ready ? "Fleet locked in" : "Placing: " + names[placingShip], "muted"));
-          if (!g.ready) {
-            wrap.appendChild(rowOf([
-              button("Turn: " + (orientation === "h" ? "across" : "down"), "", function () {
-                orientation = orientation === "h" ? "v" : "h";
-                lastRender = "";
-                render();
-              }),
-              button("Next ship", "", function () {
-                placingShip = (placingShip + 1) % (g.ships || []).length;
-                lastRender = "";
-                render();
-              }),
-            ]));
-          }
-          var own = (g.fleet || "").replace(/[1-5]/g, "S");
-          wrap.appendChild(shipGrid(own, function (x, y) { act("place", placingShip, x, y, orientation); },
-            function () { return !g.ready; }));
-          if (!g.ready) {
-            wrap.appendChild(button("Ready (the rest go in at random)", "primary", function () { act("ready"); }));
-          }
-          return card([wrap]);
-        }
-
-        var myTurn = g.turn === g.me && g.phase === "fire";
-        wrap.appendChild(text("div", myTurn ? "Your shot" : "Waiting for the other captain", "muted"));
-        wrap.appendChild(shipGrid(g.outgoing || "", function (x, y) { act("fire", x, y); },
-          function (idx) { return myTurn && (g.outgoing || "").charAt(idx) === "0"; }));
-        wrap.appendChild(text("div", "Your waters", "muted"));
-        var mineCells = "";
-        for (var i = 0; i < 100; i++) {
-          var shot = (g.incoming || "").charAt(i);
-          mineCells += shot !== "0" ? shot : ((g.fleet || "").charAt(i) !== "0" ? "S" : "0");
-        }
-        wrap.appendChild(shipGrid(mineCells, function () {}, function () { return false; }));
-        return card([wrap]);
-      }
-
-      function ludoCard(s, g) {
-        var wrap = document.createElement("div");
-        wrap.className = "stack";
-        if (g.me === -1) {
-          wrap.appendChild(text("div", "Ludo seats the first four players - watch the reader", "muted"));
-          return card([wrap]);
-        }
-        wrap.appendChild(text("div", "You are seat " + (g.me + 1) + (g.myTurn ? " - your turn" : ""), "muted"));
-        wrap.appendChild(text("div", g.die ? String(g.die) : "-", "die"));
-        if (g.msg) wrap.appendChild(text("div", g.msg, "muted"));
-
-        if (g.myTurn && g.phase === "roll") {
-          wrap.appendChild(button("Roll", "primary", function () { act("roll"); }));
-        } else if (g.myTurn && g.phase === "move") {
-          var tokens = (g.tokens || [])[g.me] || [];
-          for (var i = 0; i < (g.moves || []).length; i++) {
-            (function (tokenIndex) {
-              var at = tokens[tokenIndex];
-              var where = at === -1 ? "in the yard" : at >= 57 ? "home" : at >= 52 ? "on the home run" : "on square " + (at + 1);
-              wrap.appendChild(button("Token " + (tokenIndex + 1) + " - " + where, "primary", function () {
-                act("move", tokenIndex);
-              }));
-            })(g.moves[i]);
-          }
-        }
-        return card([wrap]);
-      }
-
-      poll();
-      setInterval(poll, 1200);
+  poll(true);
+  setInterval(function () { poll(); }, 1200);
+  })();
     </script>
   </body>
 </html>

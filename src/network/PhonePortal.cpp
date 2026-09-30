@@ -6,6 +6,11 @@
 #include <WiFi.h>
 #include <esp_random.h>
 
+#include <cstdio>
+#include <cstring>
+
+#include "CrossPointSettings.h"
+
 namespace {
 constexpr uint16_t DNS_PORT = 53;
 
@@ -32,6 +37,24 @@ std::string PhonePortal::generatePassphrase() {
     out += ALPHABET[esp_random() % ALPHABET_SIZE];
   }
   return out;
+}
+
+const char* PhonePortal::sharedPassphrase() {
+  static_assert(sizeof(CrossPointSettings::phoneTextPassphrase) > PASSPHRASE_LENGTH,
+                "the settings field holds the passphrase and its terminator");
+  // WPA2 needs at least 8 characters; a shorter stored value (hand-edited
+  // settings) is replaced the same way as a missing one.
+  if (strnlen(SETTINGS.phoneTextPassphrase, sizeof(SETTINGS.phoneTextPassphrase)) >= PASSPHRASE_LENGTH) {
+    return SETTINGS.phoneTextPassphrase;
+  }
+  const std::string fresh = generatePassphrase();
+  snprintf(SETTINGS.phoneTextPassphrase, sizeof(SETTINGS.phoneTextPassphrase), "%s", fresh.c_str());
+  if (!SETTINGS.saveToFile()) {
+    LOG_ERR("PORTAL", "Could not save the hotspot passphrase; the phone will ask to join again next time");
+  } else {
+    LOG_INF("PORTAL", "Generated the shared hotspot passphrase");
+  }
+  return SETTINGS.phoneTextPassphrase;
 }
 
 PhonePortal::~PhonePortal() { end(); }

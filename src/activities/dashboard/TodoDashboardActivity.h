@@ -2,21 +2,24 @@
 
 #include <vector>
 
+#include "IdleStandby.h"
 #include "activities/UiListActivity.h"
 #include "components/OptionPopup.h"
 
-// The Dashboard app's root screen: today's date and the to-do list
+// The To-do tile opened full screen: today's date and the to-do list
 // (TodoStore). The first row adds a task; Select on a task ticks it, holding
-// Select offers edit / delete / clear done. It is an app root like Home, so
-// Back does nothing here: the power menu switches apps.
-class DashboardActivity final : public UiListActivity {
+// Select offers edit / delete / clear done. Back returns to the tiles.
+class TodoDashboardActivity final : public UiListActivity {
  public:
-  explicit DashboardActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, bool cleanInitialRefresh = false);
+  explicit TodoDashboardActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
+                                 bool cleanInitialRefresh = false);
 
   void onEnter() override;
   void onExit() override;
+  void loop() override;
   void render(RenderLock&&) override;
-  bool isHomeActivity() const override { return true; }
+  // The dashboard's standby (IdleStandby) instead of the deep auto-sleep.
+  bool preventAutoSleep() override { return true; }
 
  private:
   static constexpr int ADD_ROW = 0;
@@ -31,7 +34,7 @@ class DashboardActivity final : public UiListActivity {
   void onRowLongPress(int index) override;
   bool handleCustomInput() override;
   bool handleButtons() override;
-  void onBackButton() override {}
+  void onBackButton() override;
   const char* headerTitle() const override;
   void drawFooter() override;
 
@@ -51,6 +54,7 @@ class DashboardActivity final : public UiListActivity {
   const bool cleanInitialRefresh;
   bool firstRenderDone = false;
   OptionPopup actionsPopup;
+  IdleStandby standby;
   // Rows point into TodoStore's strings: rebuilt on every list change, before
   // the render that reads them.
   std::vector<freeink::ui::ListItem> rowItems;
