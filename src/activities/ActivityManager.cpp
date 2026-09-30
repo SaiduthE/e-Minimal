@@ -16,8 +16,9 @@
 #include "boot_sleep/BootActivity.h"
 #include "boot_sleep/SleepActivity.h"
 #include "browser/OpdsBookBrowserActivity.h"
-#include "dashboard/DashboardActivity.h"
+#include "dashboard/DashboardHomeActivity.h"
 #include "games/GameNightActivity.h"
+#include "games/GamesActivity.h"
 #include "home/CrashActivity.h"
 #include "home/FileBrowserActivity.h"
 #include "home/HomeActivity.h"
@@ -244,8 +245,18 @@ void ActivityManager::goToFileTransfer() {
   replaceActivity(std::make_unique<CrossPointWebServerActivity>(renderer, mappedInput));
 }
 
-void ActivityManager::goToGameNight() {
-  auto activity = makeUniqueNoThrow<GameNightActivity>(renderer, mappedInput);
+void ActivityManager::goToGames() {
+  auto activity = makeUniqueNoThrow<GamesActivity>(renderer, mappedInput);
+  if (!activity) {
+    LOG_ERR("ACT", "OOM: games activity");
+    return;
+  }
+  noteApp(AppId::GAMES);
+  replaceActivity(std::move(activity));
+}
+
+void ActivityManager::goToGameNight(const party::GameId game) {
+  auto activity = makeUniqueNoThrow<GameNightActivity>(renderer, mappedInput, game);
   if (!activity) {
     LOG_ERR("ACT", "OOM: Game Night activity");
     return;
@@ -254,8 +265,8 @@ void ActivityManager::goToGameNight() {
   replaceActivity(std::move(activity));
 }
 
-void ActivityManager::goToDashboard(const bool cleanInitialRefresh) {
-  auto activity = makeUniqueNoThrow<DashboardActivity>(renderer, mappedInput, cleanInitialRefresh);
+void ActivityManager::goToDashboard() {
+  auto activity = makeUniqueNoThrow<DashboardHomeActivity>(renderer, mappedInput);
   if (!activity) {
     LOG_ERR("ACT", "OOM: dashboard activity");
     return;
@@ -277,9 +288,20 @@ void ActivityManager::goToApp(const AppId app) {
       goToDashboard();
       return;
     case AppId::GAMES:
-      goToGameNight();
+      goToGames();
       return;
   }
+}
+
+void ActivityManager::goToAppLauncher(const bool cleanInitialRefresh) {
+  auto activity = makeUniqueNoThrow<PowerMenuActivity>(renderer, mappedInput, PowerMenuActivity::Mode::LAUNCHER,
+                                                       cleanInitialRefresh);
+  if (!activity) {
+    LOG_ERR("ACT", "OOM: app launcher");
+    goHome(HomeMenuItem::NONE, cleanInitialRefresh);
+    return;
+  }
+  replaceActivity(std::move(activity));
 }
 
 void ActivityManager::noteApp(const AppId app) {

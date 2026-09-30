@@ -12,7 +12,7 @@ text parsing) and `bindery-app.js` (decoding, drawing, preview, upload).
 | `run-core-test.js` | runs `bindery-core.js` under Node: zip read/write, tone, XTC/XTCH, EPUBs, TXT/Markdown chapters |
 | `check_outputs.py` | reads XTC/XTCH exactly as `XtcParser.cpp` + `XtcReaderActivity` do and renders each page to PNG; checks EPUB layout |
 | `browser_test.py` | Playwright + installed Chrome against the standalone build: convert, save, screenshots |
-| `mock_reader.py` | stand-in for the reader's web server: routes, `/mkdir`, and the WebSocket upload protocol, writing to a folder |
+| `mock_reader.py` | stand-in for the reader's web server: every page's route, the file API (`/api/files`, `/download`, `/upload`, `/mkdir`, `/rename`, `/move`, `/delete`), an in-memory `/api/dashboards` and `/api/todo`, and the WebSocket upload protocol, writing to a folder |
 
 ```sh
 python scripts/bindery/make_fixtures.py <books dir> $TEMP/fx

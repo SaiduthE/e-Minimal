@@ -30,6 +30,7 @@ struct DirectPixelWriter {
   // writePixel() stores the pixel's 2bpp level x5 as a nibble (0x0 black,
   // 0x5, 0xA, 0xF white) in this full physical 4bpp frame instead of a B/W or
   // plane bit -- the value the base + LSB + MSB passes would have composed.
+  // writeLevel16() stores any of the 16 nibbles (photos, fullGrayLevels).
   uint8_t* fb4 = nullptr;
   uint32_t stride4 = 0;  // bytes per 4bpp row
 
@@ -209,20 +210,38 @@ struct DirectPixelWriter {
                phyYBase + logicalX * phyYStepX + logicalY * phyYStepY, pixelValue, false);
   }
 
+  // Full 16-level write for the current row (after beginRow): `level` is the
+  // nibble itself, 0x0 black .. 0xF white (see applyBayerDither16Level). fb4
+  // must be set. White is skipped unless writeWhite, as in writeGray4.
+  inline void writeLevel16(int logicalX, uint8_t level, bool writeWhite = false) const {
+    writeNibble(rowPhyXBase + logicalX * phyXStepX, rowPhyYBase + logicalX * phyYStepX, level, writeWhite);
+  }
+
+  // Random-access form of writeLevel16, as writePixelAt is of writePixel.
+  inline void writeLevel16At(int logicalX, int logicalY, uint8_t level, bool writeWhite = false) const {
+    writeNibble(phyXBase + logicalX * phyXStepX + logicalY * phyXStepY,
+                phyYBase + logicalX * phyYStepX + logicalY * phyYStepY, level, writeWhite);
+  }
+
   // 16-level write: 2bpp level 0 black .. 3 white -> nibble level * 5. White
   // (3) is background, left untouched like the B/W pass leaves it, unless the
   // caller paints white explicitly (PNG alpha compositing).
   inline void writeGray4(int phyX, int phyY, uint8_t pixelValue, bool writeWhite) const {
-    if (pixelValue >= 3 && !writeWhite) return;
+    writeNibble(phyX, phyY, static_cast<uint8_t>((pixelValue > 3 ? 3 : pixelValue) * 5), writeWhite);
+  }
+
+  inline void writeNibble(int phyX, int phyY, uint8_t nibble, bool writeWhite) const {
+    if (nibble >= 0xF && !writeWhite) return;
     // Full-frame target: originY is 0 and clipRows the panel height, so this is
     // the same out-of-frame guard the B/W path applies.
     if (static_cast<unsigned>(phyY) >= static_cast<unsigned>(clipRows)) return;
     // A .pxc may be 1 px larger than the placed box (readValidCacheHeader's
     // tolerance); never let that pixel spill into the next row or past the end.
     if (static_cast<unsigned>(phyX) >= stride4 * 2u) return;
-    const uint8_t nibble = static_cast<uint8_t>((pixelValue > 3 ? 3 : pixelValue) * 5);
+    if (nibble > 0xF) nibble = 0xF;
     uint8_t& byte = fb4[static_cast<uint32_t>(phyY) * stride4 + (static_cast<uint32_t>(phyX) >> 1)];
-    byte = (phyX & 1) ? static_cast<uint8_t>((byte & 0xF0) | nibble) : static_cast<uint8_t>((byte & 0x0F) | (nibble << 4));
+    byte = (phyX & 1) ? static_cast<uint8_t>((byte & 0xF0) | nibble)
+                      : static_cast<uint8_t>((byte & 0x0F) | (nibble << 4));
   }
 };
 

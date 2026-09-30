@@ -433,8 +433,9 @@ class GfxRenderer {
   // black -- the same nibbles the driver composes from base + LSB + MSB) or
   // solid ink like the B/W pass; switch it mid-page with
   // setGray4TextAntiAliasing (the status bar is drawn solid, as today).
-  // Images (DirectPixelWriter, drawBitmap) always land at their 2bpp grey
-  // level x5 (0x0/0x5/0xA/0xF). Not honoured (not used by page rendering):
+  // Images (DirectPixelWriter, drawBitmap) land at their 2bpp grey level x5
+  // (0x0/0x5/0xA/0xF), or on all 16 levels for a decoder asked for
+  // RenderConfig::fullGrayLevels. Not honoured (not used by page rendering):
   // drawImage (raw display blit), invertScreen, writeFramebufferRegion,
   // copyBufferToRegion, preserveImagePolarity (dark mode has no gray4).
   bool beginGray4Target(bool textAntiAliasing);

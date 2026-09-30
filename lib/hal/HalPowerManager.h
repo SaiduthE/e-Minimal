@@ -42,6 +42,13 @@ class HalPowerManager {
   // Should be called inside main loop() to handle the currentLockMode
   void startDeepSleep(HalGPIO& gpio) const;
 
+  enum class LightSleepWake : uint8_t { Timer, Button, NotSupported };
+  // Light sleep until maxMs passes (0: no timer) or any key goes down. RAM, the
+  // running activity and the panel's image survive; the CPUs stop. For screens
+  // that idle between timed updates. NotSupported, without sleeping, on boards
+  // whose keys cannot wake it (an ADC ladder).
+  LightSleepWake lightSleep(uint32_t maxMs) const;
+
   // Get battery percentage (range 0-100)
   uint16_t getBatteryPercentage() const;
 

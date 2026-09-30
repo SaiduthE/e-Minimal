@@ -34,8 +34,9 @@ constexpr AppTile APP_TILES[PowerMenuActivity::APP_COUNT] = {
 constexpr int ICON_SIZE = 96;
 }  // namespace
 
-PowerMenuActivity::PowerMenuActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
-    : UiListActivity("PowerMenu", renderer, mappedInput) {
+PowerMenuActivity::PowerMenuActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, const Mode mode,
+                                     const bool cleanInitialRefresh)
+    : UiListActivity("PowerMenu", renderer, mappedInput), mode(mode), cleanInitialRefresh(cleanInitialRefresh) {
   for (int i = 0; i < MENU_ITEM_COUNT; i++) {
     fui::ListItem item;
     item.label = I18N.get(menuItems[i]);
@@ -46,16 +47,37 @@ PowerMenuActivity::PowerMenuActivity(GfxRenderer& renderer, MappedInputManager& 
 
 void PowerMenuActivity::onEnter() {
   currentApp = APP_STATE.lastApp;
+  if (cleanInitialRefresh) renderer.promoteNextRefresh(HalDisplay::HALF_REFRESH);
   UiListActivity::onEnter();
-  // Open on Sleep, so hold Power then Select still sleeps.
-  nav.reset(APP_COUNT);
+  if (mode == Mode::POWER_MENU) {
+    // Open on Sleep, so hold Power then Select still sleeps.
+    nav.reset(APP_COUNT);
+    return;
+  }
+  // Select alone reopens the app last used.
+  for (int i = 0; i < APP_COUNT; i++) {
+    if (APP_TILES[i].app == currentApp) nav.reset(i);
+  }
 }
 
-const char* PowerMenuActivity::headerTitle() const { return tr(STR_POWER_MENU); }
+const char* PowerMenuActivity::headerTitle() const {
+  return mode == Mode::LAUNCHER ? tr(STR_APP_LAUNCHER) : tr(STR_POWER_MENU);
+}
+
+void PowerMenuActivity::onBackButton() {
+  // The launcher is a root screen, like the Dashboard.
+  if (mode == Mode::POWER_MENU) finish();
+}
+
+void PowerMenuActivity::drawFooter() {
+  const char* back = mode == Mode::LAUNCHER ? "" : tr(STR_BACK);
+  const auto labels = mappedInput.mapLabels(back, tr(STR_SELECT), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
+  GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+}
 
 void PowerMenuActivity::activateApp(const AppId target) {
   app.clearTapFlash();
-  if (target == currentApp) {
+  if (mode == Mode::POWER_MENU && target == currentApp) {
     // Already open underneath: nothing to switch.
     finish();
     return;
@@ -103,7 +125,7 @@ bool PowerMenuActivity::handleButtons() {
     const int selected = nav.selected;
     if (selected >= 0 && selected < APP_COUNT) {
       activateApp(APP_TILES[selected].app);
-    } else if (selected >= APP_COUNT && selected < RING_COUNT) {
+    } else if (selected >= APP_COUNT && selected < ringCount()) {
       activateIndex(selected - APP_COUNT);
     }
     return true;
@@ -112,9 +134,9 @@ bool PowerMenuActivity::handleButtons() {
 }
 
 void PowerMenuActivity::navigateButtons() {
-  buttonNavigator.onNextRelease([this] { moveSelectionTo(ButtonNavigator::nextIndex(nav.selected, RING_COUNT)); });
+  buttonNavigator.onNextRelease([this] { moveSelectionTo(ButtonNavigator::nextIndex(nav.selected, ringCount())); });
   buttonNavigator.onPreviousRelease(
-      [this] { moveSelectionTo(ButtonNavigator::previousIndex(nav.selected, RING_COUNT)); });
+      [this] { moveSelectionTo(ButtonNavigator::previousIndex(nav.selected, ringCount())); });
 }
 
 int16_t PowerMenuActivity::tileBandHeight(UiScreen& screen) const {
@@ -139,7 +161,7 @@ void PowerMenuActivity::drawAppTiles(UiScreen& screen, const fui::Rect band) {
     const auto& tile = APP_TILES[i];
     const fui::Rect rect{static_cast<int16_t>(band.x + i * (tileWidth + gap)), band.y, tileWidth, band.height};
     const bool selected = nav.selected == i;
-    const bool current = tile.app == currentApp;
+    const bool current = mode == Mode::POWER_MENU && tile.app == currentApp;
     const fui::Color ink = selected ? fui::Color::White : fui::Color::Black;
 
     if (selected) {
@@ -183,7 +205,7 @@ void PowerMenuActivity::buildScreen(UiScreen& screen) {
 
   fui::ListProps props;
   props.items = rowItems_;
-  props.count = static_cast<uint16_t>(MENU_ITEM_COUNT);
+  props.count = static_cast<uint16_t>(listCount());
   props.action = ACTION_ROW;
   props.inputMask = fui::InputTouch;  // physical buttons stay in loop()
   syncListViewport(screen, props, APP_COUNT);

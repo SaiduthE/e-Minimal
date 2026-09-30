@@ -7,8 +7,8 @@ namespace party {
 
 namespace {
 
-// The shared ring, clockwise, as 15x15 board cells. Index 0 is player 0's start
-// square; every player starts 13 cells further round. Generated once and
+// The shared ring, clockwise, as 15x15 board cells. Index 0 is shape 0's start
+// square; every shape starts 13 cells further round. Generated once and
 // asserted by test/party_games: consecutive cells always touch, and the four
 // diagonal steps are the track wrapping the corners of the centre square.
 constexpr Ludo::Cell kTrack[Ludo::TRACK] = {
@@ -19,7 +19,7 @@ constexpr Ludo::Cell kTrack[Ludo::TRACK] = {
 };
 
 // The five-cell run into the centre, entered from the ring cell before the
-// player's own start square.
+// shape's own start square.
 constexpr Ludo::Cell kHome[4][5] = {
     {
         {1, 7},
@@ -86,12 +86,12 @@ constexpr uint8_t kSafe[] = {0, 8, 13, 21, 26, 34, 39, 47};
 
 Ludo::Cell Ludo::trackCell(const uint8_t index) { return kTrack[index % TRACK]; }
 
-Ludo::Cell Ludo::homeCell(const uint8_t player, const uint8_t step) { return kHome[player % 4][step % 5]; }
+Ludo::Cell Ludo::homeCell(const uint8_t shape, const uint8_t step) { return kHome[shape % SHAPES][step % 5]; }
 
-Ludo::Cell Ludo::yardCell(const uint8_t player, const uint8_t token) { return kYard[player % 4][token % TOKENS]; }
+Ludo::Cell Ludo::yardCell(const uint8_t shape, const uint8_t token) { return kYard[shape % SHAPES][token % TOKENS]; }
 
-uint8_t Ludo::absoluteCell(const uint8_t player, const int8_t position) {
-  return static_cast<uint8_t>((startIndex(player) + static_cast<uint8_t>(position)) % TRACK);
+uint8_t Ludo::absoluteCell(const uint8_t shape, const int8_t position) {
+  return static_cast<uint8_t>((startIndex(shape) + static_cast<uint8_t>(position)) % TRACK);
 }
 
 bool Ludo::isSafeCell(const uint8_t trackIndex) {
@@ -101,18 +101,40 @@ bool Ludo::isSafeCell(const uint8_t trackIndex) {
   return false;
 }
 
+const char* Ludo::shapeName(const uint8_t shape) {
+  static constexpr const char* NAMES[SHAPES] = {"circle", "square", "triangle", "diamond"};
+  return shape < SHAPES ? NAMES[shape] : "";
+}
+
 void Ludo::start(const uint8_t playerCount, Rng& rng) {
   count_ = playerCount < 2 ? 2 : (playerCount > 4 ? 4 : playerCount);
   for (uint8_t p = 0; p < 4; p++) {
     for (uint8_t t = 0; t < TOKENS; t++) pos_[p][t] = IN_YARD;
+    shape_[p] = NO_SHAPE;
+    snprintf(names_[p], sizeof(names_[p]), "Seat %u", p + 1);
   }
   turn_ = 0;
   die_ = 0;
   sixStreak_ = 0;
-  phase_ = Phase::Roll;
+  phase_ = Phase::Pick;
   winner_ = -1;
   rng_.reseed(rng.next());
-  snprintf(message_, sizeof(message_), "Seat 1 rolls first - a six brings a token out");
+  snprintf(message_, sizeof(message_), "Pick a shape - it decides your corner");
+}
+
+void Ludo::setPlayerName(const uint8_t player, const char* name) {
+  if (player >= 4 || !name || !name[0]) return;
+  snprintf(names_[player], sizeof(names_[player]), "%s", name);
+}
+
+int8_t Ludo::shapeOf(const uint8_t player) const { return player < count_ ? shape_[player] : NO_SHAPE; }
+
+int8_t Ludo::playerWithShape(const uint8_t shape) const {
+  if (shape >= SHAPES) return -1;
+  for (uint8_t p = 0; p < count_; p++) {
+    if (shape_[p] == static_cast<int8_t>(shape)) return static_cast<int8_t>(p);
+  }
+  return -1;
 }
 
 int8_t Ludo::position(const uint8_t player, const uint8_t token) const {
@@ -150,11 +172,11 @@ bool Ludo::captureAt(const uint8_t mover, const uint8_t trackIndex) {
   if (isSafeCell(trackIndex)) return false;
   bool captured = false;
   for (uint8_t p = 0; p < count_; p++) {
-    if (p == mover) continue;
+    if (p == mover || shape_[p] < 0) continue;
     for (uint8_t t = 0; t < TOKENS; t++) {
       const int8_t at = pos_[p][t];
       if (at < 0 || at > static_cast<int8_t>(LAST_TRACK)) continue;
-      if (absoluteCell(p, at) != trackIndex) continue;
+      if (absoluteCell(static_cast<uint8_t>(shape_[p]), at) != trackIndex) continue;
       pos_[p][t] = IN_YARD;
       captured = true;
     }
@@ -162,8 +184,78 @@ bool Ludo::captureAt(const uint8_t mover, const uint8_t trackIndex) {
   return captured;
 }
 
+bool Ludo::everyonePicked() const {
+  for (uint8_t p = 0; p < count_; p++) {
+    if (shape_[p] < 0) return false;
+  }
+  return true;
+}
+
+uint8_t Ludo::nextByShape(const uint8_t player) const {
+  // Clockwise round the board: the next shape up that someone holds.
+  for (uint8_t step = 1; step <= SHAPES; step++) {
+    const int8_t next = playerWithShape(static_cast<uint8_t>((shape_[player] + step) % SHAPES));
+    if (next >= 0) return static_cast<uint8_t>(next);
+  }
+  return player;
+}
+
+void Ludo::beginPlay(const char* pickNote) {
+  for (uint8_t shape = 0; shape < SHAPES; shape++) {
+    const int8_t holder = playerWithShape(shape);
+    if (holder < 0) continue;
+    turn_ = static_cast<uint8_t>(holder);
+    break;
+  }
+  die_ = 0;
+  sixStreak_ = 0;
+  phase_ = Phase::Roll;
+  snprintf(message_, sizeof(message_), "%s - %s rolls first", pickNote, names_[turn_]);
+}
+
+bool Ludo::applyPick(const uint8_t seat, const Action& action, const bool isHost) {
+  switch (action.verb) {
+    // Its own verb: the lobby's game Pick must never land here, nor a stale
+    // shape pick in the lobby.
+    case Verb::Shape: {
+      if (seat >= count_ || action.a < 0 || action.a >= SHAPES) return false;
+      const uint8_t shape = static_cast<uint8_t>(action.a);
+      // A free shape only; re-picking a player's own shape changes nothing.
+      if (playerWithShape(shape) >= 0) return false;
+      shape_[seat] = static_cast<int8_t>(shape);
+      char note[40];
+      snprintf(note, sizeof(note), "%s took the %s", names_[seat], shapeName(shape));
+      if (everyonePicked()) {
+        beginPlay(note);
+      } else {
+        snprintf(message_, sizeof(message_), "%s", note);
+      }
+      return true;
+    }
+
+    case Verb::Next: {
+      // The host (the device's Select) deals the free shapes out in seat order
+      // so a table never stalls on someone who has not picked.
+      if (!isHost) return false;
+      for (uint8_t p = 0; p < count_; p++) {
+        if (shape_[p] >= 0) continue;
+        for (uint8_t shape = 0; shape < SHAPES; shape++) {
+          if (playerWithShape(shape) >= 0) continue;
+          shape_[p] = static_cast<int8_t>(shape);
+          break;
+        }
+      }
+      beginPlay("Shapes dealt");
+      return true;
+    }
+
+    default:
+      return false;
+  }
+}
+
 void Ludo::advanceTurn() {
-  turn_ = static_cast<uint8_t>((turn_ + 1) % count_);
+  turn_ = nextByShape(turn_);
   sixStreak_ = 0;
   phase_ = Phase::Roll;
 }
@@ -171,17 +263,19 @@ void Ludo::advanceTurn() {
 void Ludo::finishRoll() {
   uint8_t moves[TOKENS];
   if (legalMoves(turn_, die_, moves) == 0) {
-    snprintf(message_, sizeof(message_), "Seat %u rolled %u - nothing to move", turn_ + 1, die_);
+    snprintf(message_, sizeof(message_), "%s rolled %u - nothing to move", names_[turn_], die_);
     advanceTurn();
     return;
   }
   phase_ = Phase::Move;
-  snprintf(message_, sizeof(message_), "Seat %u rolled %u", turn_ + 1, die_);
+  snprintf(message_, sizeof(message_), "%s rolled %u", names_[turn_], die_);
 }
 
 bool Ludo::apply(const uint8_t seat, const Action& action, const bool isHost) {
-  (void)isHost;  // every phase here is gated by whose turn it is
-  if (phase_ == Phase::Over || seat >= count_ || seat != turn_) return false;
+  if (phase_ == Phase::Over) return false;
+  if (phase_ == Phase::Pick) return applyPick(seat, action, isHost);
+  // From here on every phase is gated by whose turn it is.
+  if (seat >= count_ || seat != turn_) return false;
 
   switch (action.verb) {
     case Verb::Roll: {
@@ -191,7 +285,7 @@ bool Ludo::apply(const uint8_t seat, const Action& action, const bool isHost) {
         sixStreak_++;
         if (sixStreak_ >= 3) {
           // Three sixes in a row forfeits the turn, or a lucky streak never ends.
-          snprintf(message_, sizeof(message_), "Seat %u rolled three sixes - turn lost", turn_ + 1);
+          snprintf(message_, sizeof(message_), "%s rolled three sixes - turn lost", names_[turn_]);
           advanceTurn();
           return true;
         }
@@ -214,18 +308,19 @@ bool Ludo::apply(const uint8_t seat, const Action& action, const bool isHost) {
       }
 
       bool extraTurn = die_ == 6;
-      if (at <= static_cast<int8_t>(LAST_TRACK) && captureAt(seat, absoluteCell(seat, at))) {
-        snprintf(message_, sizeof(message_), "Seat %u sends a token home - roll again", seat + 1);
+      const uint8_t shape = static_cast<uint8_t>(shape_[seat]);
+      if (at <= static_cast<int8_t>(LAST_TRACK) && captureAt(seat, absoluteCell(shape, at))) {
+        snprintf(message_, sizeof(message_), "%s sends a token home - roll again", names_[seat]);
         extraTurn = true;
       } else if (at == static_cast<int8_t>(HOME)) {
-        snprintf(message_, sizeof(message_), "Seat %u brings a token home (%u of 4)", seat + 1, tokensHome(seat));
+        snprintf(message_, sizeof(message_), "%s brings a token home (%u of 4)", names_[seat], tokensHome(seat));
         extraTurn = true;
       }
 
       if (tokensHome(seat) == TOKENS) {
         winner_ = static_cast<int8_t>(seat);
         phase_ = Phase::Over;
-        snprintf(message_, sizeof(message_), "Seat %u is home with all four", seat + 1);
+        snprintf(message_, sizeof(message_), "%s is home with all four", names_[seat]);
         return true;
       }
 
@@ -245,11 +340,19 @@ bool Ludo::apply(const uint8_t seat, const Action& action, const bool isHost) {
 
 void Ludo::statusLine(char* out, const size_t cap) const {
   switch (phase_) {
+    case Phase::Pick: {
+      uint8_t picked = 0;
+      for (uint8_t p = 0; p < count_; p++) {
+        if (shape_[p] >= 0) picked++;
+      }
+      snprintf(out, cap, "Pick a shape - %u of %u chosen", picked, count_);
+      return;
+    }
     case Phase::Roll:
-      snprintf(out, cap, "Seat %u to roll - %s", turn_ + 1, message_);
+      snprintf(out, cap, "%s to roll - %s", names_[turn_], message_);
       return;
     case Phase::Move:
-      snprintf(out, cap, "Seat %u rolled %u - pick a token", turn_ + 1, die_);
+      snprintf(out, cap, "%s rolled %u - pick a token", names_[turn_], die_);
       return;
     case Phase::Over:
       snprintf(out, cap, "%s", message_);
@@ -258,10 +361,12 @@ void Ludo::statusLine(char* out, const size_t cap) const {
 }
 
 void Ludo::writeView(JsonBuf& out, const int8_t seat) const {
+  static constexpr const char* PHASES[] = {"pick", "roll", "move", "over"};
   const bool playing = seat >= 0 && seat < static_cast<int8_t>(count_);
+  const bool myTurn = playing && phase_ != Phase::Pick && seat == static_cast<int8_t>(turn_);
 
   out.ch('{');
-  out.keyStr("phase", phase_ == Phase::Roll ? "roll" : phase_ == Phase::Move ? "move" : "over");
+  out.keyStr("phase", PHASES[static_cast<uint8_t>(phase_)]);
   out.ch(',');
   out.keyNum("turn", turn_);
   out.ch(',');
@@ -273,12 +378,12 @@ void Ludo::writeView(JsonBuf& out, const int8_t seat) const {
   out.ch(',');
   out.keyStr("msg", message_);
   out.ch(',');
-  out.keyBool("myTurn", playing && seat == static_cast<int8_t>(turn_));
+  out.keyBool("myTurn", myTurn);
   out.ch(',');
 
   out.key("moves");
   out.ch('[');
-  if (playing && phase_ == Phase::Move && seat == static_cast<int8_t>(turn_)) {
+  if (myTurn && phase_ == Phase::Move) {
     uint8_t moves[TOKENS];
     const uint8_t found = legalMoves(turn_, die_, moves);
     for (uint8_t i = 0; i < found; i++) {
@@ -299,6 +404,15 @@ void Ludo::writeView(JsonBuf& out, const int8_t seat) const {
       out.num(pos_[p][t]);
     }
     out.ch(']');
+  }
+  out.ch(']');
+  out.ch(',');
+
+  out.key("shapes");
+  out.ch('[');
+  for (uint8_t p = 0; p < count_; p++) {
+    if (p) out.ch(',');
+    out.num(shape_[p]);
   }
   out.ch(']');
   out.ch('}');

@@ -1,0 +1,1661 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Dashboards – e-Minimal</title>
+    <link rel="stylesheet" href="/css/app.css" />
+    <script src="/js/app.js" defer></script>
+    <style>
+      /* Dashboards-specific; everything else comes from /css/app.css */
+      /* Cards scroll into view below the topbar and the sticky tab bar */
+      body[data-page="dashboards"] main .card { scroll-margin-top: calc(var(--topbar-h) + 80px); }
+      body[data-page="dashboards"] .card-head > .toolbar { margin: 0; }
+      body[data-page="dashboards"] [hidden] { display: none !important; }
+      body[data-page="dashboards"] .card > p.muted { margin-bottom: 16px; }
+      body[data-page="dashboards"] .card > .field:last-child { margin-bottom: 0; }
+      body[data-page="dashboards"] [aria-invalid="true"] { border-color: var(--danger); }
+      /* Weather place search */
+      body[data-page="dashboards"] #searchStatus:empty { display: none; }
+      body[data-page="dashboards"] .results { margin: -8px 0 16px; }
+      body[data-page="dashboards"] .results:empty { display: none; }
+      body[data-page="dashboards"] .results > .row { width: 100%; border-width: 0 0 1px; border-style: solid; border-color: var(--rule-2); background: none; font: inherit; text-align: left; cursor: pointer; }
+      body[data-page="dashboards"] .results > .row:last-child { border-bottom-width: 0; }
+      body[data-page="dashboards"] .results > .row:hover .row-main { text-decoration: underline; text-underline-offset: 3px; }
+      body[data-page="dashboards"] .coords { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+      body[data-page="dashboards"] .clear-row { margin: 0 0 16px; }
+      /* Choice cards (layouts, orientation): a radio in a label; the chosen one is inverted like the reader's selected row */
+      body[data-page="dashboards"] .choices { min-width: 0; margin: 0; padding: 0; border: 0; }
+      /* Layout strip: one row of thumbnails that scrolls sideways; the padding keeps focus rings inside */
+      body[data-page="dashboards"] .strip { position: relative; display: flex; gap: 8px; margin: 0 -4px; padding: 4px 4px 8px; overflow-x: auto; scroll-snap-type: x proximity; }
+      body[data-page="dashboards"] .strip > .choice-item { flex: 0 0 140px; scroll-snap-align: start; }
+      body[data-page="dashboards"] .strip > .empty { flex: 1 1 auto; padding: 24px 16px; }
+      body[data-page="dashboards"] .orient-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+      body[data-page="dashboards"] .choice-item { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+      body[data-page="dashboards"] .choice { display: block; cursor: pointer; }
+      body[data-page="dashboards"] .choice-body { display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; padding: 12px 8px; border: 1px solid var(--rule); border-radius: 4px; text-align: center; overflow-wrap: anywhere; }
+      body[data-page="dashboards"] .choice:hover .choice-body { border-color: var(--ink); }
+      body[data-page="dashboards"] .choice-body svg { display: block; width: 100%; max-height: 150px; margin-bottom: 4px; color: var(--ink-2); }
+      body[data-page="dashboards"] .choice-body svg.device { width: 64px; height: 64px; }
+      body[data-page="dashboards"] .choice-name { font-size: .875rem; font-weight: 500; line-height: 1.3; }
+      body[data-page="dashboards"] .choice-meta { font-size: .8125rem; line-height: 1.3; color: var(--ink-2); }
+      body[data-page="dashboards"] .choice input:checked + .choice-body { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+      body[data-page="dashboards"] .choice input:checked + .choice-body svg,
+      body[data-page="dashboards"] .choice input:checked + .choice-body .choice-meta { color: var(--paper); }
+      body[data-page="dashboards"] .choice input:checked + .choice-body .choice-name { font-weight: 600; }
+      body[data-page="dashboards"] .choice input:focus-visible + .choice-body { outline: 2px solid var(--focus); outline-offset: 2px; }
+      body[data-page="dashboards"] svg .outline { fill: none; stroke: currentColor; stroke-width: 1; }
+      body[data-page="dashboards"] svg .solid { fill: currentColor; }
+      body[data-page="dashboards"] svg text { fill: currentColor; }
+      /* Layout editor: the grid canvas, sized from the API's grid, and its tiles */
+      body[data-page="dashboards"] .board { position: relative; width: 100%; margin-bottom: 8px; border: 1px solid var(--ink); border-radius: 4px; background-color: var(--surface); background-image: linear-gradient(to right, var(--rule) 1px, transparent 1px), linear-gradient(to bottom, var(--rule) 1px, transparent 1px); user-select: none; -webkit-user-select: none; }
+      body[data-page="dashboards"] .board .tile { position: absolute; touch-action: none; transition: left 120ms ease, top 120ms ease, width 120ms ease, height 120ms ease; }
+      body[data-page="dashboards"] .board .tile.dragging { z-index: 1; transition: none; }
+      body[data-page="dashboards"] .tile-body { position: absolute; inset: 2px; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; border: 1px solid var(--ink); border-radius: 4px; background: var(--rule-2); font-size: .8125rem; line-height: 1.3; text-align: center; cursor: grab; }
+      body[data-page="dashboards"] .tile-size { color: var(--ink-2); }
+      body[data-page="dashboards"] .tile.selected .tile-body { background: var(--ink); color: var(--paper); }
+      body[data-page="dashboards"] .tile.selected .tile-size { color: var(--paper); }
+      body[data-page="dashboards"] .tile.blocked .tile-body,
+      body[data-page="dashboards"] .tile[aria-invalid="true"] .tile-body { border: 2px dashed var(--danger); }
+      body[data-page="dashboards"] .tile-handle { position: absolute; right: 0; bottom: 0; width: 32px; height: 32px; cursor: nwse-resize; }
+      body[data-page="dashboards"] .tile-handle::after { content: ""; position: absolute; right: 7px; bottom: 7px; width: 10px; height: 10px; border-right: 2px solid var(--paper); border-bottom: 2px solid var(--paper); }
+      /* To-do */
+      body[data-page="dashboards"] #todoList > .row > input[type="checkbox"] { flex: 0 0 auto; }
+      body[data-page="dashboards"] #todoList > .row.done .row-main { color: var(--ink-2); text-decoration: line-through; }
+      /* Widget picker: one widget's card at a time */
+      body[data-page="dashboards"] .widget-pick { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 16px; }
+      body[data-page="dashboards"] .widget-pick > label { margin: 0; font-weight: 500; }
+      body[data-page="dashboards"] .widget-pick > select { flex: 1 1 200px; max-width: 320px; }
+      /* Image: the folder's links */
+      body[data-page="dashboards"] #imageLinks { margin: 8px 0 0; border-top: 1px solid var(--rule-2); }
+      body[data-page="dashboards"] #imageFolderNote { margin: 4px 0 0; }
+    </style>
+  </head>
+  <body data-page="dashboards" data-title="Dashboards">
+    <main>
+      <div id="dash-loading">
+        <p class="empty"><span class="spinner" aria-hidden="true"></span> Loading dashboards…</p>
+      </div>
+
+      <div id="dash-form" hidden>
+        <div class="toolbar toolbar-sticky">
+          <div class="btn-group" role="tablist" aria-label="Dashboard settings" id="tabs">
+            <button type="button" class="btn" role="tab" id="tab-widgets" aria-controls="panel-widgets">Widgets</button>
+            <button type="button" class="btn" role="tab" id="tab-layouts" aria-controls="panel-layouts">Layouts</button>
+            <button type="button" class="btn" role="tab" id="tab-settings" aria-controls="panel-settings">Settings</button>
+          </div>
+        </div>
+
+        <div id="panel-layouts" role="tabpanel" aria-labelledby="tab-layouts" hidden>
+        <section class="card" id="layouts">
+          <div class="card-head">
+            <h2>Layouts</h2>
+            <div class="toolbar">
+              <button type="button" class="btn btn-sm" id="layoutNew">New</button>
+              <button type="button" class="btn btn-sm" id="layoutEdit">Edit</button>
+              <button type="button" class="btn btn-danger btn-sm" id="layoutDelete">Delete</button>
+            </div>
+          </div>
+          <p class="small muted">Tap a layout to put it on the dashboard; the buttons act on the one in use. The pictures show each layout the way the reader is turned (<span id="shapeNote"></span>, set under Settings).</p>
+          <fieldset class="choices">
+            <legend class="visually-hidden">Layout in use</legend>
+            <div class="strip" id="strip"></div>
+          </fieldset>
+          <p class="field-hint" id="stripHint"></p>
+
+        </section>
+
+        <section class="card" id="editor" hidden>
+          <div class="card-head">
+            <h2 id="editorTitle">New layout</h2>
+          </div>
+          <div class="field">
+            <label for="layoutName">Name</label>
+            <input type="text" id="layoutName" autocomplete="off" enterkeyhint="done" placeholder="For example, Kitchen" />
+          </div>
+          <div class="field">
+            <span class="field-label" id="shapeLabel">Shape</span>
+            <div class="btn-group" role="group" aria-labelledby="shapeLabel">
+              <button type="button" class="btn" id="shapeLandscape" aria-pressed="true">Landscape</button>
+              <button type="button" class="btn" id="shapePortrait" aria-pressed="false">Portrait</button>
+            </div>
+            <span class="field-hint">On a dashboard turned the other way, the reader shows the layout turned on its side.</span>
+          </div>
+          <span class="field-label" id="addLabel">Add a widget <span class="muted" id="tileCount"></span></span>
+          <div class="toolbar" id="palette" role="group" aria-labelledby="addLabel"></div>
+          <div class="board" id="board" role="group" aria-label="Layout grid"></div>
+          <p class="field-hint">Tiles snap to the reader's refresh grid. Tap one to pick it, drag it to move it, and drag its corner to resize it (arrow keys move, Shift and arrows resize).</p>
+          <div class="field" id="tileTools" hidden>
+            <label for="tileWidget">Selected tile</label>
+            <div class="field-row">
+              <select id="tileWidget"></select>
+              <button type="button" class="btn btn-danger" id="deleteTile">Delete</button>
+            </div>
+          </div>
+          <div class="toolbar">
+            <button type="button" class="btn" id="editorCancel">Cancel</button>
+            <button type="button" class="btn btn-primary" id="editorSave">Save layout</button>
+          </div>
+        </section>
+
+        </div>
+
+        <div id="panel-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
+        <section class="card" id="orientation">
+          <h2>Orientation</h2>
+          <p class="small muted">Which way the reader is turned while it shows the dashboard, and so where the keys end up. It is also Dashboard Orientation on the <a href="/settings">Settings</a> page.</p>
+          <fieldset class="choices">
+            <legend class="visually-hidden">Orientation</legend>
+            <div class="orient-grid">
+              <label class="choice">
+                <input type="radio" name="orientation" value="0" id="orient-0" class="visually-hidden" />
+                <span class="choice-body">
+                  <svg class="device" viewBox="0 0 60 60" aria-hidden="true">
+                    <rect class="outline" x="4.5" y="14.5" width="51" height="31" rx="3" />
+                    <rect class="outline" x="15.5" y="18.5" width="36" height="23" rx="1" />
+                    <rect class="solid" x="8" y="19" width="3" height="4" rx="1" />
+                    <rect class="solid" x="8" y="25" width="3" height="4" rx="1" />
+                    <rect class="solid" x="8" y="31" width="3" height="4" rx="1" />
+                    <rect class="solid" x="8" y="37" width="3" height="4" rx="1" />
+                  </svg>
+                  <span class="choice-name">Keys on the left</span>
+                  <span class="choice-meta">Landscape CW</span>
+                </span>
+              </label>
+              <label class="choice">
+                <input type="radio" name="orientation" value="1" id="orient-1" class="visually-hidden" />
+                <span class="choice-body">
+                  <svg class="device" viewBox="0 0 60 60" aria-hidden="true">
+                    <rect class="outline" x="4.5" y="14.5" width="51" height="31" rx="3" />
+                    <rect class="outline" x="8.5" y="18.5" width="36" height="23" rx="1" />
+                    <rect class="solid" x="49" y="19" width="3" height="4" rx="1" />
+                    <rect class="solid" x="49" y="25" width="3" height="4" rx="1" />
+                    <rect class="solid" x="49" y="31" width="3" height="4" rx="1" />
+                    <rect class="solid" x="49" y="37" width="3" height="4" rx="1" />
+                  </svg>
+                  <span class="choice-name">Keys on the right</span>
+                  <span class="choice-meta">Landscape CCW</span>
+                </span>
+              </label>
+              <label class="choice">
+                <input type="radio" name="orientation" value="2" id="orient-2" class="visually-hidden" />
+                <span class="choice-body">
+                  <svg class="device" viewBox="0 0 60 60" aria-hidden="true">
+                    <rect class="outline" x="14.5" y="4.5" width="31" height="51" rx="3" />
+                    <rect class="outline" x="18.5" y="8.5" width="23" height="36" rx="1" />
+                    <rect class="solid" x="19" y="49" width="4" height="3" rx="1" />
+                    <rect class="solid" x="25" y="49" width="4" height="3" rx="1" />
+                    <rect class="solid" x="31" y="49" width="4" height="3" rx="1" />
+                    <rect class="solid" x="37" y="49" width="4" height="3" rx="1" />
+                  </svg>
+                  <span class="choice-name">Keys at the bottom</span>
+                  <span class="choice-meta">Portrait</span>
+                </span>
+              </label>
+            </div>
+          </fieldset>
+        </section>
+
+        <section class="card" id="starting-layouts">
+          <h2>Starting layouts</h2>
+          <p class="small muted">Wide top, Grid and Picture top are the layouts the reader starts with. Restoring adds back any that are gone, drawn the way the reader is turned; your other layouts stay as they are.</p>
+          <button type="button" class="btn" id="restoreLayouts">Restore starting layouts</button>
+        </section>
+
+        </div>
+
+        <div id="panel-widgets" role="tabpanel" aria-labelledby="tab-widgets" hidden>
+        <div class="widget-pick">
+          <label for="widgetPick">Widget</label>
+          <select id="widgetPick" aria-controls="weather image todo date">
+            <option value="weather">Weather</option>
+            <option value="image">Image</option>
+            <option value="todo">To-do</option>
+            <option value="date">Date</option>
+          </select>
+        </div>
+
+        <section class="card" id="weather" data-widget>
+          <h2>Weather</h2>
+          <p class="small muted">The Weather tile shows the forecast for one place. The reader fetches it from Open-Meteo once a day over Wi-Fi.</p>
+
+          <div class="field">
+            <label for="placeQuery">Find a place</label>
+            <div class="field-row">
+              <input type="search" id="placeQuery" placeholder="City or town" autocomplete="off" enterkeyhint="search" />
+              <button type="button" class="btn" id="searchBtn">Search</button>
+            </div>
+            <span class="field-hint" id="searchStatus" role="status" aria-live="polite"></span>
+          </div>
+          <div class="list results" id="placeResults" role="group" aria-label="Matching places"></div>
+
+          <div class="field">
+            <label for="placeName">Place name</label>
+            <input type="text" id="placeName" maxlength="64" placeholder="Shown on the dashboard" autocomplete="off" />
+          </div>
+          <div class="field">
+            <div class="coords">
+              <div>
+                <label class="field-label" for="latitude">Latitude</label>
+                <input type="number" id="latitude" step="any" min="-90" max="90" placeholder="-90 to 90" />
+              </div>
+              <div>
+                <label class="field-label" for="longitude">Longitude</label>
+                <input type="number" id="longitude" step="any" min="-180" max="180" placeholder="-180 to 180" />
+              </div>
+            </div>
+            <span class="field-hint">Search fills these in. Without internet, type them in decimal degrees (south and west are negative); any map app shows them for a place.</span>
+          </div>
+          <div class="clear-row">
+            <button type="button" class="btn btn-sm" id="clearLocationBtn">Clear location</button>
+          </div>
+
+          <div class="field">
+            <span class="field-label" id="unitsLabel">Temperature</span>
+            <div class="btn-group" role="group" aria-labelledby="unitsLabel">
+              <button type="button" class="btn" id="unitsC" aria-pressed="true">°C</button>
+              <button type="button" class="btn" id="unitsF" aria-pressed="false">°F</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="card" id="image" data-widget>
+          <h2>Image</h2>
+          <p class="small muted">The Image tile shows the pictures in one folder, one at a time.</p>
+
+          <div class="field">
+            <label for="carouselFolder">Folder</label>
+            <input type="text" id="carouselFolder" maxlength="128" placeholder="/carousel" autocomplete="off" autocapitalize="off" spellcheck="false" />
+            <span class="field-hint">A folder on the SD card that holds BMP, PNG or JPEG images.</span>
+          </div>
+          <div class="field">
+            <label for="carouselInterval">Change the picture every</label>
+            <select id="carouselInterval"></select>
+          </div>
+
+          <div class="list" id="imageLinks">
+            <a class="row" href="/pictures">
+              <span class="row-main">Add pictures<span class="row-meta">Shrink and grey photos on this phone, then send them to the reader</span></span>
+            </a>
+            <a class="row" id="imageFolderLink" href="/files?path=%2Fcarousel&amp;type=pictures">
+              <span class="row-main"><span id="imageFolderName">Pictures in /carousel</span><span class="row-meta" id="imageFolderCount">Open the folder in Files</span></span>
+            </a>
+          </div>
+          <p class="field-hint" id="imageFolderNote" hidden>These use the saved folder. Save changes first to use the new one.</p>
+        </section>
+
+        <section class="card" id="todo" data-widget>
+          <div class="card-head">
+            <h2>To-do</h2>
+            <span class="chip" id="todoCount"></span>
+          </div>
+          <p class="small muted">The To-do tile shows these tasks. Changes here are saved straight away.</p>
+          <div class="field">
+            <label for="todoNew">New task</label>
+            <div class="field-row">
+              <input type="text" id="todoNew" autocomplete="off" enterkeyhint="done" placeholder="What needs doing?" />
+              <button type="button" class="btn btn-primary" id="todoAdd">Add</button>
+            </div>
+            <span class="field-hint" id="todoHint"></span>
+          </div>
+          <div class="list" id="todoList"></div>
+          <div class="toolbar">
+            <button type="button" class="btn btn-sm" id="todoClearDone">Clear done</button>
+          </div>
+        </section>
+
+        <section class="card" id="date" data-widget>
+          <h2>Date</h2>
+          <p>The Date tile shows the day and the date. The reader has no clock that keeps time while it is off, so the tile shows once a weather update has set the clock over Wi-Fi.</p>
+        </section>
+        </div>
+      </div>
+
+      <div class="savebar" id="save-container">
+        <span id="save-summary">Unsaved widget changes</span>
+        <button class="btn btn-primary" id="saveBtn">Save changes</button>
+      </div>
+    </main>
+
+<script>
+  // Add pictures has its own page now; old links to it land there.
+  if (location.hash === '#pictures') location.replace('/pictures');
+
+  const INTERVALS = [5, 15, 30, 60, 120, 180, 360, 720, 1440];
+  const DEFAULT_FOLDER = '/carousel';
+  const DEFAULT_INTERVAL = 30;
+  const PLACE_MAX_BYTES = 64;
+  const FOLDER_MAX_BYTES = 128;
+  const GEOCODE_URL = 'https://geocoding-api.open-meteo.com/v1/search';
+  const OFFLINE_MESSAGE = 'Place search needs the internet, and this connection has none (the reader may be running its own hotspot). Enter the latitude and longitude below instead.';
+
+  const WIDGET_LABELS = { weather: 'Weather', todo: 'To-do', image: 'Image', date: 'Date', none: 'Empty' };
+  // The widgets an editor tile can hold.
+  const PALETTE = ['weather', 'todo', 'image', 'date'];
+  // The layouts restoreDefaults adds back, by name (DashboardConfigStore::restoreDefaultLayouts).
+  const STARTING_LAYOUTS = ['Wide top', 'Grid', 'Picture top'];
+  const PORTRAIT_ORIENTATION = 2;  // CrossPointSettings::DASHBOARD_PORTRAIT
+  // A new tile's size before shrinking to fit; the grid itself comes from the API.
+  const ADD_WIDTH = 4;
+  const ADD_HEIGHT = 3;
+
+  // Messages for the widget settings the reader can reject, keyed by the "field" it names.
+  const FIELD_MESSAGES = {
+    'weather.lat': 'Latitude must be a number from -90 to 90.',
+    'weather.lon': 'Longitude must be a number from -180 to 180.',
+    'weather.place': 'The place name is not valid.',
+    'weather.units': 'Choose °C or °F.',
+    'carousel.folder': 'The folder must be a path on the SD card that starts with / and has no "..", up to 128 characters.',
+    'carousel.intervalMinutes': 'Choose how often the picture changes.'
+  };
+  const FIELD_INPUTS = {
+    'weather.lat': 'latitude',
+    'weather.lon': 'longitude',
+    'weather.place': 'placeName',
+    'weather.units': 'unitsC',
+    'carousel.folder': 'carouselFolder',
+    'carousel.intervalMinutes': 'carouselInterval'
+  };
+
+  let data = null;  // the last GET /api/dashboards
+  let loaded = null;  // the Weather and Image form as last loaded from the reader
+  let fahrenheit = false;
+  let limits = { min: INTERVALS[0], max: INTERVALS[INTERVALS.length - 1] };
+  let searchSeq = 0;
+  let busy = false;  // one layout request at a time: the reader serves one connection
+
+  function $(id) {
+    return document.getElementById(id);
+  }
+
+  function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  function showMessage(text, isError) {
+    ui.toast(text, isError ? 'danger' : 'ok');
+  }
+
+  function round4(n) {
+    return Math.round(n * 10000) / 10000;
+  }
+
+  function utf8Length(s) {
+    return new TextEncoder().encode(s).length;
+  }
+
+  // The reader keeps at most maxBytes of UTF-8; cut on a character boundary
+  // here so a long non-Latin name never ends in half a character.
+  function clampUtf8(s, maxBytes) {
+    if (utf8Length(s) <= maxBytes) return s;
+    let out = '';
+    let bytes = 0;
+    for (const ch of s) {
+      const n = utf8Length(ch);
+      if (bytes + n > maxBytes) break;
+      out += ch;
+      bytes += n;
+    }
+    return out;
+  }
+
+  // One line of text for the reader: control characters and runs of spaces become one space.
+  function oneLine(s) {
+    return s.replace(/[\u0000-\u001f\u007f\s]+/g, ' ').trim();
+  }
+
+  function widgetLabel(key) {
+    return WIDGET_LABELS[key] || key;
+  }
+
+  async function readError(response) {
+    const text = await response.text();
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed && typeof parsed === 'object') return parsed;
+    } catch (e) {}
+    return { error: text || 'HTTP ' + response.status };
+  }
+
+  // POSTs JSON; resolves to the parsed answer or throws an Error carrying the reader's "field".
+  async function postJson(url, body) {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (!response.ok) {
+      const err = await readError(response);
+      const error = new Error(err.error || 'HTTP ' + response.status);
+      error.field = err.field;
+      throw error;
+    }
+    return response.json();
+  }
+
+  async function fetchDashboards() {
+    const response = await fetch('/api/dashboards', { cache: 'no-store' });
+    if (!response.ok) throw new Error('Failed to load dashboards: ' + response.status);
+    return response.json();
+  }
+
+  // Re-reads the layouts without touching unsaved Weather and Image edits.
+  async function refreshLayouts() {
+    data = await fetchDashboards();
+    renderLayouts();
+  }
+
+  // --- Layouts ---
+
+  function isPortrait() {
+    return data.orientation === PORTRAIT_ORIENTATION;
+  }
+
+  function gridSize(portrait) {
+    return portrait ? { cols: data.grid.short, rows: data.grid.long } : { cols: data.grid.long, rows: data.grid.short };
+  }
+
+  // A layout drawn for the other shape, turned on its side as the reader shows it.
+  function turned(tiles, fromPortrait, toPortrait) {
+    if (fromPortrait === toPortrait) return tiles;
+    return tiles.map(function(t) { return { widget: t.widget, x: t.y, y: t.x, w: t.h, h: t.w }; });
+  }
+
+  function findLayout(id) {
+    return data.layouts.find(function(l) { return l.id === id; }) || null;
+  }
+
+  // The layout on the dashboard; null once every layout was deleted.
+  function activeLayout() {
+    return data.layout.active ? findLayout(data.layout.active) : null;
+  }
+
+  function svgNode(tag, attrs, cls) {
+    const node = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    Object.keys(attrs).forEach(function(k) { node.setAttribute(k, attrs[k]); });
+    if (cls) node.setAttribute('class', cls);
+    return node;
+  }
+
+  // Tiles on the grid, ten units a cell, each labelled with its widget.
+  function thumbnail(tiles, size) {
+    const svg = svgNode('svg', { viewBox: '0 0 ' + size.cols * 10 + ' ' + size.rows * 10, 'aria-hidden': 'true' });
+    svg.appendChild(svgNode('rect', { x: 0.5, y: 0.5, width: size.cols * 10 - 1, height: size.rows * 10 - 1, rx: 3 }, 'outline'));
+    tiles.forEach(function(t) {
+      const w = t.w * 10 - 3;
+      const h = t.h * 10 - 3;
+      svg.appendChild(svgNode('rect', { x: t.x * 10 + 1.5, y: t.y * 10 + 1.5, width: w, height: h, rx: 1.5 }, 'outline'));
+      const label = widgetLabel(t.widget);
+      const fontSize = Math.max(3, Math.min(10, (w - 4) / (label.length * 0.6), h * 0.4));
+      const text = svgNode('text', {
+        x: t.x * 10 + 1.5 + w / 2, y: t.y * 10 + 1.5 + h / 2, 'font-size': fontSize.toFixed(1),
+        'text-anchor': 'middle', 'dominant-baseline': 'central'
+      });
+      text.textContent = label;
+      svg.appendChild(text);
+    });
+    return svg;
+  }
+
+  // A choice card: the layout's tiles in the current shape (turned on their
+  // side when it was drawn for the other one, as the reader shows it).
+  function layoutCard(layout, portrait, inUse) {
+    const tiles = turned(layout.tiles, layout.shape === 'portrait', portrait);
+    const item = el('div', 'choice-item');
+    const label = el('label', 'choice');
+    const input = document.createElement('input');
+    input.type = 'radio';
+    input.name = 'layout';
+    input.value = String(layout.id);
+    input.id = 'pick-' + layout.id;
+    input.className = 'visually-hidden';
+    input.checked = inUse;
+    const body = el('span', 'choice-body');
+    const meta = inUse ? 'In use' : tiles.length + (tiles.length === 1 ? ' tile' : ' tiles');
+    body.append(thumbnail(tiles, gridSize(portrait)), el('span', 'choice-name', layout.name), el('span', 'choice-meta', meta));
+    label.append(input, body);
+    item.appendChild(label);
+    return item;
+  }
+
+  function renderLayouts() {
+    const focusId = document.activeElement && document.activeElement.id;
+    const portrait = isPortrait();
+    const active = activeLayout();
+    const strip = $('strip');
+    const scroll = strip.scrollLeft;
+    strip.replaceChildren();
+    $('shapeNote').textContent = portrait ? 'portrait' : 'landscape';
+
+    if (!data.layouts.length) {
+      const empty = el('p', 'empty', 'No layouts. Create one, or ');
+      const link = el('a', '', 'restore the starting layouts');
+      link.href = '#starting-layouts';
+      empty.append(link, ' in Settings.');
+      strip.appendChild(empty);
+    }
+    data.layouts.forEach(function(layout) {
+      strip.appendChild(layoutCard(layout, portrait, layout === active));
+    });
+    strip.scrollLeft = scroll;
+
+    const count = data.layouts.length;
+    const max = data.grid.maxLayouts;
+    const full = count >= max;
+    $('layoutNew').disabled = full;
+    ['layoutEdit', 'layoutDelete'].forEach(function(id) {
+      $(id).disabled = !active;
+      if (active) $(id).setAttribute('aria-label', $(id).textContent + ' ' + active.name);
+      else $(id).removeAttribute('aria-label');
+    });
+    let hint = full ? 'The reader holds ' + max + ' layouts. Delete one to make another.' : count + ' of ' + max + ' layouts.';
+    if (count && !active) hint = 'None is on the dashboard: tap one to use it. ' + hint;
+    $('stripHint').textContent = hint;
+
+    if (focusId && $(focusId)) $(focusId).focus({ preventScroll: true });
+    revealActive();
+  }
+
+  // Brings the card in use into view inside the strip without moving the page.
+  function revealActive() {
+    const strip = $('strip');
+    const active = activeLayout();
+    const card = active && $('pick-' + active.id);
+    if (!card) return;
+    const item = card.closest('.choice-item');
+    if (item.offsetLeft < strip.scrollLeft || item.offsetLeft + item.offsetWidth > strip.scrollLeft + strip.clientWidth) {
+      strip.scrollLeft = item.offsetLeft - 4;
+    }
+  }
+
+  async function activate(id) {
+    if (busy) {
+      renderLayouts();
+      return;
+    }
+    busy = true;
+    try {
+      await postJson('/api/dashboards', { layout: { active: id } });
+      await refreshLayouts();
+      const layout = findLayout(id);
+      showMessage((layout ? layout.name : 'The layout') + ' is on the dashboard', false);
+    } catch (e) {
+      console.error(e);
+      showMessage('Could not switch layouts: ' + (e.field === 'layout.active' ? 'it is no longer on the reader' : e.message), true);
+      renderLayouts();
+    }
+    busy = false;
+  }
+
+  async function deleteLayout(layout) {
+    const last = data.layouts.length === 1;
+    const question = 'Delete the layout ' + layout.name + '?' + (last
+      ? ' It is the last one: the dashboard has no layout until you make one or restore the starting layouts.'
+      : '');
+    if (!(await ui.confirm(question, { ok: 'Delete layout', danger: true }))) return;
+    if (busy) return;
+    busy = true;
+    try {
+      await postJson('/api/dashboards', { deleteLayout: layout.id });
+      await refreshLayouts();
+      const next = activeLayout();
+      showMessage('Layout deleted. ' + (next ? next.name + ' is on the dashboard' : 'No layouts left'), false);
+    } catch (e) {
+      console.error(e);
+      showMessage('Could not delete the layout: ' + (e.field === 'deleteLayout' ? 'it is no longer on the reader' : e.message), true);
+    }
+    busy = false;
+  }
+
+  // Adds back the starting layouts that are gone (Settings).
+  async function restoreStartingLayouts() {
+    if (busy) return;
+    busy = true;
+    const btn = $('restoreLayouts');
+    btn.disabled = true;
+    try {
+      const answer = await postJson('/api/dashboards', { restoreDefaults: true });
+      await refreshLayouts();
+      const added = answer.restored || 0;
+      const noRoom = data.layouts.length >= data.grid.maxLayouts && STARTING_LAYOUTS.some(function(name) {
+        return !data.layouts.some(function(l) { return l.name === name; });
+      });
+      const room = 'the reader holds ' + data.grid.maxLayouts + ' layouts';
+      if (added) {
+        showMessage('Added ' + added + (added === 1 ? ' starting layout' : ' starting layouts') +
+          (noRoom ? '. No room for the rest: ' + room + '.' : ''), false);
+      } else if (noRoom) {
+        showMessage('No room: ' + room + '. Delete one, then restore again.', true);
+      } else {
+        showMessage('They’re all there already', false);
+      }
+    } catch (e) {
+      console.error(e);
+      showMessage('Could not restore the starting layouts: ' + e.message, true);
+    }
+    btn.disabled = false;
+    busy = false;
+  }
+
+  $('strip').addEventListener('change', function(e) {
+    if (e.target.name === 'layout') activate(Number(e.target.value));
+  });
+  $('layoutNew').addEventListener('click', function() { go('layout-new'); });
+  $('layoutEdit').addEventListener('click', function() {
+    const active = activeLayout();
+    if (active) go('layout-' + active.id);
+  });
+  $('layoutDelete').addEventListener('click', function() {
+    const active = activeLayout();
+    if (active) deleteLayout(active);
+  });
+  $('restoreLayouts').addEventListener('click', restoreStartingLayouts);
+
+  // --- Layout editor ---
+
+  let editing = null;  // { id (0 = new), portrait, tiles: [{ widget, x, y, w, h }] }
+  let editorStart = '';
+  let selected = -1;
+  let flagged = -1;  // the tile the reader rejected
+  let drag = null;
+  const board = $('board');
+
+  function editorSize() {
+    return gridSize(editing.portrait);
+  }
+
+  function editorState() {
+    return JSON.stringify({ name: $('layoutName').value.trim(), portrait: editing.portrait, tiles: editing.tiles });
+  }
+
+  function copyTiles(tiles) {
+    return tiles.map(function(t) { return { widget: t.widget, x: t.x, y: t.y, w: t.w, h: t.h }; });
+  }
+
+  // layout: the one to edit, or null for a new one (empty, in the current shape).
+  function openEditor(layout) {
+    editing = layout
+      ? { id: layout.id, portrait: layout.shape === 'portrait', tiles: copyTiles(layout.tiles) }
+      : { id: 0, portrait: isPortrait(), tiles: [] };
+    selected = -1;
+    flagged = -1;
+    $('editorTitle').textContent = layout ? 'Edit ' + layout.name : 'New layout';
+    $('layoutName').value = layout ? layout.name : '';
+    $('layoutName').maxLength = data.grid.maxName;
+    $('layoutName').removeAttribute('aria-invalid');
+    renderBoard();
+    editorStart = editorState();
+    $('layouts').hidden = true;
+    $('editor').hidden = false;
+    $('editor').scrollIntoView();
+  }
+
+  function closeEditor() {
+    editing = null;
+    drag = null;
+    $('editor').hidden = true;
+    $('layouts').hidden = false;
+  }
+
+  function fits(r, ignore) {
+    const size = editorSize();
+    const min = data.grid.minCells;
+    if (r.w < min || r.h < min || r.x < 0 || r.y < 0 || r.x + r.w > size.cols || r.y + r.h > size.rows) return false;
+    return editing.tiles.every(function(t, i) {
+      return i === ignore || r.x >= t.x + t.w || t.x >= r.x + r.w || r.y >= t.y + t.h || t.y >= r.y + r.h;
+    });
+  }
+
+  // The largest free spot up to ADD_WIDTH x ADD_HEIGHT, first in reading order.
+  function findSpot() {
+    const size = editorSize();
+    const sizes = [];
+    for (let w = ADD_WIDTH; w >= data.grid.minCells; w--) {
+      for (let h = ADD_HEIGHT; h >= data.grid.minCells; h--) sizes.push({ w: w, h: h });
+    }
+    sizes.sort(function(a, b) { return b.w * b.h - a.w * a.h; });
+    for (const s of sizes) {
+      for (let y = 0; y + s.h <= size.rows; y++) {
+        for (let x = 0; x + s.w <= size.cols; x++) {
+          const r = { x: x, y: y, w: s.w, h: s.h };
+          if (fits(r, -1)) return r;
+        }
+      }
+    }
+    return null;
+  }
+
+  function place(node, r) {
+    const size = editorSize();
+    node.style.left = (r.x / size.cols) * 100 + '%';
+    node.style.top = (r.y / size.rows) * 100 + '%';
+    node.style.width = (r.w / size.cols) * 100 + '%';
+    node.style.height = (r.h / size.rows) * 100 + '%';
+    node.querySelector('.tile-size').textContent = r.w + ' × ' + r.h;
+  }
+
+  function describe(t) {
+    return widgetLabel(t.widget) + ', ' + t.w + ' by ' + t.h + ' cells, column ' + (t.x + 1) + ', row ' + (t.y + 1);
+  }
+
+  function renderBoard() {
+    const size = editorSize();
+    const refocus = board.contains(document.activeElement);
+    board.style.aspectRatio = size.cols + ' / ' + size.rows;
+    // Tall portrait grids stay inside the window.
+    board.style.maxWidth = 'calc(70vh * ' + (size.cols / size.rows).toFixed(3) + ')';
+    board.style.backgroundSize = 100 / size.cols + '% ' + 100 / size.rows + '%';
+    $('shapeLandscape').setAttribute('aria-pressed', editing.portrait ? 'false' : 'true');
+    $('shapePortrait').setAttribute('aria-pressed', editing.portrait ? 'true' : 'false');
+    board.replaceChildren();
+    editing.tiles.forEach(function(t, i) {
+      const node = el('div', 'tile');
+      node.dataset.index = String(i);
+      node.tabIndex = 0;
+      node.setAttribute('role', 'button');
+      node.setAttribute('aria-label', describe(t));
+      if (i === flagged) node.setAttribute('aria-invalid', 'true');
+      const body = el('div', 'tile-body');
+      body.append(el('span', '', widgetLabel(t.widget)), el('span', 'tile-size'));
+      node.appendChild(body);
+      place(node, t);
+      board.appendChild(node);
+    });
+    showSelection();
+    $('tileCount').textContent = '(' + editing.tiles.length + ' of ' + data.grid.maxTiles + ')';
+    if (refocus && selected >= 0) board.children[selected].focus({ preventScroll: true });
+  }
+
+  // Selection changes classes in place: rebuilding would drop a pointer capture.
+  function showSelection() {
+    Array.prototype.forEach.call(board.children, function(node, i) {
+      const on = i === selected;
+      node.classList.toggle('selected', on);
+      node.setAttribute('aria-pressed', on ? 'true' : 'false');
+      const handle = node.querySelector('.tile-handle');
+      if (on && !handle) {
+        const grip = el('span', 'tile-handle');
+        grip.setAttribute('aria-hidden', 'true');
+        node.appendChild(grip);
+      } else if (!on && handle) {
+        handle.remove();
+      }
+    });
+    $('tileTools').hidden = selected < 0;
+    if (selected >= 0) $('tileWidget').value = editing.tiles[selected].widget;
+  }
+
+  function select(i) {
+    selected = i;
+    showSelection();
+  }
+
+  function changed() {
+    flagged = -1;
+    renderBoard();
+  }
+
+  function addWidget(key) {
+    if (editing.tiles.length >= data.grid.maxTiles) {
+      showMessage('A layout holds up to ' + data.grid.maxTiles + ' widgets. Delete one to add another.', true);
+      return;
+    }
+    const spot = findSpot();
+    if (!spot) {
+      const min = data.grid.minCells;
+      showMessage('No room left: a widget needs ' + min + ' by ' + min + ' free cells. Shrink or move one first.', true);
+      return;
+    }
+    editing.tiles.push(Object.assign({ widget: key }, spot));
+    selected = editing.tiles.length - 1;
+    changed();
+  }
+
+  function deleteSelected() {
+    if (selected < 0) return;
+    editing.tiles.splice(selected, 1);
+    selected = -1;
+    changed();
+  }
+
+  function setShape(portrait) {
+    if (!editing || editing.portrait === portrait) return;
+    editing.tiles = turned(editing.tiles, editing.portrait, portrait);
+    editing.portrait = portrait;
+    changed();
+  }
+
+  board.addEventListener('pointerdown', function(e) {
+    const node = e.target.closest('.tile');
+    if (!node || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    const index = Number(node.dataset.index);
+    select(index);
+    node.focus({ preventScroll: true });
+    const rect = board.getBoundingClientRect();
+    const size = editorSize();
+    drag = {
+      index: index,
+      node: node,
+      resize: !!e.target.closest('.tile-handle'),
+      x0: e.clientX,
+      y0: e.clientY,
+      cellW: rect.width / size.cols,
+      cellH: rect.height / size.rows,
+      from: editing.tiles[index],
+      to: null
+    };
+    node.setPointerCapture(e.pointerId);
+    node.classList.add('dragging');
+    e.preventDefault();
+  });
+
+  board.addEventListener('pointermove', function(e) {
+    if (!drag) return;
+    const size = editorSize();
+    const dx = Math.round((e.clientX - drag.x0) / drag.cellW);
+    const dy = Math.round((e.clientY - drag.y0) / drag.cellH);
+    const f = drag.from;
+    const clamp = function(n, lo, hi) { return Math.max(lo, Math.min(hi, n)); };
+    // Clamped to the grid; an overlap shows (.blocked) and is settled on drop.
+    const to = drag.resize
+      ? { x: f.x, y: f.y, w: clamp(f.w + dx, data.grid.minCells, size.cols - f.x), h: clamp(f.h + dy, data.grid.minCells, size.rows - f.y) }
+      : { x: clamp(f.x + dx, 0, size.cols - f.w), y: clamp(f.y + dy, 0, size.rows - f.h), w: f.w, h: f.h };
+    drag.to = to;
+    place(drag.node, to);
+    drag.node.classList.toggle('blocked', !fits(to, drag.index));
+  });
+
+  // A drop on free cells sticks; anything else springs back (the transition).
+  function endDrag(commit) {
+    if (!drag) return;
+    const d = drag;
+    drag = null;
+    d.node.classList.remove('dragging', 'blocked');
+    const to = d.to;
+    const moved = to && (to.x !== d.from.x || to.y !== d.from.y || to.w !== d.from.w || to.h !== d.from.h);
+    if (commit && moved && fits(to, d.index)) {
+      Object.assign(editing.tiles[d.index], to);
+      changed();
+    } else {
+      place(d.node, d.from);
+      if (commit && moved) showMessage('That spot is taken. The tile went back.', true);
+    }
+  }
+  board.addEventListener('pointerup', function() { endDrag(true); });
+  board.addEventListener('pointercancel', function() { endDrag(false); });
+  board.addEventListener('click', function(e) {
+    if (!e.target.closest('.tile')) select(-1);
+  });
+
+  board.addEventListener('keydown', function(e) {
+    const node = e.target.closest('.tile');
+    if (!node) return;
+    const i = Number(node.dataset.index);
+    const step = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+    if (step) {
+      e.preventDefault();
+      const t = editing.tiles[i];
+      const to = e.shiftKey
+        ? { x: t.x, y: t.y, w: t.w + step[0], h: t.h + step[1] }
+        : { x: t.x + step[0], y: t.y + step[1], w: t.w, h: t.h };
+      selected = i;
+      if (fits(to, i)) Object.assign(t, to);
+      changed();
+    } else if (e.key === 'Delete' || e.key === 'Backspace') {
+      e.preventDefault();
+      selected = i;
+      deleteSelected();
+    } else if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      select(i);
+    }
+  });
+
+  PALETTE.forEach(function(key) {
+    const add = el('button', 'btn btn-sm', widgetLabel(key));
+    add.type = 'button';
+    add.addEventListener('click', function() { addWidget(key); });
+    $('palette').appendChild(add);
+    const opt = el('option', '', widgetLabel(key));
+    opt.value = key;
+    $('tileWidget').appendChild(opt);
+  });
+  $('tileWidget').addEventListener('change', function() {
+    if (selected < 0) return;
+    editing.tiles[selected].widget = $('tileWidget').value;
+    changed();
+  });
+  $('deleteTile').addEventListener('click', deleteSelected);
+  $('shapeLandscape').addEventListener('click', function() { setShape(false); });
+  $('shapePortrait').addEventListener('click', function() { setShape(true); });
+  $('layoutName').addEventListener('input', function() { $('layoutName').removeAttribute('aria-invalid'); });
+
+  // Points at what the reader (or the page) rejected: the name or a tile.
+  function editorReject(field, message) {
+    const tile = /^saveLayout\.tiles\[(\d+)\]$/.exec(field || '');
+    const max = data.grid.maxTiles;
+    const min = data.grid.minCells;
+    if (field === 'saveLayout.name') {
+      $('layoutName').setAttribute('aria-invalid', 'true');
+      $('layoutName').focus();
+      message = message || 'Give the layout a name of up to ' + data.grid.maxName + ' characters.';
+    } else if (tile && Number(tile[1]) < editing.tiles.length) {
+      flagged = Number(tile[1]);
+      selected = flagged;
+      renderBoard();
+      message = 'The ' + widgetLabel(editing.tiles[flagged].widget) + ' tile must be at least ' + min + ' by ' + min +
+        ' cells, inside the grid and clear of the others. Move it, then save again.';
+    } else if (field === 'saveLayout.tiles') {
+      message = message || 'Add between 1 and ' + max + ' widgets.';
+    } else if (field === 'saveLayout') {
+      message = 'The reader holds ' + data.grid.maxLayouts + ' layouts. Delete one, then save again.';
+    } else if (field === 'saveLayout.id') {
+      editing.id = 0;
+      message = 'This layout is no longer on the reader. Save again to add it as a new one.';
+    } else {
+      message = 'Could not save the layout: ' + message;
+    }
+    showMessage(message, true);
+  }
+
+  async function saveEditor() {
+    const name = oneLine($('layoutName').value);
+    if (!name) return editorReject('saveLayout.name', 'Give the layout a name.');
+    if (!editing.tiles.length) return editorReject('saveLayout.tiles', 'Add at least one widget.');
+    if (busy) return;
+    busy = true;
+    const btn = $('editorSave');
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+    try {
+      const answer = await postJson('/api/dashboards', {
+        saveLayout: {
+          id: editing.id,
+          name: clampUtf8(name, data.grid.maxName),
+          shape: editing.portrait ? 'portrait' : 'landscape',
+          tiles: copyTiles(editing.tiles)
+        }
+      });
+      data = await fetchDashboards();
+      const saved = findLayout(answer.id);
+      showMessage((saved ? saved.name : 'The layout') + ' saved and on the dashboard', false);
+      closeEditor();
+      renderLayouts();
+      go('layouts');
+    } catch (e) {
+      console.error(e);
+      editorReject(e.field, e.message);
+    }
+    btn.disabled = false;
+    btn.textContent = 'Save layout';
+    busy = false;
+  }
+
+  $('editorSave').addEventListener('click', saveEditor);
+  $('editorCancel').addEventListener('click', async function() {
+    if (editing && editorState() !== editorStart &&
+        !(await ui.confirm('Leave without saving this layout?', { ok: 'Discard changes', danger: true }))) {
+      return;
+    }
+    go('layouts');
+  });
+
+  // --- Orientation ---
+
+  function showOrientation() {
+    const radio = $('orient-' + data.orientation);
+    if (radio) radio.checked = true;
+  }
+
+  async function saveOrientation(value) {
+    try {
+      const response = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dashboardOrientation: value })
+      });
+      if (!response.ok) throw new Error((await readError(response)).error);
+      data.orientation = value;
+      renderLayouts();
+      showMessage('Orientation saved', false);
+    } catch (e) {
+      console.error(e);
+      showOrientation();
+      showMessage('Could not save the orientation: ' + e.message, true);
+    }
+  }
+
+  document.querySelectorAll('input[name="orientation"]').forEach(function(radio) {
+    radio.addEventListener('change', function() { saveOrientation(Number(radio.value)); });
+  });
+
+  // --- Weather and Image (the save bar) ---
+
+  function intervalLabel(minutes) {
+    if (minutes < 60 || minutes % 60 !== 0) return minutes + ' minutes';
+    const hours = minutes / 60;
+    return hours === 1 ? '1 hour' : hours + ' hours';
+  }
+
+  function fillIntervals(current) {
+    const values = INTERVALS.filter(function(m) { return m >= limits.min && m <= limits.max; });
+    // Keep a value set some other way (the API takes any minute count) instead of dropping it.
+    if (values.indexOf(current) === -1) {
+      values.push(current);
+      values.sort(function(a, b) { return a - b; });
+    }
+    const select = $('carouselInterval');
+    select.replaceChildren();
+    values.forEach(function(m) {
+      const opt = el('option', '', intervalLabel(m));
+      opt.value = String(m);
+      select.appendChild(opt);
+    });
+    select.value = String(current);
+  }
+
+  function setUnits(isFahrenheit) {
+    fahrenheit = isFahrenheit;
+    $('unitsC').setAttribute('aria-pressed', isFahrenheit ? 'false' : 'true');
+    $('unitsF').setAttribute('aria-pressed', isFahrenheit ? 'true' : 'false');
+  }
+
+  function formState() {
+    return {
+      place: $('placeName').value.trim(),
+      lat: $('latitude').value.trim(),
+      lon: $('longitude').value.trim(),
+      units: fahrenheit ? 'f' : 'c',
+      folder: $('carouselFolder').value.trim(),
+      interval: $('carouselInterval').value
+    };
+  }
+
+  // The save bar shows only while Weather or Image differs from what was loaded,
+  // and names which, since only one widget shows at a time.
+  function updateSaveBar() {
+    const now = formState();
+    const differs = function(keys) { return loaded !== null && keys.some(function(k) { return now[k] !== loaded[k]; }); };
+    const changed = [];
+    if (differs(['place', 'lat', 'lon', 'units'])) changed.push('Weather');
+    if (differs(['folder', 'interval'])) changed.push('Image');
+    $('save-summary').textContent = 'Unsaved changes to ' + changed.join(' and ');
+    $('save-container').classList.toggle('show', changed.length > 0);
+    showImageFolder();
+  }
+
+  function clearInvalid(root) {
+    (root || document).querySelectorAll('[aria-invalid="true"]').forEach(function(node) {
+      node.removeAttribute('aria-invalid');
+    });
+  }
+
+  function markInvalid(id, message) {
+    const node = $(id);
+    if (node) {
+      // The field may sit in a widget that is not showing.
+      const card = node.closest('[data-widget]');
+      if (card) showWidget(card.id);
+      node.setAttribute('aria-invalid', 'true');
+      node.focus();
+    }
+    showMessage(message, true);
+  }
+
+  function applyWidgetData(d) {
+    const w = d.weather || {};
+    const c = d.carousel || {};
+    if (c.minMinutes) limits.min = c.minMinutes;
+    if (c.maxMinutes) limits.max = c.maxMinutes;
+    $('placeName').value = w.hasLocation ? (w.place || '') : '';
+    $('latitude').value = w.hasLocation ? String(w.lat) : '';
+    $('longitude').value = w.hasLocation ? String(w.lon) : '';
+    setUnits(w.units === 'f');
+    $('carouselFolder').value = c.folder || DEFAULT_FOLDER;
+    fillIntervals(c.intervalMinutes || DEFAULT_INTERVAL);
+    clearInvalid($('weather'));
+    clearInvalid($('image'));
+    loaded = formState();
+    if (setImageFolder(c.folder || DEFAULT_FOLDER) && imageCounted) countPictures();
+    updateSaveBar();
+  }
+
+  function setSearchStatus(text) {
+    $('searchStatus').textContent = text;
+  }
+
+  function resultRow(place) {
+    const btn = el('button', 'row');
+    btn.type = 'button';
+    // Built with textContent: names come from an outside service.
+    const main = el('span', 'row-main', place.name || '');
+    const region = [place.admin1, place.country].filter(Boolean).join(', ');
+    const coords = round4(place.latitude) + ', ' + round4(place.longitude);
+    main.appendChild(el('span', 'row-meta', region ? region + ' · ' + coords : coords));
+    btn.appendChild(main);
+    btn.addEventListener('click', function() { pickPlace(place); });
+    return btn;
+  }
+
+  function pickPlace(place) {
+    const name = clampUtf8(place.name || '', PLACE_MAX_BYTES);
+    $('placeName').value = name;
+    $('latitude').value = String(round4(place.latitude));
+    $('longitude').value = String(round4(place.longitude));
+    $('placeResults').replaceChildren();
+    setSearchStatus('Picked ' + name + '. Save changes to use it.');
+    clearInvalid($('weather'));
+    updateSaveBar();
+  }
+
+  async function searchPlaces() {
+    const query = $('placeQuery').value.trim();
+    const results = $('placeResults');
+    results.replaceChildren();
+    if (query.length < 2) {
+      setSearchStatus('Type at least two letters of the place name.');
+      return;
+    }
+    if (navigator.onLine === false) {
+      setSearchStatus(OFFLINE_MESSAGE);
+      return;
+    }
+
+    const seq = ++searchSeq;
+    const btn = $('searchBtn');
+    btn.disabled = true;
+    setSearchStatus('Searching…');
+    // A hotspot with no uplink can leave the request hanging instead of failing.
+    const controller = new AbortController();
+    const timer = setTimeout(function() { controller.abort(); }, 8000);
+    try {
+      const url = GEOCODE_URL + '?name=' + encodeURIComponent(query) + '&count=5&language=en&format=json';
+      let response;
+      try {
+        response = await fetch(url, { signal: controller.signal });
+      } catch (e) {
+        if (seq === searchSeq) setSearchStatus(OFFLINE_MESSAGE);
+        return;
+      }
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      const found = await response.json();
+      if (seq !== searchSeq) return;
+
+      const places = (Array.isArray(found.results) ? found.results : []).filter(function(p) {
+        return Number.isFinite(p.latitude) && Number.isFinite(p.longitude);
+      });
+      if (places.length === 0) {
+        setSearchStatus('No places found for "' + query + '". Try another spelling, or enter the coordinates below.');
+        return;
+      }
+      places.forEach(function(p) { results.appendChild(resultRow(p)); });
+      setSearchStatus(places.length === 1 ? 'One place found. Pick it to fill in the details.'
+                                          : places.length + ' places found. Pick yours to fill in the details.');
+    } catch (e) {
+      console.error(e);
+      if (seq === searchSeq) {
+        setSearchStatus('Place search is not answering right now. Try again, or enter the coordinates below.');
+      }
+    } finally {
+      clearTimeout(timer);
+      if (seq === searchSeq) btn.disabled = false;
+    }
+  }
+
+  function clearLocation() {
+    $('placeName').value = '';
+    $('latitude').value = '';
+    $('longitude').value = '';
+    $('placeResults').replaceChildren();
+    setSearchStatus('');
+    clearInvalid($('weather'));
+    updateSaveBar();
+  }
+
+  function reject(field) {
+    markInvalid(FIELD_INPUTS[field], FIELD_MESSAGES[field]);
+    return null;
+  }
+
+  // Builds the POST body for Weather and Image, or marks the first bad field and returns null.
+  function buildRequest() {
+    const s = formState();
+    const body = { weather: { units: s.units }, carousel: {} };
+
+    if ($('latitude').validity.badInput) return reject('weather.lat');
+    if ($('longitude').validity.badInput) return reject('weather.lon');
+    if (s.lat === '' && s.lon === '') {
+      body.weather.clearLocation = true;
+    } else {
+      const lat = Number(s.lat);
+      const lon = Number(s.lon);
+      if (s.lat === '' || !Number.isFinite(lat) || lat < -90 || lat > 90) return reject('weather.lat');
+      if (s.lon === '' || !Number.isFinite(lon) || lon < -180 || lon > 180) return reject('weather.lon');
+      // With no name the dashboard shows the coordinates.
+      body.weather.place = clampUtf8(oneLine(s.place) || (round4(lat) + ', ' + round4(lon)), PLACE_MAX_BYTES);
+      body.weather.lat = lat;
+      body.weather.lon = lon;
+    }
+
+    let folder = s.folder || DEFAULT_FOLDER;
+    if (folder.charAt(0) !== '/') folder = '/' + folder;
+    if (folder.indexOf('..') !== -1 || utf8Length(folder) > FOLDER_MAX_BYTES) return reject('carousel.folder');
+    body.carousel.folder = folder;
+    body.carousel.intervalMinutes = parseInt(s.interval, 10);
+    return body;
+  }
+
+  async function saveWidgets() {
+    clearInvalid($('weather'));
+    clearInvalid($('image'));
+    const body = buildRequest();
+    if (!body) return;
+
+    const btn = $('saveBtn');
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+    try {
+      await postJson('/api/dashboards', body);
+      showMessage('Dashboards saved', false);
+      // Show what the reader stored: it tidies the folder path.
+      try {
+        data = await fetchDashboards();
+        renderLayouts();
+        applyWidgetData(data);
+      } catch (e) {
+        console.error(e);
+        loaded = formState();
+      }
+    } catch (e) {
+      console.error(e);
+      if (FIELD_INPUTS[e.field]) markInvalid(FIELD_INPUTS[e.field], FIELD_MESSAGES[e.field] || e.message);
+      else showMessage('Could not save dashboards: ' + e.message, true);
+    }
+    btn.disabled = false;
+    btn.textContent = 'Save changes';
+    updateSaveBar();
+  }
+
+  $('searchBtn').addEventListener('click', searchPlaces);
+  $('placeQuery').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      searchPlaces();
+    }
+  });
+  $('clearLocationBtn').addEventListener('click', clearLocation);
+  $('unitsC').addEventListener('click', function() { setUnits(false); updateSaveBar(); });
+  $('unitsF').addEventListener('click', function() { setUnits(true); updateSaveBar(); });
+  $('saveBtn').addEventListener('click', saveWidgets);
+  ['weather', 'image'].forEach(function(id) {
+    ['input', 'change'].forEach(function(type) {
+      $(id).addEventListener(type, function(e) {
+        if (e.target.id === 'placeQuery') return;
+        e.target.removeAttribute('aria-invalid');
+        updateSaveBar();
+      });
+    });
+  });
+
+  // --- To-do (saved straight away, one request at a time) ---
+
+  let todo = null;  // { items: [{ text, done }], max, maxText }
+  let todoBusy = false;
+  let todoEditing = -1;
+
+  function todoText(value) {
+    return clampUtf8(oneLine(value), todo.maxText);
+  }
+
+  function updateTodoHint() {
+    const full = todo.items.length >= todo.max;
+    const input = $('todoNew');
+    input.disabled = full;
+    $('todoAdd').disabled = full;
+    $('todoHint').textContent = full
+      ? 'The list holds ' + todo.max + ' tasks. Clear done ones to add more.'
+      : utf8Length(oneLine(input.value)) + ' / ' + todo.maxText;
+    $('todoHint').classList.toggle('text-danger', !full && utf8Length(oneLine(input.value)) > todo.maxText);
+  }
+
+  function todoRow(item, index) {
+    const row = el('div', 'row' + (item.done ? ' done' : ''));
+    if (index === todoEditing) {
+      const input = el('input', 'row-main');
+      input.type = 'text';
+      input.value = item.text;
+      input.setAttribute('aria-label', 'Task text');
+      const save = el('button', 'btn btn-primary btn-sm', 'Save');
+      save.type = 'button';
+      const cancel = el('button', 'btn btn-sm', 'Cancel');
+      cancel.type = 'button';
+      const commit = function() {
+        const text = todoText(input.value);
+        if (!text) {
+          showMessage('A task needs some text. Delete it instead to remove it.', true);
+          return;
+        }
+        todoOp({ op: 'edit', index: index, text: text });
+      };
+      save.addEventListener('click', commit);
+      cancel.addEventListener('click', function() { todoEditing = -1; renderTodo(); });
+      input.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          commit();
+        } else if (e.key === 'Escape') {
+          todoEditing = -1;
+          renderTodo();
+        }
+      });
+      row.append(input, save, cancel);
+      setTimeout(function() { input.focus(); }, 0);
+      return row;
+    }
+    const check = document.createElement('input');
+    check.type = 'checkbox';
+    check.id = 'todo-' + index;
+    check.checked = item.done;
+    check.addEventListener('change', function() { todoOp({ op: 'toggle', index: index }); });
+    const label = el('label', 'row-main', item.text);
+    label.htmlFor = check.id;
+    const edit = el('button', 'btn btn-sm', 'Edit');
+    edit.type = 'button';
+    edit.setAttribute('aria-label', 'Edit task: ' + item.text);
+    edit.addEventListener('click', function() { todoEditing = index; renderTodo(); });
+    const remove = el('button', 'btn btn-danger btn-sm', 'Delete');
+    remove.type = 'button';
+    remove.setAttribute('aria-label', 'Delete task: ' + item.text);
+    remove.addEventListener('click', function() { todoOp({ op: 'delete', index: index }); });
+    row.append(check, label, edit, remove);
+    return row;
+  }
+
+  function renderTodo() {
+    const list = $('todoList');
+    list.replaceChildren();
+    if (todo.items.length === 0) {
+      list.appendChild(el('p', 'empty', 'No tasks yet. Add one above.'));
+    } else {
+      todo.items.forEach(function(item, i) { list.appendChild(todoRow(item, i)); });
+    }
+    const done = todo.items.filter(function(item) { return item.done; }).length;
+    $('todoCount').textContent = todo.items.length + ' of ' + todo.max;
+    $('todoClearDone').disabled = done === 0;
+    $('todoNew').maxLength = todo.maxText;
+    updateTodoHint();
+  }
+
+  async function loadTodo() {
+    const response = await fetch('/api/todo', { cache: 'no-store' });
+    if (!response.ok) throw new Error('Failed to load the to-do list: ' + response.status);
+    todo = await response.json();
+    renderTodo();
+  }
+
+  async function todoOp(body) {
+    if (todoBusy) {
+      renderTodo();  // Undo the tick or edit that arrived mid-request
+      return false;
+    }
+    todoBusy = true;
+    try {
+      todo = await postJson('/api/todo', body);
+      todoEditing = -1;
+      renderTodo();
+      return true;
+    } catch (e) {
+      console.error(e);
+      if (e.field === 'items') {
+        showMessage('The list holds ' + todo.max + ' tasks. Clear done ones to add more.', true);
+      } else if (e.field === 'text') {
+        showMessage('A task needs 1 to ' + todo.maxText + ' characters on one line.', true);
+      } else if (e.field === 'index') {
+        showMessage('That task changed on the reader. The list was reloaded.', true);
+        todoEditing = -1;
+        try { await loadTodo(); } catch (err) { console.error(err); }
+      } else {
+        showMessage('Could not update the to-do list: ' + e.message, true);
+        renderTodo();
+      }
+      return false;
+    } finally {
+      todoBusy = false;
+    }
+  }
+
+  async function addTodo() {
+    if (!todo) return;
+    const text = todoText($('todoNew').value);
+    if (!text) {
+      showMessage('Type the task first.', true);
+      $('todoNew').focus();
+      return;
+    }
+    if (await todoOp({ op: 'add', text: text })) {
+      $('todoNew').value = '';
+      updateTodoHint();
+      $('todoNew').focus();
+    }
+  }
+
+  $('todoAdd').addEventListener('click', addTodo);
+  $('todoNew').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addTodo();
+    }
+  });
+  $('todoNew').addEventListener('input', function() { if (todo) updateTodoHint(); });
+  $('todoClearDone').addEventListener('click', async function() {
+    const done = todo.items.filter(function(item) { return item.done; }).length;
+    const noun = done === 1 ? '1 done task' : done + ' done tasks';
+    if (await ui.confirm('Clear ' + noun + '?', { ok: 'Clear done', danger: true })) todoOp({ op: 'clearDone' });
+  });
+
+  // --- Image: links to the Pictures page and to the folder in Files ---
+
+  const PICTURE_EXT = /\.(jpe?g|png|bmp)$/i;  // what the Image tile shows
+  let imageFolder = DEFAULT_FOLDER;  // the folder the reader saved
+  let imageCount = -1;  // pictures in it; -1 until counted
+  let imageCounted = false;
+
+  function picturesNoun(n) {
+    return n === 1 ? '1 picture' : n + ' pictures';
+  }
+
+  // The links use the saved folder; an edited, unsaved one adds a note.
+  function showImageFolder() {
+    $('imageFolderLink').href = '/files?path=' + encodeURIComponent(imageFolder) + '&type=pictures';
+    $('imageFolderName').textContent = 'Pictures in ' + imageFolder;
+    $('imageFolderCount').textContent = imageCount < 0 ? 'Open the folder in Files'
+      : imageCount === 0 ? 'None yet · open the folder in Files'
+      : picturesNoun(imageCount) + ' · open in Files to see or delete them';
+    $('imageFolderNote').hidden = !(loaded && formState().folder !== loaded.folder);
+  }
+
+  // Returns whether the folder changed.
+  function setImageFolder(folder) {
+    const moved = folder !== imageFolder;
+    imageFolder = folder;
+    if (moved) imageCount = -1;
+    showImageFolder();
+    return moved;
+  }
+
+  async function countPictures() {
+    const folder = imageFolder;
+    imageCounted = true;
+    try {
+      const response = await fetch('/api/files?path=' + encodeURIComponent(folder) + '&_=' + Date.now(), { cache: 'no-store' });
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      const entries = await response.json();
+      if (folder !== imageFolder) return;
+      imageCount = (Array.isArray(entries) ? entries : []).filter(function(entry) {
+        return !entry.isDirectory && PICTURE_EXT.test(entry.name);
+      }).length;
+    } catch (e) {
+      console.error(e);
+    }
+    showImageFolder();
+  }
+
+  // --- Widget picker: one widget's card at a time ---
+
+  const WIDGETS = ['weather', 'image', 'todo', 'date'];
+  const WIDGET_KEY = 'eminimal.dashboards.widget';
+
+  function storedWidget() {
+    try {
+      const widget = localStorage.getItem(WIDGET_KEY);
+      if (WIDGETS.indexOf(widget) !== -1) return widget;
+    } catch (e) {}
+    return WIDGETS[0];
+  }
+
+  function showWidget(name) {
+    WIDGETS.forEach(function(widget) { $(widget).hidden = widget !== name; });
+    $('widgetPick').value = name;
+    try {
+      localStorage.setItem(WIDGET_KEY, name);
+    } catch (e) {}
+  }
+
+  $('widgetPick').addEventListener('change', function(e) {
+    showWidget(e.target.value);
+    // Picked by hand: drop a widget's deep link, so a reload opens this one.
+    if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+  });
+  showWidget(storedWidget());
+
+  // --- Tabs ---
+
+  const TABS = ['widgets', 'layouts', 'settings'];
+  // The tab each deep-linked card lives on.
+  const CARD_TABS = {
+    layouts: 'layouts', weather: 'widgets', image: 'widgets', todo: 'widgets', date: 'widgets',
+    orientation: 'settings', 'starting-layouts': 'settings'
+  };
+  const TAB_KEY = 'eminimal.dashboards.tab';
+
+  function storedTab() {
+    try {
+      const tab = localStorage.getItem(TAB_KEY);
+      if (TABS.indexOf(tab) !== -1) return tab;
+    } catch (e) {}
+    return 'widgets';
+  }
+
+  function showTab(name) {
+    TABS.forEach(function(tab) {
+      const on = tab === name;
+      const button = $('tab-' + tab);
+      button.classList.toggle('active', on);
+      button.setAttribute('aria-selected', on ? 'true' : 'false');
+      button.tabIndex = on ? 0 : -1;
+      $('panel-' + tab).hidden = !on;
+    });
+    try {
+      localStorage.setItem(TAB_KEY, name);
+    } catch (e) {}
+    if (name === 'layouts') revealActive();
+  }
+
+  function tabForHash(hash) {
+    if (hash === 'layout-new' || /^layout-\d+$/.test(hash)) return 'layouts';
+    return CARD_TABS[hash] || storedTab();
+  }
+
+  TABS.forEach(function(tab) {
+    $('tab-' + tab).addEventListener('click', function() {
+      showTab(tab);
+      // A tab picked by hand drops the deep link, so a reload opens this tab.
+      if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+    });
+  });
+  $('tabs').addEventListener('keydown', function(e) {
+    const current = TABS.indexOf(e.target.id.slice(4));
+    const next = { ArrowLeft: current - 1, ArrowRight: current + 1, Home: 0, End: TABS.length - 1 }[e.key];
+    if (current === -1 || next === undefined) return;
+    e.preventDefault();
+    const tab = TABS[(next + TABS.length) % TABS.length];
+    $('tab-' + tab).click();
+    $('tab-' + tab).focus();
+  });
+
+  // --- Deep links: the reader's QR codes open /dashboards#<part> ---
+
+  function go(hash) {
+    if (location.hash === '#' + hash) route();
+    else location.hash = hash;
+  }
+
+  // The fragment; links made before every layout was editable (#preset-a…) go to #layouts.
+  function linkHash() {
+    const hash = location.hash.slice(1);
+    if (!/^preset-[a-z]$/.test(hash)) return hash;
+    history.replaceState(null, '', location.pathname + location.search + '#layouts');
+    return 'layouts';
+  }
+
+  function route() {
+    if (!data) return;
+    const hash = linkHash();
+    showTab(tabForHash(hash));
+    if (hash === 'layout-new') {
+      if (data.layouts.length < data.grid.maxLayouts) return openEditor(null);
+      showMessage('The reader holds ' + data.grid.maxLayouts + ' layouts. Delete one to make another.', true);
+      return go('layouts');
+    }
+    const edit = /^layout-(\d+)$/.exec(hash);
+    if (edit) {
+      const layout = findLayout(Number(edit[1]));
+      if (layout) return openEditor(layout);
+      showMessage('That layout is no longer on the reader.', true);
+      return go('layouts');
+    }
+    if (editing) closeEditor();
+    if (hash === 'pictures') return location.assign('/pictures');
+    // A widget is picked, not scrolled to: the picker stays in view above it.
+    if (WIDGETS.indexOf(hash) !== -1) showWidget(hash);
+    else if (CARD_TABS[hash]) $(hash).scrollIntoView();
+  }
+
+  window.addEventListener('hashchange', route);
+
+  // Sequential, not concurrent: the reader's web server handles one
+  // connection at a time.
+  (async function() {
+    try {
+      data = await fetchDashboards();
+      renderLayouts();
+      showOrientation();
+      applyWidgetData(data);
+      $('dash-loading').hidden = true;
+      $('dash-form').hidden = false;
+      showTab(tabForHash(linkHash()));
+    } catch (e) {
+      console.error(e);
+      $('dash-loading').innerHTML =
+        '<section class="card"><p class="empty">Could not load dashboard settings. Reload the page to try again.</p></section>';
+      return;
+    }
+    try {
+      await loadTodo();
+    } catch (e) {
+      console.error(e);
+      $('todoList').replaceChildren(el('p', 'empty', 'Could not load the to-do list. Reload the page to try again.'));
+      $('todoNew').disabled = true;
+      $('todoAdd').disabled = true;
+      $('todoClearDone').disabled = true;
+    }
+    route();
+    await countPictures();
+  })();
+</script>
+  </body>
+</html>

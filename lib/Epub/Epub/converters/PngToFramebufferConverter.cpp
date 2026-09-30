@@ -9,12 +9,14 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <new>
 
 #include "DirectPixelWriter.h"
 #include "DitherUtils.h"
 #include "PixelCache.h"
+#include "ToneCurve.h"
 
 namespace {
 
@@ -45,7 +47,17 @@ struct PngContext {
   uint8_t* grayLineBuffer{nullptr};
   uint8_t* alphaLineBuffer{nullptr};
   uint32_t lastYieldMs{0};  // throttle state for yieldDuringDecode()
+
+  // Photo path (fullGrayLevels / autoContrast); nullptr: the default 2bpp path.
+  const image_tone::TonedSink* toned{nullptr};
+  // Auto-contrast pre-pass: where it counts, and its sampling grid.
+  uint32_t* histogram{nullptr};
+  int histogramRowStep{1};
+  int histogramColStep{1};
 };
+
+// The pre-pass samples at most about this many rows and columns of the crop.
+constexpr int HISTOGRAM_SAMPLES_PER_AXIS = 512;
 
 // File I/O callbacks use pFile->fHandle to access the HalFile*,
 // avoiding the need for global file state.
@@ -249,6 +261,7 @@ int pngDrawCallback(PNGDRAW* pDraw) {
   int outXBase = ctx->config->x;
   int screenWidth = ctx->screenWidth;
   bool useDithering = ctx->config->useDithering;
+  const image_tone::TonedSink* const toned = ctx->toned;
 
   // Pre-compute orientation and render-mode state once per callback.
   DirectPixelWriter pw;
@@ -287,14 +300,18 @@ int pngDrawCallback(PNGDRAW* pDraw) {
         if (alpha >= 8 && alpha > alphaThreshold4x4(outX, outY)) {
           uint8_t gray = ctx->grayLineBuffer[srcX];
 
-          uint8_t ditheredGray;
-          if (useDithering) {
-            ditheredGray = applyBayerDither4Level(gray, outX, outY);
+          if (toned) {
+            toned->put(pw, dstX, dstY, outX, outY, gray, ctx->alphaLineBuffer != nullptr);
           } else {
-            ditheredGray = gray >> 6;
+            uint8_t ditheredGray;
+            if (useDithering) {
+              ditheredGray = applyBayerDither4Level(gray, outX, outY);
+            } else {
+              ditheredGray = gray >> 6;
+            }
+            pw.writePixel(outX, ditheredGray, ctx->alphaLineBuffer != nullptr);
+            if (caching) cw.writePixel(outX, ditheredGray);
           }
-          pw.writePixel(outX, ditheredGray, ctx->alphaLineBuffer != nullptr);
-          if (caching) cw.writePixel(outX, ditheredGray);
         }
       }
 
@@ -308,6 +325,58 @@ int pngDrawCallback(PNGDRAW* pDraw) {
   }
 
   return 1;
+}
+
+// Auto-contrast pre-pass: counts the visible crop's grey on the sampling grid.
+int pngHistogramCallback(PNGDRAW* pDraw) {
+  PngContext* ctx = reinterpret_cast<PngContext*>(pDraw->pUser);
+  if (!ctx || !ctx->histogram || !ctx->grayLineBuffer) return 0;
+
+  ImageToFramebufferDecoder::yieldDuringDecode(ctx->lastYieldMs);
+
+  const int visibleSrcY = pDraw->y - ctx->cropTop;
+  if (visibleSrcY < 0) return 1;
+  if (visibleSrcY >= ctx->visibleHeight) return 0;  // the rest is cropped away
+  if (visibleSrcY % ctx->histogramRowStep != 0) return 1;
+
+  const uint32_t transparentColor = ctx->decoder ? ctx->decoder->getTransparentColor() : 0;
+  convertLineToGray(pDraw->pPixels, ctx->grayLineBuffer, ctx->srcWidth, pDraw->iPixelType, pDraw->iBpp,
+                    pDraw->pPalette, pDraw->iHasAlpha, transparentColor, ctx->alphaLineBuffer);
+
+  const int end = ctx->cropLeft + ctx->visibleWidth;
+  for (int x = ctx->cropLeft; x < end; x += ctx->histogramColStep) {
+    // With alpha kept, mostly transparent pixels are not drawn: leave them out.
+    if (ctx->alphaLineBuffer && ctx->alphaLineBuffer[x] < 128) continue;
+    ctx->histogram[ctx->grayLineBuffer[x]]++;
+  }
+  return 1;
+}
+
+// Auto-contrast without a PSRAM stage: close `png`, run a full decode on it
+// that only fills the histogram (PNG cannot skip rows, so this costs one more
+// inflate of the file), then reopen it for the main decode and return the
+// reopen's rc. A failed pre-pass leaves the histogram empty (the curve is then
+// the gamma alone). Nothing may return between the close and the reopen: the
+// caller's cleanup closes whatever `png` holds.
+int histogramPrepassThenReopen(PNG& png, const std::string& imagePath, PngContext& ctx, image_tone::ToneMap& toneMap) {
+  png.close();
+  const unsigned long start = millis();
+  ctx.histogram = toneMap.histogram;
+  ctx.histogramRowStep = std::max(1, ctx.visibleHeight / HISTOGRAM_SAMPLES_PER_AXIS);
+  ctx.histogramColStep = std::max(1, ctx.visibleWidth / HISTOGRAM_SAMPLES_PER_AXIS);
+  ctx.lastYieldMs = start;
+  int rc = png.open(imagePath.c_str(), pngOpenWithHandle, pngCloseWithHandle, pngReadWithHandle, pngSeekWithHandle,
+                    pngHistogramCallback);
+  if (rc == PNG_SUCCESS) rc = png.decode(&ctx, 0);
+  if (rc != PNG_SUCCESS && rc != PNG_QUIT_EARLY) {
+    LOG_ERR("PNG", "Auto-contrast pre-pass failed (%d), using the gamma alone", rc);
+    memset(toneMap.histogram, 0, sizeof(toneMap.histogram));
+  }
+  png.close();
+  ctx.histogram = nullptr;
+  LOG_DBG("PNG", "Auto-contrast pre-pass: %lu ms", millis() - start);
+  return png.open(imagePath.c_str(), pngOpenWithHandle, pngCloseWithHandle, pngReadWithHandle, pngSeekWithHandle,
+                  pngDrawCallback);
 }
 
 }  // namespace
@@ -446,13 +515,56 @@ bool PngToFramebufferConverter::decodeToFramebuffer(const std::string& imagePath
   ctx.grayLineBuffer = lineBuffers.get();
   ctx.alphaLineBuffer = retainAlpha ? ctx.grayLineBuffer + grayBufSize : nullptr;
 
+  // Photo path (RenderConfig::fullGrayLevels / autoContrast). Auto-contrast
+  // needs the histogram before any pixel is written: stage the on-screen output
+  // in PSRAM and write it after the decode, or failing that (or when alpha is
+  // kept, which the stage does not carry) run a pre-pass.
+  const bool level16 = config.fullGrayLevels && renderer.getGray4Target() != nullptr;
+  std::unique_ptr<image_tone::ToneMap> toneMap;
+  image_tone::GrayStage stage;
+  image_tone::TonedSink toned;
+  bool prepass = false;
+  if (config.autoContrast) {
+    // One ~1.3 KB block per decode (histogram + LUT), kept off the task stack.
+    toneMap = makeUniqueNoThrow<image_tone::ToneMap>();
+    if (!toneMap) {
+      LOG_ERR("PNG", "OOM: tone map, drawing without auto-contrast");
+    } else {
+      const int stageX0 = std::max(0, -config.x);
+      const int stageY0 = std::max(0, -config.y);
+      const int stageX1 = std::min(ctx.dstWidth, ctx.screenWidth - config.x);
+      const int stageY1 = std::min(ctx.dstHeight, ctx.screenHeight - config.y);
+      if (!retainAlpha && stage.begin(stageX0, stageY0, stageX1 - stageX0, stageY1 - stageY0)) {
+        toned.stage = &stage;
+        toned.histogram = toneMap->histogram;
+      } else {
+        prepass = true;
+      }
+    }
+  }
+  if (level16 || toneMap) {
+    toned.writer.lut = toneMap ? toneMap->lut : nullptr;  // filled before any pixel goes through it
+    toned.writer.level16 = level16;
+    toned.writer.dither = config.useDithering;
+    ctx.toned = &toned;
+  }
+  if (prepass) {
+    rc = histogramPrepassThenReopen(*png, imagePath, ctx, *toneMap);
+    if (rc != PNG_SUCCESS) {
+      LOG_ERR("PNG", "Failed to reopen PNG after the auto-contrast pre-pass: %d", rc);
+      return false;
+    }
+    toneMap->buildCurve();
+  }
+
   // Stream the pixel cache to disk. PNGdec delivers source scanlines top to
   // bottom and we emit at most one (downscaled) output row per callback, so the
   // band only needs a single row. Streaming keeps the working set tiny, so
   // unlike the old full-image buffer it neither competes with the ~44KB decoder
   // nor forces larger images to skip caching - which previously meant a full
-  // re-decode on every one of an image page's ~14 render passes.
-  ctx.caching = !config.preserveAlpha && !config.cachePath.empty();
+  // re-decode on every one of an image page's ~14 render passes. The photo
+  // path writes no cache (see RenderConfig).
+  ctx.caching = !config.preserveAlpha && !config.cachePath.empty() && !config.autoContrast && !level16;
   if (ctx.caching) {
     if (!ctx.cache.begin(config.cachePath, ctx.dstWidth, ctx.dstHeight, config.x, config.y, 1)) {
       LOG_ERR("PNG", "Failed to start cache stream, continuing without caching");
@@ -475,6 +587,13 @@ bool PngToFramebufferConverter::decodeToFramebuffer(const std::string& imagePath
   }
 
   LOG_DBG("PNG", "PNG decoding complete - render time: %lu ms", decodeTime);
+
+  if (stage.active()) {
+    const unsigned long writeStart = millis();
+    toneMap->buildCurve();
+    stage.write(renderer, toned.writer, config.x, config.y);
+    LOG_DBG("PNG", "Auto-contrast staged write: %lu ms", millis() - writeStart);
+  }
 
   // Finalize the streamed cache (caching may have been cleared on a flush error).
   if (ctx.caching) {

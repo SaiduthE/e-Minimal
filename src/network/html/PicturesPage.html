@@ -1,0 +1,975 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Pictures – e-Minimal</title>
+    <link rel="stylesheet" href="/css/app.css" />
+    <script src="/js/app.js" defer></script>
+    <!-- The Convert page's tone code and ZIP writer -->
+    <script src="/js/bindery-core.js" defer></script>
+    <style>
+      /* Pictures-specific; everything else comes from /css/app.css */
+      body[data-page="pictures"] [hidden] { display: none !important; }
+      body[data-page="pictures"] .page-crumbs { margin: 0 0 12px; }
+      body[data-page="pictures"] .crumbs .current { color: var(--ink); font-weight: 600; }
+      body[data-page="pictures"] .card > p.muted { margin-bottom: 16px; }
+      body[data-page="pictures"] .dropzone { margin-bottom: 0; padding: 32px 16px; }
+      body[data-page="pictures"] .dropzone strong { display: block; margin-bottom: 4px; color: var(--ink); font-weight: 600; }
+      body[data-page="pictures"] .dropzone:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
+      body[data-page="pictures"] #picBatch { margin-top: 24px; }
+      body[data-page="pictures"] .tune { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px 24px; margin-bottom: 16px; }
+      @media (min-width: 600px) { body[data-page="pictures"] .tune { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+      body[data-page="pictures"] .tune-stage { display: flex; align-items: center; justify-content: center; min-height: 160px; padding: 8px; background: var(--paper); border: 1px solid var(--rule); border-radius: 4px; }
+      body[data-page="pictures"] .tune-stage canvas { display: block; width: auto; height: auto; max-width: 100%; max-height: 50vh; background: #fff; }
+      body[data-page="pictures"] .range-row { display: flex; align-items: center; gap: 12px; }
+      body[data-page="pictures"] .range-row input[type="range"] { flex: 1 1 auto; }
+      body[data-page="pictures"] .range-row output { width: 4ch; text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-2); }
+      body[data-page="pictures"] .queue-head { margin: 0; padding-top: 16px; border-top: 1px solid var(--rule-2); }
+      body[data-page="pictures"] .queue-head > h3 { margin: 0; }
+      body[data-page="pictures"] #picQueue { max-height: 50vh; overflow-y: auto; margin-bottom: 16px; }
+      body[data-page="pictures"] .row-actions { display: flex; flex: 0 0 auto; gap: 4px; }
+      body[data-page="pictures"] .row.is-error .row-meta { color: var(--danger); }
+      body[data-page="pictures"] .row.is-done .row-meta { color: var(--ok); }
+      body[data-page="pictures"] #picSaveHint { margin: -8px 0 0; }
+      body[data-page="pictures"] #picRun { margin-top: 16px; }
+      body[data-page="pictures"] #picRun .progress { margin: 4px 0 8px; }
+    </style>
+  </head>
+  <body data-page="pictures" data-title="Pictures" data-nav="dashboards">
+    <main>
+      <nav class="crumbs page-crumbs" aria-label="Where you are">
+        <a href="/dashboards#image">Dashboards</a>
+        <span class="current" aria-current="page">Pictures</span>
+      </nav>
+
+      <section class="card" id="add">
+        <h2>Add pictures</h2>
+        <p class="small muted">Photos are shrunk to the screen and made grey on this phone, so the reader shows them quickly on the Image tile. They go in <strong id="picFolder">the Image widget's folder</strong>.</p>
+        <label class="dropzone" id="picDrop" for="picInput">
+          <strong>Choose pictures or drop them here</strong>
+          <span>Photos from a phone or camera, or any JPEG or PNG</span>
+          <input type="file" id="picInput" class="visually-hidden" accept="image/*" multiple />
+        </label>
+
+        <div id="picBatch" hidden>
+          <div class="tune">
+            <div>
+              <div class="tune-stage"><canvas id="picPreview" width="1" height="1" role="img" aria-label="Preview"></canvas></div>
+              <p class="field-hint" id="picPreviewInfo" aria-live="polite"></p>
+            </div>
+            <div>
+              <div class="list">
+                <div class="row"><span class="row-main">Auto contrast<span class="row-meta">Stretches faded pictures to full black and white</span></span><label class="toggle" aria-label="Auto contrast"><input type="checkbox" id="picAuto" checked /><span></span></label></div>
+              </div>
+              <div class="field">
+                <label for="picContrast">Contrast</label>
+                <div class="range-row"><input type="range" id="picContrast" min="-40" max="40" step="1" value="0" /><output id="picContrastOut" for="picContrast">0</output></div>
+              </div>
+              <div class="field">
+                <label for="picGamma">Midtones</label>
+                <div class="range-row"><input type="range" id="picGamma" min="50" max="200" step="5" value="100" aria-describedby="picGammaHint" /><output id="picGammaOut" for="picGamma">1.00</output></div>
+                <span class="field-hint" id="picGammaHint">Lower is darker. E-ink greys look lighter than a phone’s.</span>
+              </div>
+            </div>
+          </div>
+          <div class="card-head queue-head">
+            <h3 id="picQueueTitle">Pictures to add</h3>
+            <button type="button" class="btn btn-ghost btn-sm" id="picClear">Remove all</button>
+          </div>
+          <div class="list" id="picQueue" role="group" aria-labelledby="picQueueTitle"></div>
+          <div class="toolbar">
+            <button type="button" class="btn btn-primary" id="picConvert">Convert</button>
+            <button type="button" class="btn btn-primary" id="picUpload" hidden>Upload to reader</button>
+            <button type="button" class="btn" id="picSave" hidden>Save to this device</button>
+            <button type="button" class="btn btn-ghost" id="picCancel" hidden>Cancel</button>
+          </div>
+          <p class="field-hint" id="picSaveHint" hidden>Uploading many pictures over Wi-Fi is slow. Save them to this device instead and copy them into <strong id="picSaveFolder">the folder</strong> on the card with a card reader.</p>
+        </div>
+
+        <div id="picRun" hidden>
+          <div class="progress" aria-hidden="true"><span id="picBar"></span></div>
+          <p class="small muted" id="picStatus" role="status" aria-live="polite"></p>
+        </div>
+      </section>
+
+      <section class="card" id="folder">
+        <h2>On the card</h2>
+        <div class="list">
+          <a class="row" id="picFilesLink" href="/files">
+            <span class="row-main"><span id="picFilesName">The Image widget's folder</span><span class="row-meta" id="picCount">Counting pictures…</span></span>
+          </a>
+          <a class="row" href="/dashboards#image">
+            <span class="row-main">Change the folder<span class="row-meta">The Image widget on the Dashboards page</span></span>
+          </a>
+        </div>
+        <p class="field-hint" id="picCap" hidden>The reader shows up to 500 pictures from one folder.</p>
+      </section>
+    </main>
+
+<script>
+  // Photos are made ready here, not on the reader: decoded with their EXIF
+  // turn, shrunk to fit the panel (never enlarged or cropped: the reader crops
+  // to each tile), toned with the Convert page's code (bindery-core.js) and
+  // encoded as grey JPEGs, undithered, since the reader draws 16 greys itself.
+  // A batch is uploaded over the Files page's upload or saved to this device
+  // for a card reader; the pictures that went leave the batch.
+
+  const DEFAULT_FOLDER = '/carousel';
+  const PANEL_LONG = 1872;  // the IT8951 panel, 1872 x 1404
+  const PANEL_SHORT = 1404;
+  const JPEG_QUALITY = 0.9;
+  const PREVIEW_MAX = 960;  // long side of the preview, drawn again on every slider move
+  const MAX_STEP_AREA = 16e6;  // pixels in one canvas; iOS refuses bigger ones
+  const READER_MAX_PICTURES = 500;  // CarouselImages::MAX_IMAGES
+  const PICTURE_EXT = /\.(jpe?g|png|bmp)$/i;  // what the Image tile shows
+  const PHOTO_EXT = /\.(jpe?g|png|webp|gif|bmp|avif|heic|heif|tiff?)$/i;
+  const ZIP_NAME = 'eminimal-pictures.zip';
+  const TONE_KEY = 'eminimal.dashboards.pictureTone';
+  const WS_CHUNK = 4096;  // as the Files page sends
+
+  const pics = {
+    folder: null,  // the folder the Image tile shows, as the reader saved it
+    folderError: false,
+    onCard: new Set(),  // every name in the folder, lower case: FAT ignores case
+    count: -1,  // pictures in the folder; -1 until listed
+    listError: false,
+    // [{ file, name, out: { blob, w, h } | null, state: '' | 'converting' | 'uploading',
+    //    progress, uploaded, bad (would not convert), error }]
+    queue: [],
+    previewItem: null,
+    preview: null,  // { item, luma, w, h, srcW, srcH, fit }
+    previewSeq: 0,
+    busy: false,
+    cancel: false,
+    abort: null,  // stops the upload in flight
+    httpOnly: false  // no WebSocket: POST /upload instead, as the Files page falls back
+  };
+  let previewFrame = 0;
+  let wakeLock = null;
+
+  function $(id) {
+    return document.getElementById(id);
+  }
+
+  function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  function showMessage(text, isError) {
+    ui.toast(text, isError ? 'danger' : 'ok');
+  }
+
+  function bindery() {
+    if (window.Bindery) return window.Bindery;
+    showMessage('The picture tools did not load. Reload the page and try again.', true);
+    return null;
+  }
+
+  function tick() {
+    return new Promise(function(resolve) { setTimeout(resolve, 0); });
+  }
+
+  function formatBytes(n) {
+    if (n < 1024) return n + ' B';
+    if (n < 1024 * 1024) return Math.round(n / 1024) + ' KB';
+    return (n / 1024 / 1024).toFixed(1) + ' MB';
+  }
+
+  function picturesNoun(n) {
+    return n === 1 ? '1 picture' : n + ' pictures';
+  }
+
+  function nameKey(name) {
+    return name.toLowerCase();
+  }
+
+  function joinPath(folder, name) {
+    return folder.replace(/\/+$/, '') + '/' + name;
+  }
+
+  function naturalCompare(a, b) {
+    return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+  }
+
+  function folderLabel() {
+    return pics.folder || 'the Image widget’s folder';
+  }
+
+  // The photo's own name as a JPEG, safe on FAT32 and in the upload's
+  // "START:name:size:path" line.
+  function pictureName(fileName) {
+    let stem = fileName.replace(/^.*[\\/]/, '').replace(/\.[^.]*$/, '');
+    stem = stem.replace(/[\\/:*?"<>|\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().replace(/^[.\s]+/, '');
+    stem = Array.from(stem).slice(0, 96).join('').trim();
+    return (stem || 'Picture') + '.jpg';
+  }
+
+  // name, or "name (2).jpg", "name (3).jpg"… when taken has it; claims the one returned.
+  function claimName(name, taken) {
+    const dot = name.lastIndexOf('.');
+    const ext = dot > 0 ? name.slice(dot) : '';
+    const stem = (dot > 0 ? name.slice(0, dot) : name).replace(/ \(\d+\)$/, '');
+    let candidate = name;
+    for (let n = 2; taken.has(nameKey(candidate)); n++) candidate = stem + ' (' + n + ')' + ext;
+    taken.add(nameKey(candidate));
+    return candidate;
+  }
+
+  // Names on the card and in the batch, but for the item's own.
+  function takenNames(except) {
+    const taken = new Set(pics.onCard);
+    pics.queue.forEach(function(item) {
+      if (item !== except && item.name) taken.add(nameKey(item.name));
+    });
+    return taken;
+  }
+
+  // --- Tone (the Convert page's controls and code) ---
+
+  function toneOptions() {
+    return {
+      autoLevels: $('picAuto').checked,
+      contrast: Number($('picContrast').value),
+      gamma: Number($('picGamma').value) / 100
+    };
+  }
+
+  function showToneValues() {
+    $('picContrastOut').textContent = $('picContrast').value;
+    $('picGammaOut').textContent = (Number($('picGamma').value) / 100).toFixed(2);
+  }
+
+  function saveTone() {
+    try {
+      localStorage.setItem(TONE_KEY, JSON.stringify(toneOptions()));
+    } catch (e) {}
+  }
+
+  function restoreTone() {
+    let tone = null;
+    try {
+      tone = JSON.parse(localStorage.getItem(TONE_KEY) || 'null');
+    } catch (e) {}
+    if (tone && typeof tone === 'object') {
+      $('picAuto').checked = tone.autoLevels !== false;
+      if (Number.isFinite(tone.contrast)) $('picContrast').value = String(tone.contrast);
+      if (Number.isFinite(tone.gamma)) $('picGamma').value = String(Math.round(tone.gamma * 100));
+    }
+    showToneValues();
+  }
+
+  // New settings: redraw the preview and drop what was converted with the old ones.
+  function toneChanged() {
+    showToneValues();
+    if (!previewFrame) {
+      previewFrame = requestAnimationFrame(function() {
+        previewFrame = 0;
+        drawPreview();
+      });
+    }
+    let dropped = false;
+    pics.queue.forEach(function(item) {
+      if (item.out) {
+        item.out = null;
+        dropped = true;
+      }
+      if (!item.bad) item.error = '';
+    });
+    if (dropped) {
+      $('picRun').hidden = true;
+      renderQueue();
+    }
+  }
+
+  // --- Making a picture ---
+
+  // Decoded with the camera's EXIF turn applied; close() frees it.
+  async function decodePicture(file) {
+    if (window.createImageBitmap) {
+      try {
+        const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+        return { src: bmp, w: bmp.width, h: bmp.height, close: function() { bmp.close(); } };
+      } catch (e) {}  // Fall back to an <img>, which applies EXIF itself
+    }
+    const url = URL.createObjectURL(file);
+    try {
+      const img = new Image();
+      img.src = url;
+      await img.decode();
+      return { src: img, w: img.naturalWidth, h: img.naturalHeight, close: function() {} };
+    } catch (e) {
+      throw new Error('this browser cannot open it');
+    } finally {
+      setTimeout(function() { URL.revokeObjectURL(url); }, 0);
+    }
+  }
+
+  // The panel's size either way round; never enlarged.
+  function fitSize(w, h) {
+    const s = Math.min(1, PANEL_LONG / Math.max(w, h), PANEL_SHORT / Math.min(w, h));
+    return { w: Math.max(1, Math.round(w * s)), h: Math.max(1, Math.round(h * s)) };
+  }
+
+  function newCanvas(w, h) {
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    return c;
+  }
+
+  // Shrinks in halving steps (one big step aliases fine detail), halving again
+  // while a step would be over MAX_STEP_AREA. Transparency lands on white.
+  function downscale(src, sw, sh, dw, dh) {
+    let cur = src;
+    let cw = sw;
+    let ch = sh;
+    while (cw / 2 >= dw && ch / 2 >= dh) {
+      let nw = Math.round(cw / 2);
+      let nh = Math.round(ch / 2);
+      while (nw * nh > MAX_STEP_AREA && nw / 2 >= dw && nh / 2 >= dh) {
+        nw = Math.round(nw / 2);
+        nh = Math.round(nh / 2);
+      }
+      const step = newCanvas(nw, nh);
+      const g = step.getContext('2d');
+      g.imageSmoothingQuality = 'high';
+      g.drawImage(cur, 0, 0, cw, ch, 0, 0, nw, nh);
+      if (cur !== src) cur.width = cur.height = 1;
+      cur = step;
+      cw = nw;
+      ch = nh;
+    }
+    const out = newCanvas(dw, dh);
+    const g = out.getContext('2d', { willReadFrequently: true });
+    g.imageSmoothingQuality = 'high';
+    g.fillStyle = '#fff';
+    g.fillRect(0, 0, dw, dh);
+    g.drawImage(cur, 0, 0, cw, ch, 0, 0, dw, dh);
+    if (cur !== src) cur.width = cur.height = 1;
+    return out;
+  }
+
+  // Grey levels (0 black), weighed as the Convert page does.
+  function lumaOf(px, count) {
+    const luma = new Uint8Array(count);
+    for (let i = 0; i < count; i++) luma[i] = (px[i * 4] * 299 + px[i * 4 + 1] * 587 + px[i * 4 + 2] * 114) / 1000;
+    return luma;
+  }
+
+  // One photo as the reader will get it: { blob (grey JPEG), w, h }.
+  async function preparePicture(file, tone) {
+    const d = await decodePicture(file);
+    let c;
+    try {
+      const fit = fitSize(d.w, d.h);
+      c = downscale(d.src, d.w, d.h, fit.w, fit.h);
+    } finally {
+      d.close();
+    }
+    const w = c.width;
+    const h = c.height;
+    const g = c.getContext('2d', { willReadFrequently: true });
+    const img = g.getImageData(0, 0, w, h);
+    const px = img.data;
+    const grey = window.Bindery.applyTone(lumaOf(px, w * h), tone);
+    for (let i = 0; i < grey.length; i++) px[i * 4] = px[i * 4 + 1] = px[i * 4 + 2] = grey[i];
+    g.putImageData(img, 0, 0);
+    const blob = await new Promise(function(resolve) { c.toBlob(resolve, 'image/jpeg', JPEG_QUALITY); });
+    c.width = c.height = 1;
+    if (!blob) throw new Error('this browser could not make a JPEG');
+    return { blob: blob, w: w, h: h };
+  }
+
+  // --- Preview: one picture, small, in the reader's 16 greys ---
+
+  async function previewPicture(item) {
+    if (!bindery()) return;
+    const seq = ++pics.previewSeq;
+    pics.previewItem = item;
+    pics.preview = null;
+    const spinner = el('span', 'spinner');
+    spinner.setAttribute('aria-hidden', 'true');
+    $('picPreviewInfo').replaceChildren(spinner, ' Drawing ' + item.file.name + '…');
+    renderQueue();
+    let d = null;
+    try {
+      d = await decodePicture(item.file);
+      if (seq !== pics.previewSeq) return;
+      const fit = fitSize(d.w, d.h);
+      const s = Math.min(1, PREVIEW_MAX / Math.max(fit.w, fit.h));
+      const w = Math.max(1, Math.round(fit.w * s));
+      const h = Math.max(1, Math.round(fit.h * s));
+      const c = downscale(d.src, d.w, d.h, w, h);
+      const luma = lumaOf(c.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data, w * h);
+      c.width = c.height = 1;
+      pics.preview = { item: item, luma: luma, w: w, h: h, srcW: d.w, srcH: d.h, fit: fit };
+      drawPreview();
+    } catch (e) {
+      console.error(e);
+      if (seq === pics.previewSeq) $('picPreviewInfo').textContent = 'Could not open ' + item.file.name + ': ' + e.message + '.';
+    } finally {
+      if (d) d.close();
+    }
+  }
+
+  function drawPreview() {
+    const p = pics.preview;
+    const B = window.Bindery;
+    if (!p || !B) return;
+    const levels = B.quantize(B.applyTone(p.luma, toneOptions()), p.w, p.h, 16, 'none');
+    const c = $('picPreview');
+    c.width = p.w;
+    c.height = p.h;
+    const g = c.getContext('2d');
+    const img = g.createImageData(p.w, p.h);
+    const px = img.data;
+    for (let i = 0; i < levels.length; i++) {
+      px[i * 4] = px[i * 4 + 1] = px[i * 4 + 2] = levels[i] * 17;
+      px[i * 4 + 3] = 255;
+    }
+    g.putImageData(img, 0, 0);
+    const name = p.item.file.name;
+    const size = p.fit.w === p.srcW && p.fit.h === p.srcH
+      ? p.srcW + ' × ' + p.srcH + ', kept at its size'
+      : p.srcW + ' × ' + p.srcH + ' → ' + p.fit.w + ' × ' + p.fit.h;
+    const info = name + ' · ' + size + ' · 16 greys';
+    // Unchanged while a slider moves: the line is a live region.
+    if ($('picPreviewInfo').textContent !== info) $('picPreviewInfo').textContent = info;
+    c.setAttribute('aria-label', 'Preview of ' + name + ' in the reader’s 16 greys');
+  }
+
+  function clearPreview() {
+    pics.previewSeq++;
+    pics.previewItem = null;
+    pics.preview = null;
+    $('picPreview').width = $('picPreview').height = 1;
+    $('picPreviewInfo').textContent = '';
+  }
+
+  // --- The batch ---
+
+  function isPhoto(file) {
+    return /^image\//.test(file.type) || PHOTO_EXT.test(file.name);
+  }
+
+  function addPictures(fileList) {
+    if (pics.busy) return;
+    const files = Array.prototype.slice.call(fileList || []);
+    const photos = files.filter(isPhoto);
+    const skipped = files.length - photos.length;
+    if (skipped) showMessage(skipped === 1 ? 'One file is not a picture and was left out.' : skipped + ' files are not pictures and were left out.', true);
+    if (!photos.length) return;
+    photos.sort(function(a, b) { return naturalCompare(a.name, b.name); });
+    photos.forEach(function(file) {
+      pics.queue.push({ file: file, name: '', out: null, state: '', progress: 0, uploaded: false, bad: false, error: '' });
+    });
+    $('picRun').hidden = true;
+    renderQueue();
+    if (!pics.previewItem) previewPicture(pics.queue[0]);
+  }
+
+  function removePicture(item) {
+    if (pics.busy) return;
+    pics.queue.splice(pics.queue.indexOf(item), 1);
+    if (item === pics.previewItem) {
+      if (pics.queue.length) return previewPicture(pics.queue[0]);
+      clearPreview();
+    }
+    renderQueue();
+    if (!pics.queue.length) $('picInput').focus();
+  }
+
+  // Drops the pictures a run is done with, and their JPEGs, from the batch.
+  function unload(done) {
+    const kept = pics.queue.filter(function(item) { return !done(item); });
+    if (kept.length === pics.queue.length) return;
+    const hadFocus = $('picBatch').contains(document.activeElement);
+    pics.queue = kept;
+    if (pics.previewItem && kept.indexOf(pics.previewItem) === -1) {
+      clearPreview();
+      const next = kept.find(function(item) { return !item.bad; });
+      if (next) previewPicture(next);
+    }
+    renderQueue();
+    if (!kept.length && hadFocus) $('picInput').focus();
+  }
+
+  function itemMeta(item) {
+    if (item.state === 'converting') return 'Converting…';
+    if (item.state === 'uploading') return 'Uploading · ' + item.progress + '%';
+    if (item.uploaded) return 'On the reader as ' + item.name;
+    if (item.error) return item.error;
+    if (!item.out) return formatBytes(item.file.size) + ' · to convert';
+    const size = item.out.w + ' × ' + item.out.h + ' · ' + formatBytes(item.out.blob.size);
+    return item.name === item.file.name ? size : 'As ' + item.name + ' · ' + size;
+  }
+
+  function showItem(item) {
+    if (!item.row) return;
+    item.row.classList.toggle('is-error', !!item.error && !item.state);
+    item.row.classList.toggle('is-done', item.uploaded);
+    item.meta.textContent = itemMeta(item);
+  }
+
+  function renderQueue() {
+    const list = $('picQueue');
+    list.replaceChildren();
+    pics.queue.forEach(function(item) {
+      const row = el('div', 'row');
+      const main = el('span', 'row-main', item.file.name);
+      const meta = el('span', 'row-meta');
+      main.appendChild(meta);
+      const actions = el('span', 'row-actions');
+      const look = el('button', 'btn btn-sm btn-ghost', 'Preview');
+      look.type = 'button';
+      look.disabled = pics.busy || item.bad;
+      look.setAttribute('aria-pressed', item === pics.previewItem ? 'true' : 'false');
+      look.setAttribute('aria-label', 'Preview ' + item.file.name);
+      look.addEventListener('click', function() { previewPicture(item); });
+      const remove = el('button', 'btn btn-sm btn-ghost', 'Remove');
+      remove.type = 'button';
+      remove.disabled = pics.busy;
+      remove.setAttribute('aria-label', 'Remove ' + item.file.name);
+      remove.addEventListener('click', function() { removePicture(item); });
+      actions.append(look, remove);
+      row.append(main, actions);
+      item.row = row;
+      item.meta = meta;
+      showItem(item);
+      list.appendChild(row);
+    });
+    $('picBatch').hidden = pics.queue.length === 0;
+    $('picQueueTitle').textContent = pics.queue.length === 1 ? '1 picture to add' : pics.queue.length + ' pictures to add';
+    showPictureActions();
+  }
+
+  // Convert while anything is left to convert; then Upload and Save side by side.
+  function showPictureActions() {
+    const toConvert = pics.queue.filter(function(item) { return !item.out && !item.bad; }).length;
+    const converted = pics.queue.filter(function(item) { return item.out; });
+    const ready = toConvert === 0 && converted.length > 0;
+    const convert = $('picConvert');
+    convert.hidden = toConvert === 0;
+    convert.disabled = pics.busy;
+    convert.textContent = toConvert === 1 ? 'Convert 1 picture' : 'Convert ' + toConvert + ' pictures';
+    $('picUpload').hidden = !ready;
+    $('picUpload').disabled = pics.busy || !pics.folder || converted.every(function(item) { return item.uploaded; });
+    $('picSave').hidden = !ready;
+    $('picSave').disabled = pics.busy;
+    $('picSaveHint').hidden = !ready;
+    $('picCancel').hidden = !pics.busy;
+    $('picClear').disabled = pics.busy;
+    $('picInput').disabled = pics.busy;
+    ['picAuto', 'picContrast', 'picGamma'].forEach(function(id) { $(id).disabled = pics.busy; });
+  }
+
+  async function startRun() {
+    pics.busy = true;
+    pics.cancel = false;
+    pics.abort = null;
+    $('picRun').hidden = false;
+    renderQueue();
+    try {
+      wakeLock = navigator.wakeLock ? await navigator.wakeLock.request('screen') : null;
+    } catch (e) {
+      wakeLock = null;
+    }
+  }
+
+  function setRun(text, fraction) {
+    $('picStatus').textContent = text;
+    if (fraction !== undefined) $('picBar').style.width = Math.round(Math.min(1, Math.max(0, fraction)) * 100) + '%';
+  }
+
+  function endRun() {
+    pics.busy = false;
+    pics.abort = null;
+    renderQueue();
+    if (wakeLock) {
+      wakeLock.release().catch(function() {});
+      wakeLock = null;
+    }
+  }
+
+  async function convertPictures() {
+    const B = bindery();
+    const todo = pics.queue.filter(function(item) { return !item.out && !item.bad; });
+    if (!B || pics.busy || !todo.length) return;
+    const tone = toneOptions();
+    saveTone();
+    await startRun();
+    const taken = takenNames(null);
+    let done = 0;
+    let failed = 0;
+    for (let i = 0; i < todo.length && !pics.cancel; i++) {
+      const item = todo[i];
+      setRun('Converting ' + (i + 1) + ' of ' + todo.length + ' · ' + item.file.name, i / todo.length);
+      item.state = 'converting';
+      item.error = '';
+      showItem(item);
+      await tick();
+      try {
+        item.out = await preparePicture(item.file, tone);
+        if (!item.name) item.name = claimName(pictureName(item.file.name), taken);
+        done++;
+      } catch (e) {
+        console.error(e);
+        item.bad = true;
+        item.error = 'Could not convert: ' + e.message;
+        failed++;
+      }
+      item.state = '';
+      showItem(item);
+    }
+    endRun();
+    if (pics.cancel) setRun('Stopped. ' + done + ' converted.', 0);
+    else if (failed) setRun(done + ' converted; ' + failed + ' could not be opened (marked in the list).', 1);
+    else setRun(picturesNoun(done) + ' converted. Upload them to the reader, or save them to this device.', 1);
+    if (!$('picUpload').hidden && (document.activeElement === document.body || document.activeElement === $('picConvert'))) {
+      $('picUpload').focus();
+    }
+  }
+
+  function socketUrl() {
+    return 'ws://' + location.hostname + ':' + ((Number(location.port) || 80) + 1) + '/';
+  }
+
+  // The Files page's WebSocket upload: START:<name>:<size>:<folder>, the bytes,
+  // then DONE, or ERROR:<why>. noSocket marks "nothing listening".
+  function uploadOverSocket(blob, name, folder, onProgress) {
+    return new Promise(function(resolve, reject) {
+      let ws;
+      try {
+        ws = new WebSocket(socketUrl());
+      } catch (e) {
+        reject(Object.assign(new Error('No WebSocket'), { noSocket: true }));
+        return;
+      }
+      ws.binaryType = 'arraybuffer';
+      let ready = false;
+      let finished = false;
+      const fail = function(error) {
+        if (finished) return;
+        finished = true;
+        try { ws.close(); } catch (e) {}
+        reject(error);
+      };
+      pics.abort = function() { fail(new Error('Cancelled.')); };
+      ws.onopen = function() { ws.send('START:' + name + ':' + blob.size + ':' + folder); };
+      ws.onmessage = async function(event) {
+        const msg = String(event.data);
+        if (msg === 'READY') {
+          ready = true;
+          try {
+            const bytes = new Uint8Array(await blob.arrayBuffer());
+            for (let off = 0; off < bytes.length && !finished; off += WS_CHUNK) {
+              while (ws.bufferedAmount > WS_CHUNK * 2 && ws.readyState === WebSocket.OPEN) {
+                await new Promise(function(r) { setTimeout(r, 5); });
+              }
+              if (ws.readyState !== WebSocket.OPEN) throw new Error('the connection to the reader closed');
+              const end = Math.min(bytes.length, off + WS_CHUNK);
+              ws.send(bytes.subarray(off, end));
+              onProgress(end / bytes.length);
+            }
+          } catch (e) {
+            fail(e);
+          }
+        } else if (msg === 'DONE') {
+          finished = true;
+          ws.close();
+          resolve();
+        } else if (msg.indexOf('ERROR:') === 0) {
+          fail(new Error(msg.slice(6)));
+        }
+      };
+      ws.onerror = function() {
+        if (!ready) fail(Object.assign(new Error('could not reach the reader'), { noSocket: true }));
+      };
+      ws.onclose = function() { fail(new Error('the connection to the reader closed')); };
+    });
+  }
+
+  // The Files page's fallback: a multipart POST /upload?path=<folder>.
+  function uploadOverHttp(blob, name, folder, onProgress) {
+    return new Promise(function(resolve, reject) {
+      const form = new FormData();
+      form.append('file', blob, name);
+      const xhr = new XMLHttpRequest();
+      pics.abort = function() { xhr.abort(); };
+      xhr.open('POST', '/upload?path=' + encodeURIComponent(folder));
+      xhr.upload.onprogress = function(e) {
+        if (e.lengthComputable) onProgress(e.loaded / e.total);
+      };
+      xhr.onload = function() {
+        if (xhr.status === 200) resolve();
+        else reject(new Error(xhr.responseText || 'HTTP ' + xhr.status));
+      };
+      xhr.onerror = function() { reject(new Error('could not reach the reader')); };
+      xhr.onabort = function() { reject(new Error('Cancelled.')); };
+      xhr.send(form);
+    });
+  }
+
+  // Sends item.out as item.name; a name the card has by now moves on to the next " (n)".
+  async function sendPicture(item, folder, onProgress) {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      item.name = claimName(item.name, takenNames(item));
+      try {
+        if (!pics.httpOnly) {
+          try {
+            return await uploadOverSocket(item.out.blob, item.name, folder, onProgress);
+          } catch (e) {
+            if (!e.noSocket || pics.cancel) throw e;
+            pics.httpOnly = true;
+          }
+        }
+        return await uploadOverHttp(item.out.blob, item.name, folder, onProgress);
+      } catch (e) {
+        if (pics.cancel || !/already exists/i.test(e.message)) throw e;
+        pics.onCard.add(nameKey(item.name));
+      }
+    }
+    throw new Error('the card has too many files by this name');
+  }
+
+  // Makes each part of the path (POST /mkdir answers 400 for one that is there).
+  async function ensureFolder(folder) {
+    let parent = '/';
+    for (const part of folder.split('/').filter(Boolean)) {
+      const form = new FormData();
+      form.append('name', part);
+      form.append('path', parent);
+      await fetch('/mkdir', { method: 'POST', body: form });
+      parent = joinPath(parent, part);
+    }
+  }
+
+  async function uploadPictures() {
+    const todo = pics.queue.filter(function(item) { return item.out && !item.uploaded; });
+    const folder = pics.folder;
+    if (pics.busy || !todo.length || !folder) return;
+    await startRun();
+    let added = 0;
+    let failed = 0;
+    let stopped = '';
+    try {
+      setRun('Getting ' + folder + ' ready…', 0);
+      const entries = await fetchFolder(folder);
+      // An empty answer is an empty folder or none at all.
+      if (!entries.length) await ensureFolder(folder);
+      setListing(entries);
+      for (let i = 0; i < todo.length && !pics.cancel; i++) {
+        const item = todo[i];
+        const label = 'Uploading ' + (i + 1) + ' of ' + todo.length + ' · ';
+        item.state = 'uploading';
+        item.progress = 0;
+        item.error = '';
+        showItem(item);
+        setRun(label + item.name, i / todo.length);
+        try {
+          await sendPicture(item, folder, function(f) {
+            item.progress = Math.round(f * 100);
+            showItem(item);
+            setRun(label + item.name, (i + f) / todo.length);
+          });
+          item.uploaded = true;
+          pics.onCard.add(nameKey(item.name));
+          added++;
+        } catch (e) {
+          if (!pics.cancel) {
+            console.error(e);
+            item.error = 'Not uploaded: ' + e.message;
+            failed++;
+          }
+        }
+        item.state = '';
+        showItem(item);
+      }
+    } catch (e) {
+      console.error(e);
+      stopped = e.message || String(e);
+    }
+    endRun();
+    unload(function(item) { return item.uploaded; });
+    if (stopped) {
+      setRun('Could not get ' + folder + ' ready: ' + stopped, 0);
+      showMessage('Could not reach ' + folder + ' on the reader: ' + stopped, true);
+    } else if (pics.cancel) {
+      setRun('Stopped. ' + picturesNoun(added) + ' added to ' + folder + '; the rest are still in the list.', 0);
+      showMessage('Upload stopped', false);
+    } else if (failed) {
+      setRun(added + ' of ' + todo.length + ' added to ' + folder + '. The ones that did not go are still in the list.', 1);
+      showMessage(failed === 1 ? '1 picture was not uploaded' : failed + ' pictures were not uploaded', true);
+    } else {
+      setRun(picturesNoun(added) + ' added to ' + folder + '.', 1);
+      showMessage(picturesNoun(added) + ' added to ' + folder, false);
+    }
+    await loadFolder();
+  }
+
+  function download(blob, name) {
+    const url = URL.createObjectURL(blob);
+    const link = el('a');
+    link.href = url;
+    link.download = name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(function() { URL.revokeObjectURL(url); }, 60000);
+  }
+
+  // The converted files as they are: one as itself, several in a ZIP.
+  async function savePictures() {
+    const B = bindery();
+    const ready = pics.queue.filter(function(item) { return item.out; });
+    if (!B || pics.busy || !ready.length) return;
+    let blob = ready[0].out.blob;
+    let name = ready[0].name;
+    if (ready.length > 1) {
+      await startRun();
+      try {
+        setRun('Packing ' + picturesNoun(ready.length) + ' into ' + ZIP_NAME + '…', 0);
+        const entries = ready.map(function(item) { return { name: item.name, data: item.out.blob }; });
+        blob = await B.writeZip(entries, function(n, total) { setRun('Packing ' + n + ' of ' + total + '…', n / total); });
+        name = ZIP_NAME;
+      } catch (e) {
+        console.error(e);
+        endRun();
+        setRun('Could not make the ZIP: ' + e.message, 0);
+        showMessage('Could not make the ZIP: ' + e.message, true);
+        return;
+      }
+      endRun();
+    }
+    download(blob, name);
+    unload(function(item) { return ready.indexOf(item) !== -1; });
+    const what = ready.length === 1 ? name : picturesNoun(ready.length) + ' in ' + ZIP_NAME;
+    $('picRun').hidden = false;
+    setRun('Saved ' + what + '. Copy the pictures into ' + folderLabel() + ' on the card.', 1);
+    showMessage('Saved ' + what, false);
+  }
+
+  // --- The folder on the card ---
+
+  async function fetchDashboards() {
+    const response = await fetch('/api/dashboards', { cache: 'no-store' });
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    return response.json();
+  }
+
+  async function fetchFolder(folder) {
+    const response = await fetch('/api/files?path=' + encodeURIComponent(folder) + '&_=' + Date.now(), { cache: 'no-store' });
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    const entries = await response.json();
+    return Array.isArray(entries) ? entries : [];
+  }
+
+  function setListing(entries) {
+    pics.onCard = new Set(entries.map(function(entry) { return nameKey(String(entry.name)); }));
+    pics.count = entries.filter(function(entry) { return !entry.isDirectory && PICTURE_EXT.test(entry.name); }).length;
+    pics.listError = false;
+  }
+
+  async function loadFolder() {
+    if (!pics.folder) return;
+    try {
+      setListing(await fetchFolder(pics.folder));
+    } catch (e) {
+      console.error(e);
+      pics.listError = true;
+    }
+    showFolder();
+  }
+
+  // The folder link: Files opens on the folder with only its pictures showing.
+  function showFolder() {
+    $('picFolder').textContent = folderLabel();
+    $('picSaveFolder').textContent = folderLabel();
+    const link = $('picFilesLink');
+    if (pics.folderError) {
+      $('picFilesName').textContent = 'The Image widget’s folder';
+      $('picCount').textContent = 'Could not read which folder it is. Reload the page to try again.';
+      link.href = '/files';
+      return;
+    }
+    if (!pics.folder) return;
+    link.href = '/files?path=' + encodeURIComponent(pics.folder) + '&type=pictures';
+    $('picFilesName').textContent = 'Pictures in ' + pics.folder;
+    if (pics.listError) $('picCount').textContent = 'Open the folder in Files';
+    else if (pics.count < 0) $('picCount').textContent = 'Counting pictures…';
+    else if (pics.count === 0) $('picCount').textContent = 'None yet · open the folder in Files';
+    else $('picCount').textContent = picturesNoun(pics.count) + ' · open in Files to see or delete them';
+    $('picCap').hidden = pics.count <= READER_MAX_PICTURES;
+  }
+
+  $('picInput').addEventListener('change', function(e) {
+    addPictures(e.target.files);
+    e.target.value = '';
+  });
+  (function() {
+    const drop = $('picDrop');
+    ['dragenter', 'dragover'].forEach(function(type) {
+      drop.addEventListener(type, function(e) {
+        e.preventDefault();
+        if (!pics.busy) drop.classList.add('dragover');
+      });
+    });
+    ['dragleave', 'drop'].forEach(function(type) {
+      drop.addEventListener(type, function(e) {
+        e.preventDefault();
+        drop.classList.remove('dragover');
+      });
+    });
+    drop.addEventListener('drop', function(e) {
+      if (e.dataTransfer) addPictures(e.dataTransfer.files);
+    });
+  })();
+  ['picAuto', 'picContrast', 'picGamma'].forEach(function(id) {
+    $(id).addEventListener('input', toneChanged);
+    $(id).addEventListener('change', saveTone);
+  });
+  $('picConvert').addEventListener('click', convertPictures);
+  $('picUpload').addEventListener('click', uploadPictures);
+  $('picSave').addEventListener('click', savePictures);
+  $('picCancel').addEventListener('click', function() {
+    pics.cancel = true;
+    if (pics.abort) pics.abort();
+    setRun('Stopping…');
+  });
+  $('picClear').addEventListener('click', function() {
+    if (pics.busy) return;
+    pics.queue = [];
+    clearPreview();
+    $('picRun').hidden = true;
+    renderQueue();
+    $('picInput').focus();
+  });
+  window.addEventListener('beforeunload', function(e) {
+    if (!pics.busy) return;
+    e.preventDefault();
+    e.returnValue = '';
+  });
+  restoreTone();
+
+  // Sequential, not concurrent: the reader's web server handles one
+  // connection at a time.
+  (async function() {
+    try {
+      const d = await fetchDashboards();
+      pics.folder = (d.carousel && d.carousel.folder) || DEFAULT_FOLDER;
+    } catch (e) {
+      console.error(e);
+      pics.folderError = true;
+    }
+    showFolder();
+    showPictureActions();
+    await loadFolder();
+  })();
+</script>
+  </body>
+</html>

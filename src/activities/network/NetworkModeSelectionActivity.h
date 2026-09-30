@@ -13,6 +13,9 @@ enum class NetworkMode { JOIN_NETWORK, CONNECT_CALIBRE, CREATE_HOTSPOT, USB_DRIV
  * - "Create Hotspot" - Create an Access Point that others can connect to (AP mode)
  * - "Game Night" - Host party games, phones join the reader's own network
  *
+ * Choices::JoinOrHotspot offers only "Join a Network" and "Create Hotspot"
+ * (the Dashboard portal), under the caller's title.
+ *
  * The onModeSelected callback is called with the user's choice.
  * The onCancel callback is called if the user presses back.
  *
@@ -20,7 +23,12 @@ enum class NetworkMode { JOIN_NETWORK, CONNECT_CALIBRE, CREATE_HOTSPOT, USB_DRIV
  */
 class NetworkModeSelectionActivity final : public UiListActivity {
  public:
-  explicit NetworkModeSelectionActivity(GfxRenderer& renderer, MappedInputManager& mappedInput);
+  enum class Choices : uint8_t { All, JoinOrHotspot };
+
+  // title nullptr: "File Transfer". initial: the row selected on entry.
+  explicit NetworkModeSelectionActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
+                                        Choices choices = Choices::All, const char* title = nullptr,
+                                        NetworkMode initial = NetworkMode::JOIN_NETWORK);
 
 #if FREEINK_CAP_USB_MSC
   static constexpr int MENU_ITEM_COUNT = 5;
@@ -28,6 +36,7 @@ class NetworkModeSelectionActivity final : public UiListActivity {
   static constexpr int MENU_ITEM_COUNT = 4;
 #endif
 
+  void onEnter() override;
   void onModeSelected(NetworkMode mode);
   void onCancel();
 
@@ -42,4 +51,8 @@ class NetworkModeSelectionActivity final : public UiListActivity {
   // built once in the constructor instead of every buildScreen() call, into
   // fixed-capacity storage that avoids any heap allocation for the row list.
   freeink::ui::ListItem rowItems_[MENU_ITEM_COUNT]{};
+  NetworkMode rowModes_[MENU_ITEM_COUNT]{};
+  int rowCount_ = 0;
+  int initialRow_ = 0;
+  const char* title_ = nullptr;
 };

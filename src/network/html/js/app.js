@@ -3,6 +3,8 @@
   'use strict';
   var d = document, body = d.body;
   var page = body.getAttribute('data-page') || '';
+  // A sub-page (Pictures) lights its parent's drawer link.
+  var nav = body.getAttribute('data-nav') || page;
   var title = body.getAttribute('data-title') || 'e-Minimal';
   var $ = function (id) { return d.getElementById(id); };
   var esc = function (s) {
@@ -29,14 +31,15 @@
       '<a href="/files" data-page="files">Files</a>' +
       '<a href="/convert" data-page="convert">Convert</a>' +
       '<a href="/settings" data-page="settings">Settings</a>' +
+      '<a href="/dashboards" data-page="dashboards">Dashboards</a>' +
       '<a href="/fonts" data-page="fonts">Fonts</a>' +
       '<div class="drawer-foot" id="drawerFoot"></div>' +
     '</nav>');
 
   var menuBtn = $('menuBtn'), drawer = $('drawer'), backdrop = $('backdrop');
   $('topbarTitle').textContent = title;
-  var active = drawer.querySelector('a[data-page="' + page + '"]');
-  if (active) { active.classList.add('active'); active.setAttribute('aria-current', 'page'); }
+  var active = drawer.querySelector('a[data-page="' + nav + '"]');
+  if (active) { active.classList.add('active'); active.setAttribute('aria-current', nav === page ? 'page' : 'true'); }
 
   function isOpen() { return body.classList.contains('drawer-open'); }
   function setDrawer(open) {

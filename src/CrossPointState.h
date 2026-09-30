@@ -31,6 +31,11 @@ class CrossPointState : public PersistableStore<CrossPointState> {
   // Set when the reader app is left for another app: whether a book was on
   // screen, so switching back resumes it instead of opening Home.
   bool resumeBookOnReturn = false;
+  // The dashboard Image widget's position in its folder's sorted file list.
+  uint16_t carouselIndex = 0;
+  // The Dashboard portal's last network choice: 0 Join a Network, 1 Create
+  // Hotspot. Pre-selected the next time the portal opens.
+  uint8_t dashboardPortalMode = 0;
 
   static const char* getFilePath() { return "/.crosspoint/state.json"; }
   void toJson(JsonDocument& doc) const;

@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <cctype>
 #include <cstdlib>
 #include <cstring>
 #include <set>
@@ -128,9 +129,7 @@ TEST(GameSession, SeatsPlayersAndKeepsOneHost) {
 TEST(GameSession, RejectsAnEmptyTableAndAFullOne) {
   GameSession session(2);
   EXPECT_EQ(session.join("nobody", 0, 0), -1) << "token 0 marks a free seat";
-  for (uint8_t i = 0; i < MAX_PLAYERS; i++) {
-    EXPECT_GE(session.join("x", i + 1u, 0), 0);
-  }
+  seat(session, MAX_PLAYERS);
   EXPECT_EQ(session.join("late", 99u, 0), -1);
 }
 
@@ -197,6 +196,7 @@ TEST(GameSession, LobbyJsonNamesTheGamesAndThePlayers) {
   ASSERT_GT(written, 0u);
   EXPECT_EQ(buf[written - 1], '}') << "a truncated document would not close";
   const std::string json(buf);
+  EXPECT_NE(json.find("\"seat\":0,\"me\":0,"), std::string::npos) << "without `as`, me is the seat";
   EXPECT_NE(json.find("\"phase\":\"lobby\""), std::string::npos);
   EXPECT_NE(json.find("\"host\":true"), std::string::npos);
   EXPECT_NE(json.find("\"k\":\"battleship\""), std::string::npos);
@@ -210,6 +210,390 @@ TEST(GameSession, MarksAPhoneAwayWhenItStopsPolling) {
   EXPECT_TRUE(session.isAway(0, 1000 + GameSession::AWAY_AFTER_MS + 1));
   session.touch(0, 40000);
   EXPECT_FALSE(session.isAway(0, 40000));
+}
+
+// --- the round loop and rejoining ---------------------------------------------
+
+TEST(RoundLoop, OnlyTheHostEndsARoundAndOnlyWhenThereIsOne) {
+  GameSession session(30);
+  seat(session, 4);
+  EXPECT_FALSE(session.applyAction(0, verb(Verb::End))) << "no round to end";
+
+  ASSERT_TRUE(session.startGame());
+  EXPECT_FALSE(session.applyAction(1, verb(Verb::End))) << "only the host ends it";
+  EXPECT_FALSE(session.inLobby());
+  EXPECT_TRUE(session.applyAction(0, verb(Verb::End)));
+  EXPECT_TRUE(session.inLobby()) << "a running round goes back to the lobby";
+
+  // A finished round: the impostor voted out.
+  ASSERT_TRUE(session.startGame());
+  auto* game = static_cast<Undercover*>(session.game());
+  int8_t impostor = -1;
+  for (uint8_t i = 0; i < 4; i++) {
+    if (game->isUndercover(i)) impostor = static_cast<int8_t>(i);
+  }
+  ASSERT_GE(impostor, 0);
+  ASSERT_TRUE(session.applyAction(0, verb(Verb::Next)));
+  for (uint8_t i = 0; i < 4; i++) {
+    const int16_t target = i == impostor ? (impostor == 0 ? 1 : 0) : impostor;
+    session.applyAction(i, verb(Verb::Vote, target));
+  }
+  ASSERT_TRUE(session.game()->isOver());
+  EXPECT_FALSE(session.applyAction(1, verb(Verb::End)));
+  EXPECT_TRUE(session.applyAction(0, verb(Verb::End)));
+  EXPECT_TRUE(session.inLobby()) << "and so does a finished one";
+}
+
+TEST(RoundLoop, AnAwayPhoneRejoinsItsSeatByNameMidRound) {
+  GameSession session(31);
+  session.selectGame(GameId::Battleship);
+  ASSERT_EQ(session.join("Ann", 1u, 0), 0);
+  ASSERT_EQ(session.join("Bob", 2u, 0), 1);
+  ASSERT_TRUE(session.startGame());
+
+  const uint32_t later = GameSession::AWAY_AFTER_MS + 1;
+  session.touch(0, later);
+  ASSERT_TRUE(session.isAway(1, later));
+  const uint32_t before = session.version();
+  EXPECT_EQ(session.join("bob", 77u, later, true), 1) << "case-insensitive, and the seat keeps its role";
+  EXPECT_GT(session.version(), before);
+  EXPECT_EQ(session.playerCount(), 2);
+  EXPECT_EQ(session.seatForToken(77u), 1);
+  EXPECT_EQ(session.seatForToken(2u), -1) << "the lost token no longer resolves";
+  EXPECT_FALSE(session.isAway(1, later));
+  EXPECT_TRUE(session.applyAction(1, verb(Verb::Ready))) << "Bob plays on from the new token";
+}
+
+TEST(RoundLoop, AnAwayPhoneRejoinsItsSeatInTheLobbyToo) {
+  GameSession session(32);
+  seat(session, 3);
+  const uint32_t later = GameSession::AWAY_AFTER_MS * 2;
+  EXPECT_EQ(session.join("P2", 50u, later, true), 1);
+  EXPECT_EQ(session.playerCount(), 3);
+  EXPECT_EQ(session.seatForToken(2u), -1);
+  EXPECT_TRUE(session.isHost(0)) << "rejoining does not move the host";
+}
+
+TEST(RoundLoop, TheHostRejoiningKeepsTheHost) {
+  GameSession session(36);
+  seat(session, 3);
+  ASSERT_TRUE(session.startGame());
+  const uint32_t later = GameSession::AWAY_AFTER_MS * 2;
+  EXPECT_EQ(session.join("P1", 50u, later, true), 0);
+  EXPECT_TRUE(session.isHost(0));
+  EXPECT_TRUE(session.applyAction(0, verb(Verb::End))) << "and the new token drives as host";
+}
+
+TEST(RoundLoop, AnAwaySeatAsksBeforeItIsTaken) {
+  GameSession session(37);
+  seat(session, 3);
+  ASSERT_TRUE(session.startGame());
+  const uint32_t later = GameSession::AWAY_AFTER_MS * 2;
+  const uint32_t before = session.version();
+  EXPECT_EQ(session.join("P2", 50u, later), GameSession::JOIN_CAN_REJOIN) << "a namesake needs the Rejoin tap";
+  EXPECT_EQ(session.seatForToken(2u), 1) << "the seat keeps its token";
+  EXPECT_EQ(session.seatForToken(50u), -1);
+  EXPECT_EQ(session.version(), before);
+}
+
+TEST(RoundLoop, APresentSeatIsNeverTaken) {
+  GameSession session(33);
+  session.selectGame(GameId::Battleship);
+  seat(session, 2);
+  EXPECT_EQ(session.join("P2", 50u, 1000), GameSession::JOIN_NAME_TAKEN) << "P2 is still polling";
+  EXPECT_EQ(session.join("p2", 51u, 1000, true), GameSession::JOIN_NAME_TAKEN) << "the flag does not force it";
+  ASSERT_TRUE(session.startGame());
+  EXPECT_EQ(session.join("P2", 52u, 1000, true), GameSession::JOIN_NAME_TAKEN) << "mid-round too";
+  EXPECT_EQ(session.seatForToken(2u), 1);
+  EXPECT_EQ(session.playerCount(), 2);
+}
+
+TEST(RoundLoop, ATestSeatsNameIsTaken) {
+  GameSession session(34);
+  session.setTestMode(true);
+  ASSERT_EQ(session.join("Ann", 1u, 0), 0);
+  ASSERT_EQ(session.addTestPlayer(), 1);
+  const uint32_t later = GameSession::AWAY_AFTER_MS * 2;
+  EXPECT_EQ(session.join("test 2", 50u, later, true), GameSession::JOIN_NAME_TAKEN);
+  EXPECT_TRUE(session.isTestSeat(1));
+  EXPECT_EQ(session.playerCount(), 2);
+}
+
+TEST(RoundLoop, ANewNameMidRoundWatches) {
+  GameSession session(35);
+  seat(session, 3);
+  ASSERT_TRUE(session.startGame());
+  EXPECT_EQ(session.join("Zed", 50u, 0), -1);
+  EXPECT_EQ(session.playerCount(), 3);
+}
+
+TEST(RoundLoop, LeavingIsForTheLobby) {
+  GameSession session(38);
+  seat(session, 3);
+  ASSERT_TRUE(session.startGame());
+  EXPECT_FALSE(session.leave(1)) << "a dealt seat holds a role";
+  EXPECT_EQ(session.playerCount(), 3);
+  session.endGame();
+  EXPECT_TRUE(session.leave(1));
+  EXPECT_EQ(session.playerCount(), 2);
+}
+
+TEST(RoundLoop, AwayReturnsRepaintOnlyTheLobby) {
+  GameSession session(39);
+  seat(session, 3);
+  const uint32_t later = GameSession::AWAY_AFTER_MS * 2;
+  uint32_t before = session.version();
+  session.touch(1, later);
+  EXPECT_GT(session.version(), before) << "the lobby's seat list shows away";
+
+  ASSERT_TRUE(session.startGame());
+  before = session.version();
+  session.touch(1, later * 2);
+  EXPECT_EQ(session.version(), before) << "nothing on the round's screen does";
+}
+
+TEST(RoundLoop, AutoNamesNeverRepeatASeatedName) {
+  GameSession session(40);
+  ASSERT_EQ(session.join("Player 2", 1u, 0), 0);
+  ASSERT_EQ(session.join("", 2u, 0), 1);
+  EXPECT_STREQ(session.player(1).name, "Player 1") << "Player 2 is taken";
+  ASSERT_EQ(session.join(nullptr, 3u, 0), 2);
+  EXPECT_STREQ(session.player(2).name, "Player 3");
+  std::set<std::string> names;
+  for (uint8_t i = 0; i < 3; i++) names.insert(session.player(i).name);
+  EXPECT_EQ(names.size(), 3u);
+}
+
+// --- test players ------------------------------------------------------------
+
+TEST(TestPlayers, FillEveryGameToItsMinimumFromOnePhone) {
+  for (uint8_t index = 0; index < GAME_COUNT; index++) {
+    const GameMeta& meta = gameMeta(gameAt(index));
+    GameSession session(200u + index);
+    session.setTestMode(true);
+    session.selectGame(meta.id);
+    ASSERT_EQ(session.join("Solo", 1u, 0), 0);
+    while (!session.canStart()) ASSERT_GE(session.addTestPlayer(), 0) << meta.key;
+    EXPECT_EQ(session.playerCount(), meta.minPlayers) << meta.key;
+    EXPECT_EQ(session.testPlayerCount(), meta.minPlayers - 1) << meta.key;
+    EXPECT_TRUE(session.startGame()) << meta.key;
+  }
+}
+
+TEST(TestPlayers, GetAFreshNameAndAPrivateToken) {
+  GameSession session(201);
+  session.setTestMode(true);
+  ASSERT_EQ(session.join("Solo", 1u, 0), 0);
+  ASSERT_EQ(session.addTestPlayer(), 1);
+  ASSERT_EQ(session.addTestPlayer(), 2);
+  EXPECT_STREQ(session.player(1).name, "Test 2");
+  EXPECT_TRUE(session.isTestSeat(1));
+  EXPECT_FALSE(session.isTestSeat(0));
+  EXPECT_FALSE(session.isTestSeat(5)) << "an empty seat is not a test seat";
+
+  const uint32_t token = session.player(1).token;
+  EXPECT_NE(token, 0u);
+  EXPECT_NE(token, session.player(0).token);
+  EXPECT_NE(token, session.player(2).token);
+  EXPECT_EQ(session.seatForToken(token), -1) << "no phone ever acts through a test seat's token";
+}
+
+TEST(TestPlayers, RefusedWhenTheTableIsFullOrARoundRuns) {
+  GameSession session(202);
+  session.setTestMode(true);
+  ASSERT_EQ(session.join("Solo", 1u, 0), 0);
+  for (uint8_t i = 1; i < MAX_PLAYERS; i++) ASSERT_EQ(session.addTestPlayer(), static_cast<int8_t>(i));
+  const uint32_t full = session.version();
+  EXPECT_EQ(session.addTestPlayer(), -1);
+  EXPECT_EQ(session.version(), full) << "a refused seat is not a change";
+
+  GameSession round(203);
+  round.setTestMode(true);
+  round.selectGame(GameId::Battleship);
+  ASSERT_EQ(round.join("Solo", 1u, 0), 0);
+  ASSERT_EQ(round.addTestPlayer(), 1);
+  ASSERT_TRUE(round.startGame());
+  EXPECT_EQ(round.addTestPlayer(), -1) << "roles are already dealt";
+  EXPECT_FALSE(round.removeTestPlayer()) << "a dealt seat stays for the round";
+  EXPECT_EQ(round.playerCount(), 2);
+}
+
+TEST(TestPlayers, RemoveDropsTheHighestTestSeatAndNeverAPhone) {
+  GameSession session(204);
+  session.setTestMode(true);
+  ASSERT_EQ(session.join("Ann", 1u, 0), 0);
+  ASSERT_EQ(session.addTestPlayer(), 1);
+  ASSERT_EQ(session.addTestPlayer(), 2);
+  ASSERT_EQ(session.join("Bob", 2u, 0), 3);
+
+  EXPECT_TRUE(session.removeTestPlayer());
+  EXPECT_FALSE(session.isSeated(2));
+  EXPECT_TRUE(session.isSeated(3)) << "the highest seat is a phone, so it stays";
+  EXPECT_TRUE(session.removeTestPlayer());
+  EXPECT_FALSE(session.isSeated(1));
+  EXPECT_FALSE(session.removeTestPlayer()) << "only phones are left";
+  EXPECT_EQ(session.playerCount(), 2);
+  EXPECT_EQ(session.testPlayerCount(), 0);
+  EXPECT_TRUE(session.isSeated(0));
+  EXPECT_TRUE(session.isSeated(3));
+}
+
+TEST(TestPlayers, StartingARoundPacksTheGapOutOfTheSeats) {
+  GameSession session(210);
+  session.setTestMode(true);
+  session.selectGame(GameId::Battleship);
+  ASSERT_EQ(session.join("Ann", 1u, 0), 0);
+  ASSERT_EQ(session.addTestPlayer(), 1);
+  ASSERT_EQ(session.addTestPlayer(), 2);
+  ASSERT_EQ(session.join("Bob", 2u, 0), 3);
+  ASSERT_TRUE(session.removeTestPlayer());
+  ASSERT_TRUE(session.removeTestPlayer());
+
+  ASSERT_TRUE(session.startGame());
+  EXPECT_STREQ(session.player(1).name, "Bob") << "Battleship deals seats 0 and 1";
+  EXPECT_EQ(session.seatForToken(2u), 1) << "the token follows its player";
+  EXPECT_FALSE(session.isSeated(3));
+  EXPECT_TRUE(session.isHost(0));
+  EXPECT_TRUE(session.applyAction(1, verb(Verb::Ready))) << "Bob is dealt in";
+}
+
+TEST(TestPlayers, NamesStayDistinctAfterPacking) {
+  GameSession session(212);
+  session.setTestMode(true);
+  session.selectGame(GameId::Battleship);
+  ASSERT_EQ(session.join("Ann", 1u, 0), 0);
+  ASSERT_EQ(session.join("Bob", 2u, 0), 1);
+  ASSERT_EQ(session.addTestPlayer(), 2);
+  ASSERT_STREQ(session.player(2).name, "Test 3");
+  ASSERT_TRUE(session.leave(1));
+  ASSERT_TRUE(session.startGame());
+  ASSERT_STREQ(session.player(1).name, "Test 3") << "packed down from seat 2";
+  session.endGame();
+
+  ASSERT_EQ(session.addTestPlayer(), 2);
+  EXPECT_STREQ(session.player(2).name, "Test 1") << "Test 3 is taken, so the lowest free number";
+  std::set<std::string> names;
+  for (uint8_t i = 0; i < MAX_PLAYERS; i++) {
+    if (session.isSeated(i)) names.insert(session.player(i).name);
+  }
+  EXPECT_EQ(names.size(), static_cast<size_t>(session.playerCount()));
+}
+
+TEST(TestPlayers, PackingCarriesTheHostAlong) {
+  // Up three times, a phone joins above them, Down once: seats {0, 1, 3}.
+  GameSession session(211);
+  session.setTestMode(true);
+  ASSERT_EQ(session.addTestPlayer(), 0);
+  ASSERT_EQ(session.addTestPlayer(), 1);
+  ASSERT_EQ(session.addTestPlayer(), 2);
+  ASSERT_EQ(session.join("Ann", 1u, 0), 3);
+  ASSERT_TRUE(session.removeTestPlayer());
+  ASSERT_TRUE(session.isHost(3));
+
+  ASSERT_TRUE(session.startGame());
+  EXPECT_EQ(session.seatForToken(1u), 2);
+  EXPECT_TRUE(session.isHost(2));
+  EXPECT_TRUE(session.isTestSeat(0));
+  EXPECT_TRUE(session.isTestSeat(1));
+  EXPECT_FALSE(session.isSeated(3));
+  EXPECT_TRUE(session.applyAction(2, verb(Verb::Ready))) << "Ann is dealt in";
+  EXPECT_TRUE(session.applyAction(2, verb(Verb::Next))) << "and still drives the round as host";
+}
+
+TEST(TestPlayers, APhoneJoiningTakesTheHostFromATestSeat) {
+  GameSession session(205);
+  session.setTestMode(true);
+  ASSERT_EQ(session.addTestPlayer(), 0);
+  EXPECT_TRUE(session.isHost(0)) << "alone at the table, a test seat hosts";
+  ASSERT_EQ(session.addTestPlayer(), 1);
+  ASSERT_EQ(session.join("Ann", 1u, 0), 2);
+  EXPECT_TRUE(session.isHost(2));
+  ASSERT_EQ(session.join("Bob", 2u, 0), 3);
+  EXPECT_TRUE(session.isHost(2)) << "a second phone does not take a phone's host";
+}
+
+TEST(TestPlayers, RehostPrefersAPhone) {
+  GameSession session(206);
+  session.setTestMode(true);
+  ASSERT_EQ(session.join("Ann", 1u, 0), 0);
+  ASSERT_EQ(session.addTestPlayer(), 1);
+  ASSERT_EQ(session.join("Bob", 2u, 0), 2);
+  ASSERT_TRUE(session.leave(0));
+  EXPECT_TRUE(session.isHost(2)) << "the lower test seat is passed over for a phone";
+  ASSERT_TRUE(session.leave(2));
+  EXPECT_TRUE(session.isHost(1)) << "with no phone left, the test seat keeps the table";
+}
+
+TEST(TestPlayers, AreNeverAway) {
+  GameSession session(207);
+  session.setTestMode(true);
+  ASSERT_EQ(session.join("Ann", 1u, 0), 0);
+  ASSERT_EQ(session.addTestPlayer(), 1);
+  const uint32_t later = GameSession::AWAY_AFTER_MS * 10;
+  EXPECT_TRUE(session.isAway(0, later));
+  EXPECT_FALSE(session.isAway(1, later));
+}
+
+TEST(TestPlayers, TheHostSeatsAndDropsThemFromThePhone) {
+  GameSession session(208);
+  session.setTestMode(true);
+  seat(session, 2);
+  EXPECT_FALSE(session.applyAction(1, verb(Verb::AddTest))) << "only the host seats a test player";
+  EXPECT_TRUE(session.applyAction(0, verb(Verb::AddTest)));
+  EXPECT_TRUE(session.isTestSeat(2));
+  EXPECT_FALSE(session.applyAction(1, verb(Verb::DropTest)));
+  EXPECT_TRUE(session.applyAction(0, verb(Verb::DropTest)));
+  EXPECT_EQ(session.testPlayerCount(), 0);
+  EXPECT_FALSE(session.applyAction(0, verb(Verb::DropTest))) << "nothing left to drop";
+
+  EXPECT_TRUE(session.applyAction(0, verb(Verb::AddTest)));
+  ASSERT_TRUE(session.startGame());
+  EXPECT_FALSE(session.applyAction(0, verb(Verb::AddTest))) << "not while a round runs";
+  EXPECT_FALSE(session.applyAction(0, verb(Verb::DropTest)));
+  EXPECT_EQ(session.playerCount(), 3);
+}
+
+TEST(TestPlayers, TheDocumentMarksThem) {
+  GameSession session(209);
+  session.setTestMode(true);
+  ASSERT_EQ(session.join("Ann", 1u, 0), 0);
+  ASSERT_EQ(session.addTestPlayer(), 1);
+  char buf[2048];
+  const size_t written = session.writeStateJson(buf, sizeof(buf), 0, 0);
+  ASSERT_GT(written, 0u);
+  const std::string json(buf);
+  EXPECT_NE(json.find("{\"s\":0,\"n\":\"Ann\",\"host\":true,\"away\":false,\"test\":false}"), std::string::npos)
+      << json;
+  EXPECT_NE(json.find("{\"s\":1,\"n\":\"Test 2\",\"host\":false,\"away\":false,\"test\":true}"), std::string::npos)
+      << json;
+
+  // The host playing the test seat: its view, with "me" still naming the host.
+  session.writeStateJson(buf, sizeof(buf), 1, 0, 0);
+  EXPECT_NE(std::string(buf).find("\"seat\":1,\"me\":0,\"name\":\"Test 2\""), std::string::npos) << buf;
+  session.writeStateJson(buf, sizeof(buf), -1, -1, 0);
+  EXPECT_NE(std::string(buf).find("\"seat\":-1,\"me\":-1,"), std::string::npos) << buf;
+}
+
+TEST(TestPlayers, AreOffUnlessTheBuildTurnsThemOn) {
+  GameSession session(213);
+  seat(session, 2);
+  EXPECT_FALSE(session.testMode()) << "production is the default";
+  const uint32_t before = session.version();
+  EXPECT_EQ(session.addTestPlayer(), -1);
+  EXPECT_FALSE(session.applyAction(0, verb(Verb::AddTest))) << "the host's verb is a no-op";
+  EXPECT_FALSE(session.removeTestPlayer());
+  EXPECT_FALSE(session.applyAction(0, verb(Verb::DropTest)));
+  EXPECT_EQ(session.playerCount(), 2);
+  EXPECT_EQ(session.testPlayerCount(), 0);
+  EXPECT_EQ(session.version(), before);
+
+  char buf[2048];
+  session.writeStateJson(buf, sizeof(buf), 0, 0);
+  EXPECT_NE(std::string(buf).find("\"testMode\":false"), std::string::npos) << buf;
+  session.setTestMode(true);
+  session.writeStateJson(buf, sizeof(buf), 0, 0);
+  EXPECT_NE(std::string(buf).find("\"testMode\":true"), std::string::npos) << buf;
+  EXPECT_TRUE(session.applyAction(0, verb(Verb::AddTest)));
 }
 
 // --- undercover --------------------------------------------------------------
@@ -450,6 +834,73 @@ TEST(Codenames, FindingEveryAgentWins) {
   EXPECT_EQ(game.remaining(on), 0);
 }
 
+TEST(Codenames, ZeroAndUnlimitedCluesLiftTheGuessLimit) {
+  for (const int16_t count : {int16_t{0}, int16_t{Codenames::UNLIMITED}}) {
+    Codenames game;
+    Rng rng(27);
+    game.start(4, rng);
+    const uint8_t on = game.turn();
+    const int8_t field = findSeat(game, 4, on, false);
+    ASSERT_TRUE(game.apply(findSeat(game, 4, on, true), verb(Verb::Clue, count, -1, -1, "COLD"), false));
+    EXPECT_TRUE(game.unlimited());
+    for (int guess = 0; guess < 3; guess++) {
+      ASSERT_TRUE(game.apply(field, verb(Verb::Guess, findTile(game, on)), false));
+    }
+    EXPECT_EQ(game.turn(), on) << "three right past a clue of " << count << ", still guessing";
+    EXPECT_EQ(game.phase(), Codenames::Phase::Guess);
+  }
+
+  Codenames game;
+  Rng rng(27);
+  game.start(4, rng);
+  const int8_t spy = findSeat(game, 4, game.turn(), true);
+  EXPECT_FALSE(game.apply(spy, verb(Verb::Clue, Codenames::UNLIMITED + 1, -1, -1, "COLD"), false));
+}
+
+TEST(Codenames, TheTeamGuessesOnceBeforeStopping) {
+  Codenames game;
+  Rng rng(28);
+  game.start(4, rng);
+  const uint8_t on = game.turn();
+  const int8_t field = findSeat(game, 4, on, false);
+  game.apply(findSeat(game, 4, on, true), verb(Verb::Clue, 2, -1, -1, "OCEAN"), false);
+
+  EXPECT_FALSE(game.apply(field, verb(Verb::Pass), false)) << "no stopping before the first guess";
+  ASSERT_TRUE(game.apply(field, verb(Verb::Guess, findTile(game, on)), false));
+  EXPECT_EQ(game.guessesMade(), 1);
+  EXPECT_TRUE(game.apply(field, verb(Verb::Pass), false));
+  EXPECT_NE(game.turn(), on);
+  EXPECT_EQ(game.guessesMade(), 0) << "the count starts over with the next team";
+}
+
+TEST(Codenames, AWordOnTheBoardIsNoClue) {
+  Codenames game;
+  Rng rng(29);
+  game.start(4, rng);
+  const uint8_t on = game.turn();
+  const int8_t spy = findSeat(game, 4, on, true);
+  const int8_t tile = findTile(game, on);
+  const std::string word = game.tileWord(tile);
+  std::string lower = word;
+  for (char& c : lower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
+  EXPECT_FALSE(game.apply(spy, verb(Verb::Clue, 1, -1, -1, word.c_str()), false));
+  EXPECT_FALSE(game.apply(spy, verb(Verb::Clue, 1, -1, -1, lower.c_str()), false)) << "case does not matter";
+  EXPECT_FALSE(game.apply(spy, verb(Verb::Clue, 1, -1, -1, (lower + "s").c_str()), false)) << "nor a plural";
+  EXPECT_EQ(game.phase(), Codenames::Phase::Clue);
+
+  // Once the tile is covered its word is fair game.
+  ASSERT_TRUE(game.apply(spy, verb(Verb::Clue, 1, -1, -1, "OCEAN"), false));
+  ASSERT_TRUE(game.apply(findSeat(game, 4, on, false), verb(Verb::Guess, tile), false));
+  game.apply(findSeat(game, 4, on, false), verb(Verb::Pass), false);
+  const uint8_t next = game.turn();
+  game.apply(findSeat(game, 4, next, true), verb(Verb::Clue, 1, -1, -1, "OCEAN"), false);
+  game.apply(findSeat(game, 4, next, false), verb(Verb::Guess, findTile(game, next)), false);
+  game.apply(findSeat(game, 4, next, false), verb(Verb::Pass), false);
+  ASSERT_EQ(game.turn(), on);
+  EXPECT_TRUE(game.apply(spy, verb(Verb::Clue, 1, -1, -1, word.c_str()), false));
+}
+
 TEST(Codenames, TheKeyIsOnlyOnTheSpymastersPhone) {
   Codenames game;
   Rng rng(26);
@@ -577,167 +1028,6 @@ TEST(Battleship, APhoneNeverSeesTheOtherFleet) {
   ASSERT_NE(outAt, std::string::npos);
   const std::string outgoing = view.substr(outAt + 12, Battleship::CELLS);
   EXPECT_EQ(outgoing, std::string(Battleship::CELLS, '0')) << "and the enemy grid is blank until fired on";
-}
-
-// --- ludo --------------------------------------------------------------------
-
-TEST(Ludo, BoardGeometryIsAClosedRing) {
-  std::set<std::pair<int, int>> unique;
-  for (uint8_t i = 0; i < Ludo::TRACK; i++) {
-    const Ludo::Cell cell = Ludo::trackCell(i);
-    EXPECT_LT(cell.col, Ludo::GRID);
-    EXPECT_LT(cell.row, Ludo::GRID);
-    unique.insert({cell.col, cell.row});
-    const Ludo::Cell next = Ludo::trackCell(static_cast<uint8_t>((i + 1) % Ludo::TRACK));
-    const int dx = static_cast<int>(next.col) - static_cast<int>(cell.col);
-    const int dy = static_cast<int>(next.row) - static_cast<int>(cell.row);
-    EXPECT_LE(abs(dx), 1) << "step " << static_cast<int>(i);
-    EXPECT_LE(abs(dy), 1) << "step " << static_cast<int>(i);
-    EXPECT_FALSE(dx == 0 && dy == 0);
-  }
-  EXPECT_EQ(unique.size(), Ludo::TRACK);
-
-  for (uint8_t player = 0; player < 4; player++) {
-    EXPECT_EQ(Ludo::startIndex(player), player * 13);
-    EXPECT_TRUE(Ludo::isSafeCell(Ludo::startIndex(player))) << "a start square shelters its owner";
-    // The home column is entered from the ring cell before the player's start.
-    const Ludo::Cell entry = Ludo::trackCell(static_cast<uint8_t>((Ludo::startIndex(player) + 51) % Ludo::TRACK));
-    const Ludo::Cell first = Ludo::homeCell(player, 0);
-    const int dx = abs(static_cast<int>(entry.col) - static_cast<int>(first.col));
-    const int dy = abs(static_cast<int>(entry.row) - static_cast<int>(first.row));
-    EXPECT_EQ(dx + dy, 1) << "player " << static_cast<int>(player) << " turns into its column";
-    for (uint8_t step = 0; step < 5; step++) {
-      const Ludo::Cell home = Ludo::homeCell(player, step);
-      EXPECT_EQ(unique.count({home.col, home.row}), 0u) << "home cells are off the shared ring";
-    }
-  }
-}
-
-TEST(Ludo, ASixIsTheOnlyWayOutOfTheYard) {
-  Ludo game;
-  Rng rng(41);
-  game.start(4, rng);
-  uint8_t moves[Ludo::TOKENS];
-  for (uint8_t die = 1; die <= 5; die++) {
-    EXPECT_EQ(game.legalMoves(0, die, moves), 0) << "die " << static_cast<int>(die);
-  }
-  EXPECT_EQ(game.legalMoves(0, 6, moves), Ludo::TOKENS);
-}
-
-TEST(Ludo, NoLegalMovePassesTheTurn) {
-  Ludo game;
-  Rng rng(42);
-  game.start(4, rng);
-  for (int guard = 0; guard < 200; guard++) {
-    const uint8_t before = game.turn();
-    ASSERT_TRUE(game.apply(before, verb(Verb::Roll), false));
-    if (game.die() == 6) {
-      EXPECT_EQ(game.phase(), Ludo::Phase::Move);
-      return;
-    }
-    EXPECT_EQ(game.phase(), Ludo::Phase::Roll);
-    EXPECT_EQ(game.turn(), (before + 1) % 4) << "a useless roll hands the dice on";
-  }
-  FAIL() << "no six in 200 rolls";
-}
-
-TEST(Ludo, ThreeSixesForfeitTheTurn) {
-  // The dice come from the game's own generator, seeded from the caller's. Mirror
-  // it to find a seed whose first three rolls are all sixes.
-  for (uint32_t seed = 1; seed < 20000; seed++) {
-    Rng seeder(seed);
-    Rng mirror(seeder.next());
-    if (1 + mirror.below(6) != 6) continue;
-    if (1 + mirror.below(6) != 6) continue;
-    if (1 + mirror.below(6) != 6) continue;
-
-    Ludo game;
-    Rng rng(seed);
-    game.start(4, rng);
-    ASSERT_TRUE(game.apply(0, verb(Verb::Roll), false));
-    ASSERT_EQ(game.die(), 6);
-    ASSERT_TRUE(game.apply(0, verb(Verb::Move, 0), false));
-    EXPECT_EQ(game.turn(), 0) << "a six is played again";
-    ASSERT_TRUE(game.apply(0, verb(Verb::Roll), false));
-    ASSERT_TRUE(game.apply(0, verb(Verb::Move, 1), false));
-    ASSERT_EQ(game.turn(), 0);
-    ASSERT_TRUE(game.apply(0, verb(Verb::Roll), false));
-    EXPECT_EQ(game.turn(), 1) << "the third six is forfeited";
-    EXPECT_EQ(game.phase(), Ludo::Phase::Roll);
-    return;
-  }
-  FAIL() << "no seed produced three sixes";
-}
-
-TEST(Ludo, AFullGameKeepsItsInvariantsAndEnds) {
-  Ludo game;
-  Rng rng(44);
-  game.start(4, rng);
-
-  int captures = 0;
-  int homed = 0;
-  for (int guard = 0; guard < 20000 && !game.isOver(); guard++) {
-    const uint8_t player = game.turn();
-    ASSERT_TRUE(game.apply(player, verb(Verb::Roll), false));
-    if (game.phase() != Ludo::Phase::Move) continue;
-
-    uint8_t moves[Ludo::TOKENS];
-    const uint8_t options = game.legalMoves(player, game.die(), moves);
-    ASSERT_GT(options, 0);
-    int yardBefore = 0;
-    int homeBefore = 0;
-    for (uint8_t p = 0; p < 4; p++) {
-      for (uint8_t t = 0; t < Ludo::TOKENS; t++) {
-        if (p != player && game.position(p, t) == Ludo::IN_YARD) yardBefore++;
-      }
-      if (p == player) homeBefore = game.tokensHome(p);
-    }
-    ASSERT_TRUE(game.apply(player, verb(Verb::Move, moves[0]), false));
-
-    int yardAfter = 0;
-    for (uint8_t p = 0; p < 4; p++) {
-      for (uint8_t t = 0; t < Ludo::TOKENS; t++) {
-        const int8_t at = game.position(p, t);
-        ASSERT_GE(at, Ludo::IN_YARD);
-        ASSERT_LE(at, static_cast<int8_t>(Ludo::HOME));
-        if (p != player && at == Ludo::IN_YARD) yardAfter++;
-      }
-    }
-    if (yardAfter > yardBefore) captures++;
-    if (game.tokensHome(player) > homeBefore) homed++;
-
-    // No two players ever share an unsafe ring cell once a move resolves.
-    for (uint8_t a = 0; a < 4; a++) {
-      for (uint8_t ta = 0; ta < Ludo::TOKENS; ta++) {
-        const int8_t pa = game.position(a, ta);
-        if (pa < 0 || pa > static_cast<int8_t>(Ludo::LAST_TRACK)) continue;
-        const uint8_t cellA = Ludo::absoluteCell(a, pa);
-        if (Ludo::isSafeCell(cellA)) continue;
-        for (uint8_t b = static_cast<uint8_t>(a + 1); b < 4; b++) {
-          for (uint8_t tb = 0; tb < Ludo::TOKENS; tb++) {
-            const int8_t pb = game.position(b, tb);
-            if (pb < 0 || pb > static_cast<int8_t>(Ludo::LAST_TRACK)) continue;
-            EXPECT_NE(Ludo::absoluteCell(b, pb), cellA) << "an unsafe square held two colours";
-          }
-        }
-      }
-    }
-  }
-
-  EXPECT_TRUE(game.isOver());
-  ASSERT_GE(game.winner(), 0);
-  EXPECT_EQ(game.tokensHome(static_cast<uint8_t>(game.winner())), Ludo::TOKENS);
-  EXPECT_GT(captures, 0) << "a 20000 move game with no capture means the rule is dead";
-  EXPECT_GT(homed, 0);
-}
-
-TEST(Ludo, OnlyTheSeatOnTurnCanAct) {
-  Ludo game;
-  Rng rng(45);
-  game.start(3, rng);
-  EXPECT_FALSE(game.apply(1, verb(Verb::Roll), false));
-  EXPECT_FALSE(game.apply(2, verb(Verb::Move, 0), false));
-  EXPECT_TRUE(game.apply(0, verb(Verb::Roll), false));
 }
 
 // --- the served document -----------------------------------------------------

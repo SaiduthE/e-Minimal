@@ -1,5 +1,6 @@
 #include "GameSession.h"
 
+#include <cctype>
 #include <cstdio>
 #include <cstring>
 #include <new>
@@ -16,6 +17,14 @@ constexpr GameMeta kGames[GAME_COUNT] = {
 };
 
 constexpr GameMeta kNoGame = {GameId::None, "none", "None", 0, 0};
+
+// Names are sanitized printable ASCII, so an ASCII fold is enough.
+bool sameName(const char* a, const char* b) {
+  for (; *a && *b; a++, b++) {
+    if (std::tolower(static_cast<unsigned char>(*a)) != std::tolower(static_cast<unsigned char>(*b))) return false;
+  }
+  return *a == *b;
+}
 
 }  // namespace
 
@@ -48,7 +57,7 @@ uint8_t gameIndex(const GameId id) {
   return 0;
 }
 
-int8_t GameSession::join(const char* name, const uint32_t token, const uint32_t nowMs) {
+int8_t GameSession::join(const char* name, const uint32_t token, const uint32_t nowMs, const bool rejoin) {
   if (token == 0) return -1;
 
   const int8_t existing = seatForToken(token);
@@ -56,18 +65,70 @@ int8_t GameSession::join(const char* name, const uint32_t token, const uint32_t 
     touch(static_cast<uint8_t>(existing), nowMs);
     return existing;
   }
+
+  // A phone that lost its token (a closed portal sheet, a browser without the
+  // first one's storage) comes back under its name, even mid-round, keeping the
+  // seat's role - but only when it asks to, so a namesake cannot take the seat
+  // by accident. A seat still polling, or a test seat, belongs to someone else.
+  char clean[MAX_NAME_LEN + 1];
+  const bool named = sanitizeName(name, clean, sizeof(clean)) > 0;
+  const int8_t match = named ? seatNamed(clean) : -1;
+  if (match >= 0) {
+    Player& player = players_[match];
+    if (player.test || !isAway(static_cast<uint8_t>(match), nowMs)) return JOIN_NAME_TAKEN;
+    if (!rejoin) return JOIN_CAN_REJOIN;
+    player.token = token;
+    player.lastSeenMs = nowMs;
+    bump();
+    return match;
+  }
+
   // Seats only open in the lobby: a round in progress has already dealt roles.
   if (game_ != nullptr) return -1;
 
   for (uint8_t seat = 0; seat < MAX_PLAYERS; seat++) {
     if (players_[seat].seated) continue;
     Player& player = players_[seat];
-    if (sanitizeName(name, player.name, sizeof(player.name)) == 0) {
-      snprintf(player.name, sizeof(player.name), "Player %u", seat + 1);
+    if (named) {
+      memcpy(player.name, clean, sizeof(player.name));
+    } else {
+      freeName("Player", seat, player.name, sizeof(player.name));
     }
     player.token = token;
     player.lastSeenMs = nowMs;
     player.seated = true;
+    count_++;
+    // A phone takes the host's controls over from a test seat.
+    if (count_ == 1 || players_[hostSeat_].test) hostSeat_ = seat;
+    bump();
+    return static_cast<int8_t>(seat);
+  }
+  return -1;
+}
+
+int8_t GameSession::addTestPlayer() {
+  // Seats only open in the lobby: a round in progress has already dealt roles.
+  if (!testMode_ || game_ != nullptr) return -1;
+
+  for (uint8_t seat = 0; seat < MAX_PLAYERS; seat++) {
+    if (players_[seat].seated) continue;
+    // Never handed to a phone; it only has to be nonzero and unique so the seat
+    // reads as taken.
+    uint32_t token = 0;
+    bool taken = true;
+    while (token == 0 || taken) {
+      token = rng_.next();
+      taken = false;
+      for (const Player& other : players_) {
+        if (other.seated && other.token == token) taken = true;
+      }
+    }
+    Player& player = players_[seat];
+    freeName("Test", seat, player.name, sizeof(player.name));
+    player.token = token;
+    player.lastSeenMs = 0;
+    player.seated = true;
+    player.test = true;
     count_++;
     if (count_ == 1) hostSeat_ = seat;
     bump();
@@ -76,23 +137,64 @@ int8_t GameSession::join(const char* name, const uint32_t token, const uint32_t 
   return -1;
 }
 
+bool GameSession::removeTestPlayer() {
+  if (!testMode_ || game_ != nullptr) return false;
+  for (uint8_t seat = MAX_PLAYERS; seat-- > 0;) {
+    if (isTestSeat(seat)) return leave(seat);
+  }
+  return false;
+}
+
+bool GameSession::isTestSeat(const uint8_t seat) const {
+  return seat < MAX_PLAYERS && players_[seat].seated && players_[seat].test;
+}
+
+uint8_t GameSession::testPlayerCount() const {
+  uint8_t count = 0;
+  for (uint8_t seat = 0; seat < MAX_PLAYERS; seat++) {
+    if (isTestSeat(seat)) count++;
+  }
+  return count;
+}
+
 int8_t GameSession::seatForToken(const uint32_t token) const {
   if (token == 0) return -1;
   for (uint8_t seat = 0; seat < MAX_PLAYERS; seat++) {
-    if (players_[seat].seated && players_[seat].token == token) return static_cast<int8_t>(seat);
+    // A test seat has no phone behind it, so no request resolves to it.
+    if (players_[seat].seated && !players_[seat].test && players_[seat].token == token) {
+      return static_cast<int8_t>(seat);
+    }
   }
   return -1;
 }
 
+int8_t GameSession::seatNamed(const char* name) const {
+  if (!name || !name[0]) return -1;
+  for (uint8_t seat = 0; seat < MAX_PLAYERS; seat++) {
+    if (players_[seat].seated && sameName(players_[seat].name, name)) return static_cast<int8_t>(seat);
+  }
+  return -1;
+}
+
+void GameSession::freeName(const char* prefix, const uint8_t seat, char* out, const size_t cap) const {
+  // "<prefix> <seat + 1>", unless someone already goes by it (packing moves
+  // players off their seat numbers, and the phone page tells seats apart by
+  // name): then the lowest free number. Seven others can hold at most seven.
+  snprintf(out, cap, "%s %u", prefix, seat + 1u);
+  for (unsigned number = 1; seatNamed(out) >= 0 && number <= MAX_PLAYERS; number++) {
+    snprintf(out, cap, "%s %u", prefix, number);
+  }
+}
+
 void GameSession::touch(const uint8_t seat, const uint32_t nowMs) {
   if (seat >= MAX_PLAYERS || !players_[seat].seated) return;
-  // An away player coming back changes what the shared screen shows.
-  if (isAway(seat, nowMs)) bump();
+  // Only the lobby's seat list shows away, so only there is a return a change.
+  if (game_ == nullptr && isAway(seat, nowMs)) bump();
   players_[seat].lastSeenMs = nowMs;
 }
 
 bool GameSession::leave(const uint8_t seat) {
-  if (seat >= MAX_PLAYERS || !players_[seat].seated) return false;
+  if (game_ != nullptr || seat >= MAX_PLAYERS || !players_[seat].seated) return false;
   players_[seat] = Player{};
   count_--;
   rehost();
@@ -101,14 +203,20 @@ bool GameSession::leave(const uint8_t seat) {
 }
 
 void GameSession::rehost() {
-  if (players_[hostSeat_].seated) return;
+  const Player& current = players_[hostSeat_];
+  if (current.seated && !current.test) return;
+  int8_t firstTest = -1;
   for (uint8_t seat = 0; seat < MAX_PLAYERS; seat++) {
-    if (players_[seat].seated) {
+    if (!players_[seat].seated) continue;
+    if (!players_[seat].test) {
       hostSeat_ = seat;
       return;
     }
+    if (firstTest < 0) firstTest = static_cast<int8_t>(seat);
   }
-  hostSeat_ = 0;
+  // No phone at the table: a seated test host keeps it, else the first test seat.
+  if (current.seated) return;
+  hostSeat_ = firstTest >= 0 ? static_cast<uint8_t>(firstTest) : 0;
 }
 
 const Player& GameSession::player(const uint8_t seat) const {
@@ -117,7 +225,8 @@ const Player& GameSession::player(const uint8_t seat) const {
 }
 
 bool GameSession::isAway(const uint8_t seat, const uint32_t nowMs) const {
-  if (seat >= MAX_PLAYERS || !players_[seat].seated) return false;
+  // A test seat never polls; whoever plays it is on their own seat's phone.
+  if (seat >= MAX_PLAYERS || !players_[seat].seated || players_[seat].test) return false;
   return nowMs - players_[seat].lastSeenMs > AWAY_AFTER_MS;
 }
 
@@ -159,9 +268,30 @@ bool GameSession::startGame() {
     default:
       return false;
   }
+  packSeats();
   game_->start(count_, rng_);
+  if (selected_ == GameId::Ludo) {
+    // Ludo's messages name who took which shape.
+    auto* ludo = static_cast<Ludo*>(game_);
+    for (uint8_t seat = 0; seat < count_ && seat < 4; seat++) ludo->setPlayerName(seat, players_[seat].name);
+  }
   bump();
   return true;
+}
+
+void GameSession::packSeats() {
+  // A seat freed in the lobby would otherwise be dealt in while the player
+  // above it sat out. Only moves down, so the target is always free.
+  uint8_t next = 0;
+  for (uint8_t seat = 0; seat < MAX_PLAYERS; seat++) {
+    if (!players_[seat].seated) continue;
+    if (seat != next) {
+      players_[next] = players_[seat];
+      players_[seat] = Player{};
+      if (hostSeat_ == seat) hostSeat_ = next;
+    }
+    next++;
+  }
 }
 
 void GameSession::destroyGame() {
@@ -178,6 +308,13 @@ void GameSession::endGame() {
 
 bool GameSession::applyAction(const uint8_t seat, const Action& action) {
   if (seat >= MAX_PLAYERS || !players_[seat].seated) return false;
+
+  // The host can call a round off whether it is running or over.
+  if (action.verb == Verb::End) {
+    if (!game_ || !isHost(seat)) return false;
+    endGame();
+    return true;
+  }
 
   if (game_ && !game_->isOver()) {
     if (game_->apply(seat, action, isHost(seat))) {
@@ -211,6 +348,10 @@ bool GameSession::applyAction(const uint8_t seat, const Action& action) {
       endGame();
       return true;
     }
+    case Verb::AddTest:
+      return addTestPlayer() >= 0;
+    case Verb::DropTest:
+      return removeTestPlayer();
     default:
       return false;
   }
@@ -230,15 +371,19 @@ void GameSession::statusLine(char* out, const size_t cap) const {
   }
 }
 
-size_t GameSession::writeStateJson(char* out, const size_t cap, const int8_t seat, const uint32_t nowMs) const {
+size_t GameSession::writeStateJson(char* out, const size_t cap, const int8_t seat, const int8_t self,
+                                   const uint32_t nowMs) const {
   JsonBuf json(out, cap);
   const GameMeta& meta = gameMeta(selected_);
   const bool seated = seat >= 0 && seat < static_cast<int8_t>(MAX_PLAYERS) && players_[seat].seated;
+  const bool selfSeated = self >= 0 && self < static_cast<int8_t>(MAX_PLAYERS) && players_[self].seated;
 
   json.ch('{');
   json.keyNum("v", static_cast<long>(version_));
   json.ch(',');
   json.keyNum("seat", seated ? seat : -1);
+  json.ch(',');
+  json.keyNum("me", selfSeated ? self : -1);
   json.ch(',');
   json.keyStr("name", seated ? players_[seat].name : "");
   json.ch(',');
@@ -251,6 +396,8 @@ size_t GameSession::writeStateJson(char* out, const size_t cap, const int8_t sea
   json.keyStr("phase", game_ ? "play" : "lobby");
   json.ch(',');
   json.keyBool("canStart", canStart());
+  json.ch(',');
+  json.keyBool("testMode", testMode_);
   json.ch(',');
   json.keyNum("minPlayers", meta.minPlayers);
   json.ch(',');
@@ -277,6 +424,8 @@ size_t GameSession::writeStateJson(char* out, const size_t cap, const int8_t sea
     json.keyBool("host", i == hostSeat_);
     json.ch(',');
     json.keyBool("away", isAway(i, nowMs));
+    json.ch(',');
+    json.keyBool("test", players_[i].test);
     json.ch('}');
   }
   json.ch(']');

@@ -12,8 +12,13 @@
 #include "components/PhoneJoinPanel.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
-#include "util/FiveButtonInput.h"
 #include "util/TaskWatchdog.h"
+
+// Test players are a bench feature (platformio.ini); production builds leave
+// them out.
+#ifndef GAMES_TEST_MODE
+#define GAMES_TEST_MODE 0
+#endif
 
 namespace {
 constexpr const char* AP_SSID = "eMinimal Games";
@@ -25,6 +30,7 @@ constexpr uint8_t AP_MAX_CONNECTIONS = party::MAX_PLAYERS;
 
 void GameNightActivity::onEnter() {
   Activity::onEnter();
+  session.setTestMode(GAMES_TEST_MODE != 0);
   LOG_DBG("GAMES", "Free heap at onEnter: %d bytes", ESP.getFreeHeap());
 
   // Same heap-critical transition as file transfer: WiFi plus the HTTP server
@@ -34,8 +40,10 @@ void GameNightActivity::onEnter() {
   }
 
   session.reseed(esp_random());
+  session.selectGame(initialGame);
   state = State::AP_STARTING;
   paintedVersion = 0;
+  paintedAway = 0;
   paintsSinceFullRefresh = 0;
   requestUpdate();
 
@@ -75,7 +83,7 @@ void GameNightActivity::startAccessPoint() {
   config.hostname = AP_HOSTNAME;
   if (!portal.begin(config)) {
     LOG_ERR("GAMES", "Failed to start the access point");
-    onGoHome();
+    activityManager.goToGames();
     return;
   }
 
@@ -88,7 +96,7 @@ void GameNightActivity::startServer() {
   if (!server->isRunning()) {
     LOG_ERR("GAMES", "Failed to start the game server");
     server.reset();
-    onGoHome();
+    activityManager.goToGames();
     return;
   }
   state = State::RUNNING;
@@ -103,30 +111,102 @@ void GameNightActivity::hostAction(const party::Verb verb) {
   session.applyAction(static_cast<uint8_t>(host), action);
 }
 
+void GameNightActivity::openRoundMenu() {
+  const char* const options[] = {tr(STR_GAMES_RESUME), tr(STR_GAMES_END_ROUND_ACTION), tr(STR_GAMES_LEAVE_NIGHT)};
+  menuForRound = true;
+  menu.show(games::titleFor(session.selected()), options, 3, 0, [this](const int index) { menuPick = index; });
+  requestUpdate();
+}
+
+void GameNightActivity::openLeaveConfirm() {
+  const char* const options[] = {tr(STR_GAMES_STAY), tr(STR_GAMES_LEAVE_NIGHT)};
+  menuForRound = false;
+  menu.show(tr(STR_GAMES_LEAVE_CONFIRM), options, 2, 0, [this](const int index) { menuPick = index; });
+  requestUpdate();
+}
+
+bool GameNightActivity::applyMenuChoice() {
+  const int pick = menuPick;
+  menuPick = -1;
+  // Round menu: Resume, End the round, Leave. Lobby: Stay, Leave.
+  if (menuForRound && pick == 1) {
+    session.endGame();
+    return false;
+  }
+  return (menuForRound && pick == 2) || (!menuForRound && pick == 1);
+}
+
 bool GameNightActivity::handleInput() {
   if (mappedInput.wasHomeGesture()) {
+    {
+      RenderLock lock;
+      menu.dismiss();
+    }
     onGoHome();
     return true;
   }
 
+  // Nothing pressed and no stale popup: skip the lock, which the render task
+  // holds through a whole panel refresh.
+  const bool staleMenu = menu.isActive() && !menuMatchesTable();
+  if (!staleMenu && !mappedInput.wasAnyPressed() && !mappedInput.wasAnyReleased()) return false;
+
+  bool leave = false;
+  {
+    // The session and the popup are what render() draws from.
+    RenderLock lock;
+    leave = applyInput(staleMenu);
+  }
+  if (leave) {
+    // Back to the picker; onExit() reboots into it to shed the WiFi heap.
+    // Switching activities takes the render lock, so it happens outside ours.
+    activityManager.goToGames();
+  }
+  return leave;
+}
+
+bool GameNightActivity::applyInput(const bool staleMenu) {
+  if (staleMenu) {
+    // A round ended from a phone takes its menu with it, and one started from
+    // a phone closes the lobby's leave question.
+    menu.dismiss();
+    requestUpdate();
+    return false;
+  }
+
+  if (menu.isActive()) {
+    // Phones keep playing underneath; the menu only takes the device's keys.
+    menu.handleInput(mappedInput, [this] { requestUpdate(); });
+    return applyMenuChoice();
+  }
+
   if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
-    if (session.inLobby()) {
-      onGoHome();
+    if (!session.inLobby()) {
+      // One stray Back must not throw a running round away.
+      if (session.game()->isOver()) {
+        session.endGame();
+      } else {
+        openRoundMenu();
+      }
+    } else if (session.playerCount() > 0) {
+      openLeaveConfirm();
+    } else {
       return true;
     }
-    // A round is running: the first Back drops the table into the lobby, the
-    // second leaves game night.
-    session.endGame();
   } else if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
     if (session.inLobby()) {
       session.startGame();
     } else {
       hostAction(party::Verb::Next);
     }
-  } else if (mappedInput.wasReleased(MappedInputManager::Button::Up)) {
-    if (session.inLobby()) session.cycleGame(-1);
-  } else if (mappedInput.wasReleased(MappedInputManager::Button::Down)) {
-    if (session.inLobby()) session.cycleGame(1);
+  } else if (session.inLobby() && session.testMode()) {
+    // Test players let one person open any game alone; the version bump they
+    // cause is what repaints the seat list.
+    if (mappedInput.wasReleased(MappedInputManager::Button::NavPrevious)) {
+      session.addTestPlayer();
+    } else if (mappedInput.wasReleased(MappedInputManager::Button::NavNext)) {
+      session.removeTestPlayer();
+    }
   }
   return false;
 }
@@ -146,7 +226,13 @@ void GameNightActivity::loop() {
   resetTaskWatchdogIfSubscribed();
   constexpr int MAX_ITERATIONS = 200;
   for (int i = 0; i < MAX_ITERATIONS && server->isRunning(); i++) {
-    server->handleClient();
+    {
+      // A request can deal, end or pack the table while render() reads it:
+      // hold the render lock per request, so a render still fits between two.
+      // Nothing under it waits on the render task.
+      RenderLock lock;
+      server->handleClient();
+    }
     if ((i & 0x1F) == 0x1F) resetTaskWatchdogIfSubscribed();
     if ((i & 0x3F) == 0x3F) {
       yield();
@@ -155,9 +241,21 @@ void GameNightActivity::loop() {
     }
   }
 
+  // Going away bumps no version (it is only time passing), so the lobby's seat
+  // list watches the away set itself. The round's screen shows no away.
+  uint8_t away = 0;
+  if (session.inLobby()) {
+    const uint32_t now = millis();
+    for (uint8_t seat = 0; seat < party::MAX_PLAYERS; seat++) {
+      if (session.isAway(seat, now)) away = static_cast<uint8_t>(away | (1u << seat));
+    }
+  }
+
   // One repaint per change, never faster than the panel can usefully follow.
-  if (session.version() != paintedVersion && millis() - lastPaintMs >= MIN_REPAINT_INTERVAL_MS) {
+  if ((session.version() != paintedVersion || away != paintedAway) &&
+      millis() - lastPaintMs >= MIN_REPAINT_INTERVAL_MS) {
     paintedVersion = session.version();
+    paintedAway = away;
     lastPaintMs = millis();
     requestUpdate();
   }
@@ -176,13 +274,25 @@ void GameNightActivity::renderLobby(const Rect& content) const {
   card.portal = &portal;
   card.pageUrl = portal.pageUrl();
   card.pageAlt = altUrl.c_str();
-  const Rect cardBounds(0, content.y, renderer.getScreenWidth(), content.height * 3 / 5);
+  // The card pads itself, so it spans the content plus its side padding.
+  const int pad = metrics.contentSidePadding;
+  const Rect cardBounds(content.x - pad, content.y, content.width + pad * 2, content.height * 3 / 5);
   const int cardBottom = PhoneJoinPanel::draw(renderer, cardBounds, card);
+
+  // On a test build, one line at the bottom points a lone tester at the
+  // test-player keys.
+  int seatsBottom = content.y + content.height;
+  if (session.testMode()) {
+    const int helpLineHeight = renderer.getLineHeight(SMALL_FONT_ID);
+    const int helpTop = seatsBottom - helpLineHeight;
+    GUI.drawHelpText(renderer, Rect{content.x, helpTop, content.width, helpLineHeight}, tr(STR_GAMES_TEST_HINT));
+    seatsBottom = helpTop - metrics.verticalSpacing;
+  }
 
   const int listTop = cardBottom + metrics.verticalSpacing * 2;
   renderer.drawText(UI_10_FONT_ID, content.x, listTop, tr(STR_GAMES_PLAYERS), true, EpdFontFamily::BOLD);
   const int seatsTop = listTop + lineHeight + metrics.verticalSpacing;
-  const Rect seats(content.x, seatsTop, content.width, content.y + content.height - seatsTop);
+  const Rect seats(content.x, seatsTop, content.width, seatsBottom - seatsTop);
   games::drawSeatList(renderer, session, seats, millis());
 }
 
@@ -212,17 +322,23 @@ void GameNightActivity::render(RenderLock&&) {
   }
 
   const bool inLobby = session.inLobby();
+  const bool roundOver = !inLobby && session.game()->isOver();
   char status[96];
   games::statusFor(session, status, sizeof(status));
 
-  GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight},
+  // The hints are drawn along the keys' edge, which is the bottom only in
+  // portrait: the safe area keeps every orientation clear of them, and the
+  // content stops one spacing short of that edge.
+  const Rect safe = UITheme::getInstance().getScreenSafeArea(renderer, true, false);
+  const int headerTop = safe.y + metrics.topPadding;
+  GUI.drawHeader(renderer, Rect{safe.x, headerTop, safe.width, metrics.headerHeight},
                  inLobby ? tr(STR_GAME_NIGHT) : games::titleFor(session.selected()), nullptr);
-  GUI.drawSubHeader(renderer, Rect{0, metrics.topPadding + metrics.headerHeight, pageWidth, metrics.tabBarHeight},
-                    status);
+  GUI.drawSubHeader(renderer, Rect{safe.x, headerTop + metrics.headerHeight, safe.width, metrics.tabBarHeight}, status);
 
-  const int top = metrics.topPadding + metrics.headerHeight + metrics.tabBarHeight + metrics.verticalSpacing;
-  const int bottom = pageHeight - metrics.buttonHintsHeight;
-  const Rect content(metrics.contentSidePadding, top, pageWidth - metrics.contentSidePadding * 2, bottom - top);
+  const int top = headerTop + metrics.headerHeight + metrics.tabBarHeight + metrics.verticalSpacing;
+  const int bottom = safe.y + safe.height - metrics.verticalSpacing;
+  const Rect content(safe.x + metrics.contentSidePadding, top, safe.width - metrics.contentSidePadding * 2,
+                     bottom - top);
 
   if (inLobby) {
     renderLobby(content);
@@ -230,16 +346,20 @@ void GameNightActivity::render(RenderLock&&) {
     renderRound(content);
   }
 
-  // Up/Down pick the game in the lobby: the side keys on the X4, the third and
-  // fourth front keys on the five-button board.
-  const bool fiveButton = five_button::active();
-  if (inLobby && !fiveButton) {
-    GUI.drawSideButtonHints(renderer, tr(STR_GAMES_PREV_GAME), tr(STR_GAMES_NEXT_GAME));
-  }
-  const char* upLabel = inLobby && fiveButton ? tr(STR_GAMES_PREV_GAME) : "";
-  const char* downLabel = inLobby && fiveButton ? tr(STR_GAMES_NEXT_GAME) : "";
-  const auto labels = mappedInput.mapLabels(inLobby ? tr(STR_EXIT) : tr(STR_GAMES_END_ROUND),
-                                            inLobby ? tr(STR_GAMES_START) : tr(STR_GAMES_NEXT), upLabel, downLabel);
+  // The popup draws its own hints over the table and pushes the frame. One the
+  // table has moved past (a round ended or started from a phone) is left out;
+  // handleInput() dismisses it.
+  if (menuMatchesTable() && menu.processRender(renderer, mappedInput)) return;
+
+  // On a test build the lobby's previous/next keys seat and drop test players
+  // (handleInput()). Mid-round Back opens the menu; after a round it is the
+  // lobby.
+  const bool testKeys = inLobby && session.testMode();
+  const char* backLabel = inLobby ? tr(STR_BACK) : roundOver ? tr(STR_GAMES_END_ROUND) : tr(STR_GAMES_MENU);
+  const char* confirmLabel = inLobby ? tr(STR_GAMES_START) : tr(STR_GAMES_NEXT);
+  const char* addLabel = testKeys ? tr(STR_GAMES_ADD_TEST) : "";
+  const char* dropLabel = testKeys ? tr(STR_GAMES_REMOVE_TEST) : "";
+  const auto labels = mappedInput.mapLabels(backLabel, confirmLabel, addLabel, dropLabel);
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
 
   // Fast refreshes keep the table moving; a full one every few paints clears the

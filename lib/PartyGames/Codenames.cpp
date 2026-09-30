@@ -1,5 +1,6 @@
 #include "Codenames.h"
 
+#include <cctype>
 #include <cstdio>
 #include <cstring>
 
@@ -9,6 +10,36 @@ namespace party {
 
 namespace {
 const char* teamName(const uint8_t team) { return team == Codenames::RED ? "Red" : "Blue"; }
+
+// The clue's number as said aloud.
+const char* countWord(const uint8_t count, char (&buf)[4]) {
+  if (count == Codenames::UNLIMITED) return "unlimited";
+  snprintf(buf, sizeof(buf), "%u", count);
+  return buf;
+}
+
+// Case-blind: tile words are upper case, clues arrive as typed.
+bool sameLetters(const char* a, const char* b, const size_t count) {
+  for (size_t i = 0; i < count; i++) {
+    if (std::toupper(static_cast<unsigned char>(a[i])) != std::toupper(static_cast<unsigned char>(b[i]))) return false;
+  }
+  return true;
+}
+
+// `clue` is `word`, or one of them is the other plus S or ES: BANK and BANKS.
+bool sameWordForm(const char* clue, const char* word) {
+  const char* shorter = clue;
+  const char* longer = word;
+  if (strlen(shorter) > strlen(longer)) {
+    shorter = word;
+    longer = clue;
+  }
+  const size_t length = strlen(shorter);
+  if (!sameLetters(shorter, longer, length)) return false;
+  const char* tail = longer + length;
+  const size_t extra = strlen(tail);
+  return extra == 0 || (extra == 1 && sameLetters(tail, "S", 1)) || (extra == 2 && sameLetters(tail, "ES", 2));
+}
 }  // namespace
 
 void Codenames::start(const uint8_t playerCount, Rng& rng) {
@@ -62,6 +93,7 @@ void Codenames::start(const uint8_t playerCount, Rng& rng) {
   clue_[0] = '\0';
   clueCount_ = 0;
   guessesLeft_ = 0;
+  guessed_ = 0;
   winner_ = 0;
   snprintf(message_, sizeof(message_), "%s spymaster gives the first clue", teamName(turn_));
 }
@@ -82,6 +114,17 @@ void Codenames::endTurn() {
   clue_[0] = '\0';
   clueCount_ = 0;
   guessesLeft_ = 0;
+  guessed_ = 0;
+}
+
+// The rulebook bars any form of a word still visible on the table. Only the
+// word and its plurals are caught here; anything subtler is the other
+// spymaster's call.
+bool Codenames::clueOnBoard(const char* clue) const {
+  for (uint8_t i = 0; i < TILES; i++) {
+    if (!revealed_[i] && sameWordForm(clue, tileWord(i))) return true;
+  }
+  return false;
 }
 
 void Codenames::reveal(const uint8_t tile) {
@@ -106,6 +149,7 @@ void Codenames::reveal(const uint8_t tile) {
     }
     snprintf(message_, sizeof(message_), "%s: correct, %u agent%s left", teamName(guessing), remaining(guessing),
              remaining(guessing) == 1 ? "" : "s");
+    if (unlimited()) return;
     if (guessesLeft_ > 0) guessesLeft_--;
     if (guessesLeft_ == 0) endTurn();
     return;
@@ -137,14 +181,17 @@ bool Codenames::apply(const uint8_t seat, const Action& action, const bool isHos
       if (phase_ != Phase::Clue || !spymaster_[seat]) return false;
       if (action.text[0] == '\0') return false;
       const int16_t n = action.a;
-      if (n < 0 || n > 9) return false;
+      if (n < 0 || n > UNLIMITED) return false;
+      if (clueOnBoard(action.text)) return false;
       snprintf(clue_, sizeof(clue_), "%s", action.text);
       clueCount_ = static_cast<uint8_t>(n);
-      // The traditional bonus guess: a team may always try one more than the
-      // number given.
-      guessesLeft_ = static_cast<uint8_t>(n + 1);
+      // The "plus one" rule: a team may always try one more than the number
+      // given. A 0 or unlimited clue has no limit at all.
+      guessesLeft_ = unlimited() ? 0 : static_cast<uint8_t>(n + 1);
+      guessed_ = 0;
       phase_ = Phase::Guess;
-      snprintf(message_, sizeof(message_), "%s: %s %u", teamName(turn_), clue_, clueCount_);
+      char count[4];
+      snprintf(message_, sizeof(message_), "%s: %s %s", teamName(turn_), clue_, countWord(clueCount_, count));
       return true;
     }
 
@@ -152,12 +199,13 @@ bool Codenames::apply(const uint8_t seat, const Action& action, const bool isHos
       if (phase_ != Phase::Guess || spymaster_[seat]) return false;
       const int16_t tile = action.a;
       if (tile < 0 || tile >= TILES || revealed_[tile]) return false;
+      guessed_++;
       reveal(static_cast<uint8_t>(tile));
       return true;
     }
 
     case Verb::Pass: {
-      if (phase_ != Phase::Guess || spymaster_[seat]) return false;
+      if (phase_ != Phase::Guess || spymaster_[seat] || guessed_ == 0) return false;
       snprintf(message_, sizeof(message_), "%s passed", teamName(turn_));
       endTurn();
       return true;
@@ -175,6 +223,11 @@ void Codenames::statusLine(char* out, const size_t cap) const {
                remaining(BLUE));
       return;
     case Phase::Guess:
+      if (unlimited()) {
+        char count[4];
+        snprintf(out, cap, "%s: \"%s %s\" - no guess limit", teamName(turn_), clue_, countWord(clueCount_, count));
+        return;
+      }
       snprintf(out, cap, "%s: \"%s %u\" - %u guess%s left", teamName(turn_), clue_, clueCount_, guessesLeft_,
                guessesLeft_ == 1 ? "" : "es");
       return;
@@ -199,9 +252,12 @@ void Codenames::writeView(JsonBuf& out, const int8_t seat) const {
   out.ch(',');
   out.keyStr("clue", clue_);
   out.ch(',');
-  out.keyNum("clueCount", clueCount_);
+  // -1: an unlimited clue, and no guess limit (after a 0 clue too).
+  out.keyNum("clueCount", clueCount_ == UNLIMITED ? -1 : clueCount_);
   out.ch(',');
-  out.keyNum("guessesLeft", guessesLeft_);
+  out.keyNum("guessesLeft", unlimited() ? -1 : guessesLeft_);
+  out.ch(',');
+  out.keyNum("guessed", guessed_);
   out.ch(',');
   out.keyNum("red", remaining(RED));
   out.ch(',');

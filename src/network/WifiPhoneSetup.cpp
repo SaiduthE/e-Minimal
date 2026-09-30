@@ -6,7 +6,6 @@
 #include <esp_mac.h>
 
 namespace {
-constexpr const char* SETUP_AP_SSID = "eMinimal Setup";
 constexpr uint8_t SETUP_AP_MAX_CLIENTS = 2;
 // One join, scan included. The panel keyboard path allows 15 s; the phone
 // path pays a scan in AP+STA mode on top, and a wrong password fails fast.
@@ -43,9 +42,17 @@ WifiPhoneSetup::WifiPhoneSetup(std::string preset, std::vector<Target> networks)
 WifiPhoneSetup::~WifiPhoneSetup() { end(); }
 
 bool WifiPhoneSetup::begin() {
+  // The page carries the home password, so the network stays WPA2. It is the
+  // shared hotspot, so a phone that joined any e-Minimal portal rejoins by
+  // itself. The trade-off: a per-session passphrase would be known only to
+  // whoever read the panel during this setup; the shared one is kept on the
+  // SD card and known to every phone that ever joined; while this page is up,
+  // any of them in range could join, or capture and decrypt the phone's
+  // traffic, home password included.
   PhonePortal::Config config;
-  config.ssid = SETUP_AP_SSID;
-  config.randomPassphrase = true;  // the page carries the home password
+  config.ssid = PhonePortal::SHARED_SSID;
+  config.passphrase = PhonePortal::sharedPassphrase();
+  config.hostname = PhonePortal::SHARED_HOSTNAME;
   config.maxClients = SETUP_AP_MAX_CLIENTS;
   config.keepStation = true;
   // Raise the portal where the join will land: an AP+STA radio has one

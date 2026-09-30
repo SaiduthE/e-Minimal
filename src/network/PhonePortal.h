@@ -12,17 +12,25 @@ class DNSServer;
 // feature (Wi-Fi setup, file transfer, a game night, notes) only brings the
 // page it serves. Paint the join screen with PhoneJoinPanel.
 //
-// The access point is open by default, as upstream's hotspot is. A page that
-// carries a secret -- Wi-Fi setup carries the home password -- asks for WPA2
-// with a passphrase generated per session; the QR carries it, so a scanned
-// join costs nothing and only the typed fallback sees it. A feature the phone
-// should rejoin by itself (text entry) passes a fixed, remembered passphrase.
+// Every e-Minimal portal but Game Night raises one network: SHARED_SSID, WPA2
+// with sharedPassphrase(), generated once and kept, so a phone saves it once
+// and rejoins by itself whichever feature raised it. The join QR carries the
+// passphrase, so a scanned join costs nothing and only the typed fallback
+// shows it. A Config without a passphrase raises an open network.
 class PhonePortal {
  public:
   static constexpr size_t PASSPHRASE_LENGTH = 8;
+  static constexpr const char* SHARED_SSID = "eMinimal";
+  // mDNS name on the hotspot and on a station link: http://eminimal.local/
+  static constexpr const char* SHARED_HOSTNAME = "eminimal";
+
+  // The shared hotspot's WPA2 passphrase. Generated and saved to settings on
+  // first use (SETTINGS.phoneTextPassphrase); later calls return it as kept.
+  // Never null; points into SETTINGS, valid for the life of the program.
+  static const char* sharedPassphrase();
 
   struct Config {
-    const char* ssid = "eMinimal";
+    const char* ssid = SHARED_SSID;
     // WPA2 with a fresh 8-character passphrase per begin(); otherwise open.
     bool randomPassphrase = false;
     // WPA2 with this passphrase (8..63 characters) when non-empty; takes
@@ -35,7 +43,7 @@ class PhonePortal {
     // WIFI_AP_STA instead of WIFI_AP: the station side stays usable while the
     // portal is up, which Wi-Fi setup needs to try the home network.
     bool keepStation = false;
-    const char* hostname = "eminimal";
+    const char* hostname = SHARED_HOSTNAME;
   };
 
   PhonePortal() = default;

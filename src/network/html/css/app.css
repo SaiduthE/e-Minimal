@@ -133,6 +133,8 @@ input:focus, select:focus, textarea:focus { outline: 1px solid var(--focus); out
 input:disabled, select:disabled { color: var(--ink-3); background-color: var(--paper); }
 select { padding-right: 36px; background: var(--surface) var(--chevron) no-repeat right 12px center; }
 input[type="checkbox"], input[type="radio"] { display: inline-block; width: 18px; height: 18px; padding: 0; -webkit-appearance: auto; appearance: auto; accent-color: var(--ink); vertical-align: -3px; }
+/* The native slider: with appearance off, as above for other inputs, the track does not draw */
+input[type="range"] { height: 32px; padding: 0; border: 0; background: transparent; -webkit-appearance: auto; appearance: auto; accent-color: var(--ink); }
 input[type="file"] { height: auto; padding: 8px 0; border: 0; background: none; font-size: .875rem; }
 input[type="file"]::file-selector-button { height: 32px; padding: 0 12px; margin-right: 12px; border: 1px solid var(--ink); border-radius: 4px; background: transparent; color: var(--ink); font: inherit; font-size: .875rem; font-weight: 500; cursor: pointer; }
 .check { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; }
@@ -153,11 +155,14 @@ input[type="file"]::file-selector-button { height: 32px; padding: 0 12px; margin
 
 /* Chips and toasts */
 .chip { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--rule); color: var(--ink-2); font-size: .8125rem; line-height: 1; white-space: nowrap; }
-.chip-ok, .toast-ok { border-color: var(--ok); color: var(--ok); }
-.chip-danger, .toast-danger { border-color: var(--danger); color: var(--danger); }
+.chip-ok { border-color: var(--ok); color: var(--ok); }
+.chip-danger { border-color: var(--danger); color: var(--danger); }
 .toast { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 50; max-width: calc(100% - 32px); padding: 10px 16px; border-radius: 999px; background: var(--ink); color: var(--paper); border: 1px solid var(--ink); font-size: .875rem; line-height: 1.4; text-align: center; transform: translateX(-50%); opacity: 0; visibility: hidden; transition: opacity 120ms ease, visibility 0s linear 120ms; }
 .toast.show { opacity: 1; visibility: visible; transition-delay: 0s; }
+/* After .toast, which they override: same specificity, so order decides */
 .toast-ok, .toast-danger { background: var(--surface); }
+.toast-ok { border-color: var(--ok); color: var(--ok); }
+.toast-danger { border-color: var(--danger); color: var(--danger); }
 
 /* Tables: real table from 700 px, stacked rows below */
 .table { width: 100%; border-collapse: collapse; font-size: .9375rem; }

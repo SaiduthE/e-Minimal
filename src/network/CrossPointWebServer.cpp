@@ -13,19 +13,27 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
 
 #include "CrossPointSettings.h"
+#include "DashboardConfigStore.h"
 #include "FontInstaller.h"
 #include "OpdsServerStore.h"
 #include "PhonePage.h"
 #include "SdCardFontSystem.h"
 #include "SettingsList.h"
+#include "TodoStore.h"
 #include "WebDAVHandler.h"
 #include "WifiCredentialStore.h"
 #include "html/ConvertPageHtml.generated.h"
+#include "html/DashboardsPageHtml.generated.h"
 #include "html/FilesPageHtml.generated.h"
 #include "html/FontsPageHtml.generated.h"
 #include "html/HomePageHtml.generated.h"
+#include "html/PicturesPageHtml.generated.h"
 #include "html/SettingsPageHtml.generated.h"
 #include "html/css/appCss.generated.h"
 #include "html/js/appJs.generated.h"
@@ -97,6 +105,252 @@ bool isProtectedItemName(const String& name) {
     }
   }
   return false;
+}
+
+// Answers {"error":message} or, when a JSON key was rejected, {"error":message,"field":"weather.lat"}.
+void sendJsonError(WebServer& server, const int code, const char* message, const char* field = nullptr) {
+  JsonDocument doc;
+  doc["error"] = message;
+  if (field) doc["field"] = field;
+  String json;
+  serializeJson(doc, json);
+  server.send(code, "application/json", json);
+}
+
+// Four decimals (about 11 m) is finer than any forecast grid and keeps float
+// noise out of the JSON ("52.52", not "52.520000457763672").
+double roundCoordinate(const float degrees) { return std::round(static_cast<double>(degrees) * 10000.0) / 10000.0; }
+
+// A JSON path built at run time for an error ("saveLayout.tiles[2]"). The web server answers one request at a time,
+// so one buffer serves.
+char fieldPath[40];
+
+const char* prefixedField(const char* prefix, const char* field) {
+  snprintf(fieldPath, sizeof(fieldPath), "%s.%s", prefix, field);
+  return fieldPath;
+}
+
+constexpr const char* TILE_FIELDS[] = {"tiles[0]", "tiles[1]", "tiles[2]", "tiles[3]",
+                                       "tiles[4]", "tiles[5]", "tiles[6]", "tiles[7]"};
+static_assert(sizeof(TILE_FIELDS) / sizeof(TILE_FIELDS[0]) == CustomLayout::MAX_TILES, "one field name per tile");
+
+// Well-formed UTF-8 (lead and continuation bytes line up) without control characters: text the device fonts can
+// step through and draw on one line.
+bool isCleanText(const char* text, const size_t len) {
+  size_t i = 0;
+  while (i < len) {
+    const auto c = static_cast<uint8_t>(text[i]);
+    if (c < 0x20 || c == 0x7F) return false;
+    size_t extra = 0;
+    if (c >= 0xC2 && c <= 0xDF) {
+      extra = 1;
+    } else if ((c & 0xF0) == 0xE0) {
+      extra = 2;
+    } else if (c >= 0xF0 && c <= 0xF4) {
+      extra = 3;
+    } else if (c >= 0x80) {
+      return false;
+    }
+    if (len - i <= extra) return false;
+    for (size_t k = 1; k <= extra; k++) {
+      if ((static_cast<uint8_t>(text[i + k]) & 0xC0) != 0x80) return false;
+    }
+    i += extra + 1;
+  }
+  return true;
+}
+
+// The fields a POST /api/dashboards may change. The store's setters apply as
+// they validate, so a rejected request restores this copy to leave memory
+// matching the card.
+struct DashboardSnapshot {
+  std::vector<CustomLayout> layouts;
+  uint8_t activeLayoutId;
+  std::string weatherPlace;
+  float weatherLatitude;
+  float weatherLongitude;
+  bool weatherHasLocation;
+  bool weatherFahrenheit;
+  std::string carouselFolder;
+  uint16_t carouselIntervalMinutes;
+
+  explicit DashboardSnapshot(const DashboardConfigStore& config)
+      : layouts(config.layouts),
+        activeLayoutId(config.activeLayoutId),
+        weatherPlace(config.weatherPlace),
+        weatherLatitude(config.weatherLatitude),
+        weatherLongitude(config.weatherLongitude),
+        weatherHasLocation(config.weatherHasLocation),
+        weatherFahrenheit(config.weatherFahrenheit),
+        carouselFolder(config.carouselFolder),
+        carouselIntervalMinutes(config.carouselIntervalMinutes) {}
+
+  void restore(DashboardConfigStore& config) const {
+    config.layouts = layouts;
+    config.activeLayoutId = activeLayoutId;
+    config.weatherPlace = weatherPlace;
+    config.weatherLatitude = weatherLatitude;
+    config.weatherLongitude = weatherLongitude;
+    config.weatherHasLocation = weatherHasLocation;
+    config.weatherFahrenheit = weatherFahrenheit;
+    config.carouselFolder = carouselFolder;
+    config.carouselIntervalMinutes = carouselIntervalMinutes;
+  }
+};
+
+// CustomLayout::fromJson() only reports that something was unreadable; this
+// names it in validate()'s terms ("name", "shape", "tiles", "tiles[i]").
+const char* unreadableLayoutField(JsonObjectConst in) {
+  if (!in["name"].is<const char*>()) return "name";
+  const char* shape = in["shape"] | "landscape";
+  if (strcmp(shape, "landscape") != 0 && strcmp(shape, "portrait") != 0) return "shape";
+  if (!in["tiles"].is<JsonArrayConst>()) return "tiles";
+  JsonArrayConst tiles = in["tiles"].as<JsonArrayConst>();
+  if (tiles.size() > CustomLayout::MAX_TILES) return "tiles";
+  size_t index = 0;
+  for (JsonVariantConst tile : tiles) {
+    WidgetId widget = WidgetId::NONE;
+    bool readable = tile.is<JsonObjectConst>() && DashboardConfigStore::widgetFromKey(tile["widget"] | "", widget);
+    for (const char* key : {"x", "y", "w", "h"}) {
+      readable = readable && tile[key].is<int>() && tile[key].as<int>() >= 0 && tile[key].as<int>() <= 255;
+    }
+    if (!readable) return TILE_FIELDS[index];
+    index++;
+  }
+  return "tiles";
+}
+
+// What a POST /api/dashboards did besides changing the store, for its answer.
+struct DashboardOutcome {
+  uint8_t savedId = 0;        // the id a saveLayout got
+  bool layoutsFull = false;   // saveLayout found no room
+  bool restoreAsked = false;  // restoreDefaults was true
+  uint8_t restored = 0;       // starting layouts it added back
+};
+
+// saveLayout: a new (id 0) or edited layout, saved and put in use.
+const char* applySaveLayout(DashboardConfigStore& config, JsonVariantConst value, DashboardOutcome& outcome) {
+  if (!value.is<JsonObjectConst>()) return "saveLayout";
+  JsonObjectConst in = value.as<JsonObjectConst>();
+  const int id = in["id"].isNull() ? 0 : (in["id"].is<int>() ? in["id"].as<int>() : -1);
+  if (id < 0 || id > 255 || (id != 0 && !config.findLayout(static_cast<uint8_t>(id)))) return "saveLayout.id";
+
+  CustomLayout layout;
+  const char* field = nullptr;
+  if (!layout.fromJson(in)) {
+    field = unreadableLayoutField(in);
+  } else if (!isCleanText(layout.name.c_str(), layout.name.size())) {
+    field = "name";
+  } else {
+    field = layout.validate();
+  }
+  if (field) return prefixedField("saveLayout", field);
+
+  layout.id = static_cast<uint8_t>(id);
+  if (!config.saveLayout(layout)) {
+    outcome.layoutsFull = true;
+    return "saveLayout";
+  }
+  config.activateLayout(layout.id);
+  outcome.savedId = layout.id;
+  return nullptr;
+}
+
+// Applies the fields present in a POST /api/dashboards body. Returns the JSON
+// path of the first rejected field, or nullptr when all of them were accepted.
+const char* applyDashboardChanges(DashboardConfigStore& config, JsonVariantConst body, DashboardOutcome& outcome) {
+  JsonVariantConst activeValue = body["layout"]["active"];
+  if (!activeValue.isNull()) {
+    const int id = activeValue.is<int>() ? activeValue.as<int>() : -1;
+    // 0, as a GET reports "none", passes only while no layout is in use.
+    const bool keepsNone = id == 0 && !config.activeLayout();
+    if (!keepsNone && (id <= 0 || id > 255 || !config.activateLayout(static_cast<uint8_t>(id)))) {
+      return "layout.active";
+    }
+  }
+
+  JsonVariantConst saveValue = body["saveLayout"];
+  if (!saveValue.isNull()) {
+    const char* field = applySaveLayout(config, saveValue, outcome);
+    if (field) return field;
+  }
+
+  JsonVariantConst deleteValue = body["deleteLayout"];
+  if (!deleteValue.isNull()) {
+    const int id = deleteValue.is<int>() ? deleteValue.as<int>() : -1;
+    if (id <= 0 || id > 255 || !config.deleteLayout(static_cast<uint8_t>(id))) return "deleteLayout";
+  }
+
+  JsonVariantConst restoreValue = body["restoreDefaults"];
+  if (!restoreValue.isNull()) {
+    if (!restoreValue.is<bool>()) return "restoreDefaults";
+    if (restoreValue.as<bool>()) {
+      const bool portrait = SETTINGS.dashboardOrientation == CrossPointSettings::DASHBOARD_PORTRAIT;
+      outcome.restoreAsked = true;
+      outcome.restored = config.restoreDefaultLayouts(portrait);
+      // Layouts back after all were deleted: the first goes on the dashboard.
+      if (!config.activeLayout() && !config.layouts.empty()) config.activateLayout(config.layouts.front().id);
+    }
+  }
+
+  JsonVariantConst weather = body["weather"];
+  if (weather["clearLocation"] | false) {
+    config.clearWeatherLocation();
+  } else if (weather["hasLocation"] | true) {  // false: the 0,0 placeholders of an echoed GET
+    JsonVariantConst lat = weather["lat"];
+    JsonVariantConst lon = weather["lon"];
+    JsonVariantConst place = weather["place"];
+    if (!lat.isNull() || !lon.isNull()) {
+      if (!lat.is<float>()) return "weather.lat";
+      if (!lon.is<float>()) return "weather.lon";
+      if (!place.isNull() && !place.is<const char*>()) return "weather.place";
+      const float latitude = lat.as<float>();
+      if (!config.setWeatherLocation(place | "", latitude, lon.as<float>())) {
+        // The setter checks both; name the one that is out of range.
+        const bool latitudeOk = std::isfinite(latitude) && latitude >= -90.0f && latitude <= 90.0f;
+        return latitudeOk ? "weather.lon" : "weather.lat";
+      }
+    }
+  }
+
+  JsonVariantConst units = weather["units"];
+  if (!units.isNull()) {
+    const char* value = units | "";
+    if (strcmp(value, "c") == 0) {
+      config.weatherFahrenheit = false;
+    } else if (strcmp(value, "f") == 0) {
+      config.weatherFahrenheit = true;
+    } else {
+      return "weather.units";
+    }
+  }
+
+  JsonVariantConst carousel = body["carousel"];
+  JsonVariantConst folder = carousel["folder"];
+  if (!folder.isNull() && (!folder.is<const char*>() || !config.setCarouselFolder(folder.as<const char*>()))) {
+    return "carousel.folder";
+  }
+  JsonVariantConst interval = carousel["intervalMinutes"];
+  if (!interval.isNull() && (!interval.is<int>() || !config.setCarouselIntervalMinutes(interval.as<int>()))) {
+    return "carousel.intervalMinutes";
+  }
+  return nullptr;
+}
+
+// Answers GET /api/todo's shape from the loaded TodoStore.
+void sendTodoList(WebServer& server) {
+  JsonDocument doc;
+  JsonArray items = doc["items"].to<JsonArray>();
+  for (const auto& item : TODO_STORE.getItems()) {
+    JsonObject entry = items.add<JsonObject>();
+    entry["text"] = item.text.c_str();
+    entry["done"] = item.done;
+  }
+  doc["max"] = static_cast<uint32_t>(TodoStore::MAX_ITEMS);
+  doc["maxText"] = static_cast<uint32_t>(TodoStore::MAX_TEXT_LENGTH);
+  String json;
+  serializeJson(doc, json);
+  server.send(200, "application/json", json);
 }
 
 }  // namespace
@@ -226,6 +480,14 @@ void CrossPointWebServer::begin() {
   server->on("/api/wifi", HTTP_GET, [this] { handleGetWifiNetworks(); });
   server->on("/api/wifi", HTTP_POST, [this] { handlePostWifiNetwork(); });
   server->on("/api/wifi/delete", HTTP_POST, [this] { handleDeleteWifiNetwork(); });
+
+  // Dashboard endpoints: layouts, widget settings, the to-do list, pictures for the Image tile
+  server->on("/dashboards", HTTP_GET, [this] { handleDashboardsPage(); });
+  server->on("/pictures", HTTP_GET, [this] { handlePicturesPage(); });
+  server->on("/api/dashboards", HTTP_GET, [this] { handleGetDashboards(); });
+  server->on("/api/dashboards", HTTP_POST, [this] { handlePostDashboards(); });
+  server->on("/api/todo", HTTP_GET, [this] { handleGetTodo(); });
+  server->on("/api/todo", HTTP_POST, [this] { handlePostTodo(); });
 
   server->onNotFound([this] { handleNotFound(); });
   LOG_DBG("WEB", "[MEM] Free heap after route setup: %d bytes", ESP.getFreeHeap());
@@ -1355,6 +1617,192 @@ void CrossPointWebServer::handlePostSettings() {
 
   LOG_DBG("WEB", "Applied %d setting(s)", applied);
   server->send(200, "text/plain", String("Applied ") + String(applied) + " setting(s)");
+}
+
+// ---- Dashboards API ----
+
+void CrossPointWebServer::handleDashboardsPage() const {
+  PhonePage::sendStatic(*server, DashboardsPageHtml, sizeof(DashboardsPageHtml), DashboardsPageHtmlETag, "text/html");
+  LOG_DBG("WEB", "Served dashboards page");
+}
+
+void CrossPointWebServer::handlePicturesPage() const {
+  PhonePage::sendStatic(*server, PicturesPageHtml, sizeof(PicturesPageHtml), PicturesPageHtmlETag, "text/html");
+  LOG_DBG("WEB", "Served pictures page");
+}
+
+void CrossPointWebServer::handleGetDashboards() const {
+  auto& config = DASHBOARD_CONFIG;
+  config.loadFromFile();  // A missing file keeps the defaults
+
+  JsonDocument doc;
+  JsonObject layout = doc["layout"].to<JsonObject>();
+  layout["active"] = config.activeLayout() ? config.activeLayoutId : 0;
+  doc["orientation"] = SETTINGS.dashboardOrientation;
+
+  JsonObject grid = doc["grid"].to<JsonObject>();
+  grid["long"] = dashboard_layout::GRID_LONG;
+  grid["short"] = dashboard_layout::GRID_SHORT;
+  grid["minCells"] = dashboard_layout::MIN_TILE_CELLS;
+  grid["maxTiles"] = CustomLayout::MAX_TILES;
+  grid["maxName"] = static_cast<uint32_t>(CustomLayout::MAX_NAME_LENGTH);
+  grid["maxLayouts"] = DashboardConfigStore::MAX_LAYOUTS;
+
+  JsonArray layouts = doc["layouts"].to<JsonArray>();
+  for (const auto& entry : config.layouts) entry.toJson(layouts.add<JsonObject>());
+
+  JsonObject weather = doc["weather"].to<JsonObject>();
+  weather["hasLocation"] = config.weatherHasLocation;
+  weather["place"] = config.weatherPlace.c_str();
+  weather["lat"] = roundCoordinate(config.weatherLatitude);
+  weather["lon"] = roundCoordinate(config.weatherLongitude);
+  weather["units"] = config.weatherFahrenheit ? "f" : "c";
+
+  JsonObject carousel = doc["carousel"].to<JsonObject>();
+  carousel["folder"] = config.carouselFolder.c_str();
+  carousel["intervalMinutes"] = config.carouselIntervalMinutes;
+  carousel["minMinutes"] = DashboardConfigStore::MIN_CAROUSEL_MINUTES;
+  carousel["maxMinutes"] = DashboardConfigStore::MAX_CAROUSEL_MINUTES;
+
+  String json;
+  serializeJson(doc, json);
+  server->send(200, "application/json", json);
+  LOG_DBG("WEB", "Served dashboards API");
+}
+
+void CrossPointWebServer::handlePostDashboards() {
+  if (!server->hasArg("plain")) {
+    sendJsonError(*server, 400, "Missing JSON body");
+    return;
+  }
+
+  const String body = server->arg("plain");
+  JsonDocument doc;
+  const DeserializationError err = deserializeJson(doc, body);
+  if (err) {
+    sendJsonError(*server, 400, (String("Invalid JSON: ") + err.c_str()).c_str());
+    return;
+  }
+  if (!doc.is<JsonObject>()) {
+    sendJsonError(*server, 400, "Expected a JSON object");
+    return;
+  }
+
+  auto& config = DASHBOARD_CONFIG;
+  config.loadFromFile();  // A missing file keeps the defaults
+  const DashboardSnapshot before(config);
+
+  DashboardOutcome outcome;
+  const char* badField = applyDashboardChanges(config, doc.as<JsonVariantConst>(), outcome);
+  if (badField) {
+    before.restore(config);
+    LOG_DBG("WEB", "Rejected dashboard setting: %s", badField);
+    sendJsonError(*server, 400, outcome.layoutsFull ? "No room for another layout" : "Invalid value", badField);
+    return;
+  }
+
+  if (!config.saveToFile()) {
+    before.restore(config);
+    LOG_ERR("WEB", "Failed to save dashboard settings");
+    sendJsonError(*server, 500, "Could not save to the SD card");
+    return;
+  }
+
+  LOG_DBG("WEB", "Saved dashboard settings");
+  JsonDocument answer;
+  answer["ok"] = true;
+  if (outcome.savedId) answer["id"] = outcome.savedId;
+  if (outcome.restoreAsked) answer["restored"] = outcome.restored;
+  String json;
+  serializeJson(answer, json);
+  server->send(200, "application/json", json);
+}
+
+// ---- To-do API ----
+// The list lives on SD; each request loads it, acts, saves and unloads it, as
+// the dashboard does around its own use.
+
+void CrossPointWebServer::handleGetTodo() const {
+  TODO_STORE.load();
+  sendTodoList(*server);
+  TODO_STORE.unload();
+  LOG_DBG("WEB", "Served to-do API");
+}
+
+void CrossPointWebServer::handlePostTodo() {
+  if (!server->hasArg("plain")) {
+    sendJsonError(*server, 400, "Missing JSON body");
+    return;
+  }
+
+  const String body = server->arg("plain");
+  JsonDocument doc;
+  const DeserializationError err = deserializeJson(doc, body);
+  if (err) {
+    sendJsonError(*server, 400, (String("Invalid JSON: ") + err.c_str()).c_str());
+    return;
+  }
+
+  const char* op = doc["op"] | "";
+  const bool isAdd = strcmp(op, "add") == 0;
+  const bool isEdit = strcmp(op, "edit") == 0;
+  const bool isToggle = strcmp(op, "toggle") == 0;
+  const bool isDelete = strcmp(op, "delete") == 0;
+  const bool isClearDone = strcmp(op, "clearDone") == 0;
+  if (!isAdd && !isEdit && !isToggle && !isDelete && !isClearDone) {
+    sendJsonError(*server, 400, "Invalid value", "op");
+    return;
+  }
+
+  // Text for add and edit: 1 to MAX_TEXT_LENGTH bytes of clean UTF-8. The page
+  // trims it and cuts it on a character boundary, so the store's byte cut
+  // never splits one.
+  std::string text;
+  if (isAdd || isEdit) {
+    if (!doc["text"].is<const char*>()) {
+      sendJsonError(*server, 400, "Invalid value", "text");
+      return;
+    }
+    const JsonString value = doc["text"].as<JsonString>();
+    if (value.size() == 0 || value.size() > TodoStore::MAX_TEXT_LENGTH || !isCleanText(value.c_str(), value.size())) {
+      sendJsonError(*server, 400, "Invalid value", "text");
+      return;
+    }
+    text.assign(value.c_str(), value.size());
+  }
+  const int index = doc["index"].is<int>() ? doc["index"].as<int>() : -1;
+  const size_t position = index >= 0 ? static_cast<size_t>(index) : SIZE_MAX;
+
+  auto& todo = TODO_STORE;
+  todo.load();
+  bool changed = true;
+  const char* badField = nullptr;
+  if (isAdd) {
+    if (!todo.add(text)) badField = "items";
+  } else if (isEdit) {
+    if (!todo.setText(position, text)) badField = "index";
+  } else if (isToggle) {
+    if (!todo.toggle(position)) badField = "index";
+  } else if (isDelete) {
+    if (!todo.remove(position)) badField = "index";
+  } else {
+    changed = todo.removeDone();  // None done is not an error
+  }
+
+  if (badField) {
+    todo.unload();
+    sendJsonError(*server, 400, strcmp(badField, "items") == 0 ? "The list is full" : "Invalid value", badField);
+    return;
+  }
+  if (changed && !todo.saveToFile()) {
+    todo.unload();
+    LOG_ERR("WEB", "Failed to save to-do list");
+    sendJsonError(*server, 500, "Could not save to the SD card");
+    return;
+  }
+  sendTodoList(*server);
+  todo.unload();
+  LOG_DBG("WEB", "To-do %s", op);
 }
 
 // ---- OPDS Server API ----

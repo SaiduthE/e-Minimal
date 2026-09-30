@@ -43,30 +43,45 @@ constexpr NetworkMode menuModes[NetworkModeSelectionActivity::MENU_ITEM_COUNT] =
 };
 }  // namespace
 
-NetworkModeSelectionActivity::NetworkModeSelectionActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
-    : UiListActivity("NetworkModeSelection", renderer, mappedInput) {
+NetworkModeSelectionActivity::NetworkModeSelectionActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
+                                                           const Choices choices, const char* title,
+                                                           const NetworkMode initial)
+    : UiListActivity("NetworkModeSelection", renderer, mappedInput), title_(title) {
   // Entirely static, so built once here rather than every buildScreen() call.
   for (int i = 0; i < MENU_ITEM_COUNT; i++) {
+    const NetworkMode mode = menuModes[i];
+    if (choices == Choices::JoinOrHotspot && mode != NetworkMode::JOIN_NETWORK && mode != NetworkMode::CREATE_HOTSPOT) {
+      continue;
+    }
     fui::ListItem item;
     item.label = I18N.get(menuItems[i]);
     item.subtitle = I18N.get(menuDescs[i]);
     item.icon = listIconFor(menuIcons[i], 32);  // subtitle rows carry the larger icon
-    item.actionValue = static_cast<int16_t>(i);
-    rowItems_[i] = item;
+    item.actionValue = static_cast<int16_t>(rowCount_);
+    if (mode == initial) initialRow_ = rowCount_;
+    rowModes_[rowCount_] = mode;
+    rowItems_[rowCount_] = item;
+    rowCount_++;
   }
 }
 
-int NetworkModeSelectionActivity::listCount() const { return MENU_ITEM_COUNT; }
+void NetworkModeSelectionActivity::onEnter() {
+  UiListActivity::onEnter();
+  if (initialRow_ != 0) moveSelectionTo(initialRow_);
+}
 
-const char* NetworkModeSelectionActivity::headerTitle() const { return tr(STR_FILE_TRANSFER); }
+int NetworkModeSelectionActivity::listCount() const { return rowCount_; }
+
+const char* NetworkModeSelectionActivity::headerTitle() const { return title_ ? title_ : tr(STR_FILE_TRANSFER); }
 
 void NetworkModeSelectionActivity::activateIndex(const int index) {
+  if (index < 0 || index >= rowCount_) return;
   // Selection leaves this screen; a lingering flash would gray an unrelated
   // element on the next render.
   app.clearTapFlash();
   nav.selected = index;
 
-  onModeSelected(menuModes[index]);
+  onModeSelected(rowModes_[index]);
 }
 
 void NetworkModeSelectionActivity::buildScreen(UiScreen& screen) {
@@ -80,7 +95,7 @@ void NetworkModeSelectionActivity::buildScreen(UiScreen& screen) {
   // repaint.
   fui::ListProps props;
   props.items = rowItems_;
-  props.count = static_cast<uint16_t>(MENU_ITEM_COUNT);
+  props.count = static_cast<uint16_t>(rowCount_);
   props.action = ACTION_ROW;
   props.inputMask = fui::InputTouch;  // physical buttons stay in loop()
   props.subtitleText = screen.theme().smallText;

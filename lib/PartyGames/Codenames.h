@@ -18,6 +18,9 @@ class Codenames final : public Game {
   static constexpr uint8_t BLUE = 2;
   static constexpr uint8_t ASSASSIN = 3;
 
+  // The clue number for "tiny: unlimited", on the wire and in clueCount().
+  static constexpr uint8_t UNLIMITED = 10;
+
   GameId id() const override { return GameId::Codenames; }
   void start(uint8_t playerCount, Rng& rng) override;
   bool apply(uint8_t seat, const Action& action, bool isHost) override;
@@ -36,7 +39,11 @@ class Codenames final : public Game {
   uint8_t remaining(uint8_t team) const;
   const char* clue() const { return clue_; }
   uint8_t clueCount() const { return clueCount_; }
+  // A 0 or unlimited clue lets the team guess until it misses; guessesLeft()
+  // means nothing then.
+  bool unlimited() const { return clueCount_ == 0 || clueCount_ == UNLIMITED; }
   uint8_t guessesLeft() const { return guessesLeft_; }
+  uint8_t guessesMade() const { return guessed_; }
   uint8_t winner() const { return winner_; }
   uint8_t team(uint8_t seat) const { return seat < count_ ? team_[seat] : 0; }
   bool isSpymaster(uint8_t seat) const { return seat < count_ && spymaster_[seat]; }
@@ -45,6 +52,7 @@ class Codenames final : public Game {
  private:
   void endTurn();
   void reveal(uint8_t tile);
+  bool clueOnBoard(const char* clue) const;
 
   uint8_t count_ = 0;
   uint16_t word_[TILES] = {};
@@ -57,6 +65,7 @@ class Codenames final : public Game {
   char clue_[MAX_TEXT_LEN + 1] = {};
   uint8_t clueCount_ = 0;
   uint8_t guessesLeft_ = 0;
+  uint8_t guessed_ = 0;  // this turn; the team must make one before it may stop
   uint8_t winner_ = 0;
   char message_[64] = {};
 };

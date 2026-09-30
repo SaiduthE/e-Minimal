@@ -22,17 +22,21 @@ inline constexpr uint8_t GAME_COUNT = 4;
 // ever see the decoded form.
 enum class Verb : uint8_t {
   None = 0,
-  Ready,  // "I am done" / start the next phase
-  Next,   // host advances past a reveal, or starts the next round
-  Clue,   // Codenames spymaster: text = word, a = count
-  Guess,  // Codenames operative: a = tile index
-  Pass,   // Codenames team ends its turn
-  Place,  // Battleship: a = ship, b = x, c = y, text = "h" or "v"
-  Fire,   // Battleship: a = x, b = y
-  Vote,   // Undercover: a = target seat
-  Roll,   // Ludo
-  Move,   // Ludo: a = token index
-  Pick,   // host, in the lobby: a = game index
+  Ready,     // "I am done" / start the next phase
+  Next,      // host advances past a reveal, or starts the next round
+  Clue,      // Codenames spymaster: text = word, a = count
+  Guess,     // Codenames operative: a = tile index
+  Pass,      // Codenames team ends its turn
+  Place,     // Battleship: a = ship, b = x, c = y, text = "h" or "v"
+  Fire,      // Battleship: a = x, b = y
+  Vote,      // Undercover: a = target seat
+  Roll,      // Ludo
+  Move,      // Ludo: a = token index
+  Pick,      // host, in the lobby: a = game index
+  AddTest,   // host, in the lobby: seat a test player
+  DropTest,  // host, in the lobby: remove the last test player
+  End,       // host, while a round exists: back to the lobby
+  Shape,     // Ludo, before the first roll: a = shape 0..3
 };
 
 struct Action {
@@ -48,6 +52,7 @@ struct Player {
   uint32_t token = 0;       // 0 marks a free seat
   uint32_t lastSeenMs = 0;  // last poll, for the "connected" dot on the shared screen
   bool seated = false;
+  bool test = false;  // a test player: no phone behind the seat
 };
 
 // Deterministic xorshift32. Seeded from esp_random() on the device and from a

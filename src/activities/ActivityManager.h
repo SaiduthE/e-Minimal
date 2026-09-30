@@ -10,6 +10,8 @@
 #include <string>
 #include <vector>
 
+#include <PartyGames.h>
+
 #include "CrossPointState.h"
 #include "GfxRenderer.h"
 #include "MappedInputManager.h"
@@ -90,8 +92,12 @@ class ActivityManager {
   // goTo... functions are convenient wrapper for replaceActivity()
   void goToFileTransfer();
   void goToUsbDrive();
-  void goToGameNight();
-  void goToDashboard(bool cleanInitialRefresh = false);
+  // The Games app's root: the game picker, radio off.
+  void goToGames();
+  // Game Night for one game: raises the hotspot. Leaving it reboots.
+  void goToGameNight(party::GameId game);
+  // The Dashboard app's root: its home page (launch, layout, widget settings).
+  void goToDashboard();
   void goToSettings();
   void goToFileBrowser(std::string path = {});
   void goToLibrary();
@@ -103,8 +109,11 @@ class ActivityManager {
   void goToCrashReport();
   void goHome(HomeMenuItem initialMenuItem = HomeMenuItem::NONE, bool cleanInitialRefresh = false);
   // Switches to an app's root screen: Reader resumes the book that was open
-  // when the reader was left (else Home), Dashboard, Games opens Game Night.
+  // when the reader was left (else Home), Dashboard, Games opens the picker.
   void goToApp(AppId app);
+  // The power menu's app tiles as a root screen, where boot and wake land when
+  // the app last used was not the reader. Leaves lastApp alone.
+  void goToAppLauncher(bool cleanInitialRefresh = false);
 
   // This will move current activity to stack instead of deleting it
   void pushActivity(std::unique_ptr<Activity>&& activity);

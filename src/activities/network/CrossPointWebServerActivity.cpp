@@ -19,9 +19,8 @@
 #include "util/TaskWatchdog.h"
 
 namespace {
-// AP Mode configuration -- open network for ease of use; PhonePortal raises it.
-constexpr const char* AP_SSID = "eMinimal";
-constexpr const char* AP_HOSTNAME = "eminimal";
+// Hotspot mode raises PhonePortal's shared network (SHARED_SSID, WPA2 with the
+// shared passphrase); the join QR carries the passphrase.
 constexpr uint8_t AP_CHANNEL = 1;
 constexpr uint8_t AP_MAX_CONNECTIONS = 4;
 
@@ -128,8 +127,8 @@ void CrossPointWebServerActivity::onNetworkModeSelected(const NetworkMode mode) 
 
   if (mode == NetworkMode::GAME_NIGHT) {
     // Game night owns the radio and its own HTTP server, so it replaces this
-    // activity rather than running inside it.
-    activityManager.goToGameNight();
+    // activity rather than running inside it, starting from the Games picker.
+    activityManager.goToGames();
     return;
   }
 
@@ -185,7 +184,7 @@ void CrossPointWebServerActivity::onWifiSelectionComplete(const bool connected) 
     isApMode = false;
 
     // Start mDNS for hostname resolution
-    restartMdns(AP_HOSTNAME, "WEBACT");
+    restartMdns(PhonePortal::SHARED_HOSTNAME, "WEBACT");
 
     // Start the web server
     startWebServer();
@@ -209,10 +208,11 @@ void CrossPointWebServerActivity::startAccessPoint() {
   LOG_DBG("WEBACT", "Free heap before AP start: %d bytes", ESP.getFreeHeap());
 
   PhonePortal::Config config;
-  config.ssid = AP_SSID;
+  config.ssid = PhonePortal::SHARED_SSID;
+  config.passphrase = PhonePortal::sharedPassphrase();
   config.channel = AP_CHANNEL;
   config.maxClients = AP_MAX_CONNECTIONS;
-  config.hostname = AP_HOSTNAME;
+  config.hostname = PhonePortal::SHARED_HOSTNAME;
   if (!portal.begin(config)) {
     LOG_ERR("WEBACT", "ERROR: Failed to start Access Point!");
     onGoHome();
@@ -399,7 +399,8 @@ void CrossPointWebServerActivity::renderServerRunning() const {
   // the same network.
   const int top = metrics.topPadding + metrics.headerHeight + metrics.tabBarHeight + metrics.verticalSpacing * 2;
   const Rect bounds{0, top, pageWidth, pageHeight - top - metrics.buttonHintsHeight - metrics.verticalSpacing};
-  const std::string hostnameUrl = portal.isUp() ? portal.hostnameUrl() : std::string("http://") + AP_HOSTNAME + ".local/";
+  const std::string hostnameUrl =
+      portal.isUp() ? portal.hostnameUrl() : std::string("http://") + PhonePortal::SHARED_HOSTNAME + ".local/";
   const std::string altUrl = std::string(tr(STR_OR_HTTP_PREFIX)) + hostnameUrl.substr(sizeof("http://") - 1);
   PhoneJoinPanel::Content content;
   content.headline = isApMode ? tr(STR_PHONE_SCAN_HEADLINE) : tr(STR_OPEN_URL_HINT);
