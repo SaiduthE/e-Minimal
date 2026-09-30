@@ -390,7 +390,7 @@
         var wrap = document.createElement("div");
         wrap.className = "stack";
         if (g.me === -1) {
-          wrap.appendChild(text("div", "Battleship seats the first two players - watch the reader", "muted"));
+          wrap.appendChild(text("div", "Battleship seats the first two players - watch e-mini", "muted"));
           return card([wrap]);
         }
         if (g.msg) wrap.appendChild(text("div", g.msg, "muted"));
@@ -439,7 +439,7 @@
         var wrap = document.createElement("div");
         wrap.className = "stack";
         if (g.me === -1) {
-          wrap.appendChild(text("div", "Ludo seats the first four players - watch the reader", "muted"));
+          wrap.appendChild(text("div", "Ludo seats the first four players - watch e-mini", "muted"));
           return card([wrap]);
         }
         wrap.appendChild(text("div", "You are seat " + (g.me + 1) + (g.myTurn ? " - your turn" : ""), "muted"));
