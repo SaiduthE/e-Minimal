@@ -26,6 +26,11 @@ class CrossPointState : public PersistableStore<CrossPointState> {
   uint8_t recentOverlaySleepFill = 0;
   uint8_t readerActivityLoadCount = 0;
   bool lastSleepFromReader = false;
+  // The last sleep left a Dashboard screen on the glass: any wake goes back to
+  // it. dashboardViewOpen: it was the tiled dashboard (or a view over it), not
+  // the Dashboard's menu.
+  bool lastSleepFromDashboard = false;
+  bool dashboardViewOpen = false;
   bool showBootScreen = true;
   AppId lastApp = AppId::READER;
   // Set when the reader app is left for another app: whether a book was on

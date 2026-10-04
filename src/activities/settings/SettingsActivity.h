@@ -172,14 +172,21 @@ struct SettingInfo {
 };
 
 class SettingsActivity final : public UiTabListActivity {
+ public:
+  // Reader: the reading app's settings, tabbed Display / Reader / Controls /
+  // System. Global: the device-wide ones, opened from the power menu, tabbed
+  // Power & Sleep / Display & System. On e-Minimal (the board with that menu)
+  // the Reader scope leaves the global ones out.
+  enum class Scope : uint8_t { Reader, Global };
+
+ private:
+  const Scope scope;
   int selectedCategoryIndex = 0;  // Currently selected category
   int settingsCount = 0;
 
-  // Per-category settings derived from shared list + device-only actions
-  std::vector<SettingInfo> displaySettings;
-  std::vector<SettingInfo> readerSettings;
-  std::vector<SettingInfo> controlsSettings;
-  std::vector<SettingInfo> systemSettings;
+  // Per-tab settings derived from shared list + device-only actions
+  static constexpr int MAX_TABS = 4;
+  std::vector<SettingInfo> tabSettings[MAX_TABS];
   const std::vector<SettingInfo>* currentSettings = nullptr;
 
   bool preserveQuickResumeTimeoutOn = false;
@@ -197,15 +204,19 @@ class SettingsActivity final : public UiTabListActivity {
   std::vector<freeink::ui::ListItem> rowItems_;
   void rebuildRowItems();
 
-  static constexpr int categoryCount = 4;
-  static constexpr StrId categoryNames[categoryCount] = {StrId::STR_CAT_DISPLAY, StrId::STR_CAT_READER,
-                                                         StrId::STR_CAT_CONTROLS, StrId::STR_CAT_SYSTEM};
+  static constexpr int readerTabCount = 4;
+  static constexpr StrId readerTabNames[readerTabCount] = {StrId::STR_CAT_DISPLAY, StrId::STR_CAT_READER,
+                                                           StrId::STR_CAT_CONTROLS, StrId::STR_CAT_SYSTEM};
+  static constexpr int globalTabCount = 2;
+  static constexpr StrId globalTabNames[globalTabCount] = {StrId::STR_CAT_POWER_SLEEP, StrId::STR_CAT_DISPLAY_SYSTEM};
 
   // --- UiTabListActivity contract ---
   int listCount() const override { return settingsCount; }
-  int tabCount() const override { return categoryCount; }
+  int tabCount() const override { return scope == Scope::Global ? globalTabCount : readerTabCount; }
   int activeTab() const override { return selectedCategoryIndex; }
-  const char* tabLabel(int index) const override { return I18N.get(categoryNames[index]); }
+  const char* tabLabel(int index) const override {
+    return I18N.get(scope == Scope::Global ? globalTabNames[index] : readerTabNames[index]);
+  }
   void buildScreen(UiScreen& screen) override;
   void activateIndex(int index) override;
   void onTabAction(int index) override;
@@ -220,6 +231,7 @@ class SettingsActivity final : public UiTabListActivity {
   void enterCategory(int categoryIndex);
   void toggleCurrentSetting();
   void openSleepTimeoutPicker();
+  void openSleepPresetPopup();
   void rebuildSettingsLists();
   void syncQuickResumeTimeoutForSleepScreen(bool sleepScreenChanged, bool quickResumeTimeoutChanged);
 
@@ -227,7 +239,7 @@ class SettingsActivity final : public UiTabListActivity {
   void drawFooter() override;
 
  public:
-  explicit SettingsActivity(GfxRenderer& renderer, MappedInputManager& mappedInput);
+  explicit SettingsActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, Scope scope = Scope::Reader);
   void onEnter() override;
   void onExit() override;
   void render(RenderLock&& lock) override;

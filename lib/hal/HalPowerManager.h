@@ -40,7 +40,11 @@ class HalPowerManager {
 
   // Setup wake up GPIO and enter deep sleep
   // Should be called inside main loop() to handle the currentLockMode
-  void startDeepSleep(HalGPIO& gpio) const;
+  // timerWakeMs > 0 also wakes after that long (the Dashboard's next due widget).
+  void startDeepSleep(HalGPIO& gpio, uint32_t timerWakeMs = 0) const;
+  // Back to deep sleep after a wake that did not count (a power press too short
+  // to verify), keeping the timer wake the last sleep had armed.
+  void resumeDeepSleep(HalGPIO& gpio) const;
 
   enum class LightSleepWake : uint8_t { Timer, Button, NotSupported };
   // Light sleep until maxMs passes (0: no timer) or any key goes down. RAM, the

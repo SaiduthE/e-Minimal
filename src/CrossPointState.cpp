@@ -55,6 +55,8 @@ void CrossPointState::toJson(JsonDocument& doc) const {
   doc["showBootScreen"] = showBootScreen;
   doc["lastApp"] = static_cast<uint8_t>(lastApp);
   doc["resumeBookOnReturn"] = resumeBookOnReturn;
+  doc["lastSleepFromDashboard"] = lastSleepFromDashboard;
+  doc["dashboardViewOpen"] = dashboardViewOpen;
   doc["carouselIndex"] = carouselIndex;
   doc["dashboardPortalMode"] = dashboardPortalMode;
 }
@@ -97,6 +99,8 @@ bool CrossPointState::fromJson(JsonVariantConst doc) {
   const uint8_t app = doc["lastApp"] | static_cast<uint8_t>(0);
   lastApp = app <= static_cast<uint8_t>(AppId::GAMES) ? static_cast<AppId>(app) : AppId::READER;
   resumeBookOnReturn = doc["resumeBookOnReturn"] | false;
+  lastSleepFromDashboard = doc["lastSleepFromDashboard"] | false;
+  dashboardViewOpen = doc["dashboardViewOpen"] | false;
   carouselIndex = doc["carouselIndex"] | static_cast<uint16_t>(0);
   dashboardPortalMode = (doc["dashboardPortalMode"] | static_cast<uint8_t>(0)) == 1 ? 1 : 0;
   return true;

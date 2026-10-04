@@ -42,14 +42,40 @@
 
 namespace fui = freeink::ui;
 
-SettingsActivity::SettingsActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
-    : UiTabListActivity("Settings", renderer, mappedInput) {}
+namespace {
+// The device-wide settings Global Settings holds: 0 = Power & Sleep, 1 = Display
+// & System (its actions are appended in rebuildSettingsLists()), -1 = not global.
+int globalSettingTab(const SettingInfo& setting) {
+  const auto p = setting.valuePtr;
+  if (p == &CrossPointSettings::sleepTimeoutMinutes || p == &CrossPointSettings::sleepScreen ||
+      p == &CrossPointSettings::sleepScreenCoverMode || p == &CrossPointSettings::sleepScreenCoverFilter ||
+      p == &CrossPointSettings::quickResumeSleepScreen || p == &CrossPointSettings::hideBatteryPercentage ||
+      p == &CrossPointSettings::shortPwrBtn) {
+    return 0;
+  }
+  if (p == &CrossPointSettings::screenInverted) return 1;
+  return -1;
+}
+
+// Global Settings offers Time to Sleep as presets in a popup instead of the
+// 1-30 min picker.
+constexpr uint8_t SLEEP_PRESETS[] = {2, 5, 10, 15, 30, CrossPointSettings::SLEEP_TIMEOUT_NEVER_MINUTES};
+}  // namespace
+
+SettingsActivity::SettingsActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, const Scope scope)
+    : UiTabListActivity(scope == Scope::Global ? "GlobalSettings" : "Settings", renderer, mappedInput),
+      scope(scope) {}
 
 void SettingsActivity::rebuildSettingsLists() {
-  displaySettings.clear();
-  readerSettings.clear();
-  controlsSettings.clear();
-  systemSettings.clear();
+  for (auto& tab : tabSettings) tab.clear();
+  auto& displaySettings = tabSettings[0];
+  auto& readerSettings = tabSettings[1];
+  auto& controlsSettings = tabSettings[2];
+  auto& systemSettings = tabSettings[3];
+  const bool global = scope == Scope::Global;
+  // Only e-Minimal has the power menu that reaches Global Settings; elsewhere
+  // the Reader scope keeps everything.
+  const bool globalMoved = BoardConfig::isEMinimal78();
 
   // Pick up any fonts uploaded/deleted over the web server since the last
   // reader activity ran — otherwise the font-family picker shows stale list.
@@ -62,11 +88,26 @@ void SettingsActivity::rebuildSettingsLists() {
 
   for (const auto& setting : getSettingsList(&sdFontSystem.registry(), &dictionaries)) {
     if (setting.category == StrId::STR_NONE_OPT || home_button::isSetting(setting.valuePtr)) continue;
+    const int globalTab = globalSettingTab(setting);
+    if (global) {
+      if (globalTab < 0) continue;
+      auto& tab = tabSettings[globalTab];
+      // Time to Sleep leads its tab.
+      if (setting.valuePtr == &CrossPointSettings::sleepTimeoutMinutes) {
+        tab.insert(tab.begin(), setting);
+      } else {
+        tab.push_back(setting);
+      }
+      continue;
+    }
+    if (globalMoved && globalTab >= 0) continue;
     if (setting.category == StrId::STR_CAT_DISPLAY) {
       // The sunlight fading fix is a grayscale-waveform compensation that does
       // not apply on the X4 Pro / X4 Classic (plain OTP waveform, same panels).
+      // e-Minimal's IT8951 parks after every refresh anyway (parkWhenIdle), so
+      // the toggle would change nothing there.
       if (setting.valuePtr == &CrossPointSettings::fadingFix &&
-          (BoardConfig::isX4Pro() || BoardConfig::isX4Classic())) {
+          (BoardConfig::isX4Pro() || BoardConfig::isX4Classic() || BoardConfig::isEMinimal78())) {
         continue;
       }
       displaySettings.push_back(setting);
@@ -85,6 +126,17 @@ void SettingsActivity::rebuildSettingsLists() {
     } else if (setting.category == StrId::STR_CAT_SYSTEM) {
       systemSettings.push_back(setting);
     }
+  }
+
+  if (global) {
+    tabSettings[1].push_back(SettingInfo::Action(StrId::STR_ABOUT, SettingAction::About));
+    tabSettings[1].push_back(SettingInfo::Action(StrId::STR_CHECK_UPDATES, SettingAction::CheckForUpdates));
+    tabSettings[1].push_back(SettingInfo::Action(StrId::STR_SD_FIRMWARE_UPDATE, SettingAction::SdFirmwareUpdate));
+    if (selectedCategoryIndex >= globalTabCount) selectedCategoryIndex = 0;
+    currentSettings = &tabSettings[selectedCategoryIndex];
+    settingsCount = static_cast<int>(currentSettings->size());
+    rebuildRowItems();
+    return;
   }
 
   // Append device-only ACTION items
@@ -107,10 +159,12 @@ void SettingsActivity::rebuildSettingsLists() {
   systemSettings.push_back(SettingInfo::Action(StrId::STR_CLEAR_READING_CACHE, SettingAction::ClearCache));
   // OTA fetches this board's own release asset (see OtaUpdater); boards whose
   // asset isn't published yet just report no update available.
-  systemSettings.push_back(SettingInfo::Action(StrId::STR_CHECK_UPDATES, SettingAction::CheckForUpdates));
-  systemSettings.push_back(SettingInfo::Action(StrId::STR_SD_FIRMWARE_UPDATE, SettingAction::SdFirmwareUpdate));
+  if (!globalMoved) {
+    systemSettings.push_back(SettingInfo::Action(StrId::STR_CHECK_UPDATES, SettingAction::CheckForUpdates));
+    systemSettings.push_back(SettingInfo::Action(StrId::STR_SD_FIRMWARE_UPDATE, SettingAction::SdFirmwareUpdate));
+  }
   systemSettings.push_back(SettingInfo::Action(StrId::STR_KEYBOARD_LAYOUTS, SettingAction::KeyboardLayouts));
-  systemSettings.push_back(SettingInfo::Action(StrId::STR_ABOUT, SettingAction::About));
+  if (!globalMoved) systemSettings.push_back(SettingInfo::Action(StrId::STR_ABOUT, SettingAction::About));
   systemSettings.push_back(SettingInfo::Action(StrId::STR_LANGUAGE, SettingAction::Language));
   readerSettings.insert(readerSettings.begin(),
                         SettingInfo::Action(StrId::STR_TEXT_SETTINGS, SettingAction::TextSettings));
@@ -119,20 +173,7 @@ void SettingsActivity::rebuildSettingsLists() {
   readerSettings.push_back(SettingInfo::Action(StrId::STR_CUSTOMISE_STATUS_BAR, SettingAction::CustomiseStatusBar));
 
   // Update currentSettings pointer and count for the active category
-  switch (selectedCategoryIndex) {
-    case 0:
-      currentSettings = &displaySettings;
-      break;
-    case 1:
-      currentSettings = &readerSettings;
-      break;
-    case 2:
-      currentSettings = &controlsSettings;
-      break;
-    case 3:
-      currentSettings = &systemSettings;
-      break;
-  }
+  currentSettings = &tabSettings[selectedCategoryIndex];
   settingsCount = static_cast<int>(currentSettings->size());
   rebuildRowItems();
 }
@@ -153,20 +194,7 @@ void SettingsActivity::onEnter() {
 
 void SettingsActivity::selectCategory(const int categoryIndex) {
   selectedCategoryIndex = categoryIndex;
-  switch (selectedCategoryIndex) {
-    case 0:
-      currentSettings = &displaySettings;
-      break;
-    case 1:
-      currentSettings = &readerSettings;
-      break;
-    case 2:
-      currentSettings = &controlsSettings;
-      break;
-    case 3:
-      currentSettings = &systemSettings;
-      break;
-  }
+  currentSettings = &tabSettings[selectedCategoryIndex];
   settingsCount = static_cast<int>(currentSettings->size());
   activeNav().top = 0;  // category switches start the list at the top (no per-tab memory here)
   rebuildRowItems();
@@ -240,8 +268,8 @@ void SettingsActivity::stepTab(const int direction) {
   // Ring position 0 stays on the tab bar; a row selection collapses to the
   // new category's first row (per-tab memory is deliberately not kept here).
   const bool onTabBar = ringPos() == 0;
-  selectedCategoryIndex = direction > 0 ? ButtonNavigator::nextIndex(selectedCategoryIndex, categoryCount)
-                                        : ButtonNavigator::previousIndex(selectedCategoryIndex, categoryCount);
+  selectedCategoryIndex = direction > 0 ? ButtonNavigator::nextIndex(selectedCategoryIndex, tabCount())
+                                        : ButtonNavigator::previousIndex(selectedCategoryIndex, tabCount());
   selectCategory(selectedCategoryIndex);
   activeNav().selected = onTabBar ? 0 : 1;
   requestUpdate();
@@ -264,7 +292,11 @@ bool SettingsActivity::handleButtons() {
       requestUpdate();
     } else {
       SETTINGS.saveToFile();
-      onGoHome();
+      if (scope == Scope::Global) {
+        finish();  // back to the power menu that opened it
+      } else {
+        onGoHome();
+      }
     }
     return true;
   }
@@ -284,7 +316,11 @@ void SettingsActivity::toggleCurrentSetting() {
   const bool quickResumeTimeoutChanged = setting.valuePtr == &CrossPointSettings::quickResumeSleepScreen;
 
   if (setting.nameId == StrId::STR_TIME_TO_SLEEP) {
-    openSleepTimeoutPicker();
+    if (scope == Scope::Global) {
+      openSleepPresetPopup();
+    } else {
+      openSleepTimeoutPicker();
+    }
     return;
   }
 
@@ -497,6 +533,29 @@ void SettingsActivity::openSleepTimeoutPicker() {
       });
 }
 
+void SettingsActivity::openSleepPresetPopup() {
+  std::vector<std::string> labels;
+  labels.reserve(std::size(SLEEP_PRESETS));
+  int current = 0;
+  for (size_t i = 0; i < std::size(SLEEP_PRESETS); i++) {
+    const uint8_t minutes = SLEEP_PRESETS[i];
+    if (minutes >= CrossPointSettings::SLEEP_TIMEOUT_NEVER_MINUTES) {
+      labels.emplace_back(tr(STR_SLEEP_NEVER));
+    } else {
+      char label[16];
+      snprintf(label, sizeof(label), tr(STR_SLEEP_TIMER_VALUE_FORMAT), static_cast<unsigned>(minutes));
+      labels.emplace_back(label);
+    }
+    // A value set elsewhere (1-30 min) lands on the nearest preset at or below it.
+    if (minutes <= SETTINGS.sleepTimeoutMinutes) current = static_cast<int>(i);
+  }
+  optionPopup.show(StrId::STR_TIME_TO_SLEEP, labels, current, [](const int index) {
+    SETTINGS.sleepTimeoutMinutes = SLEEP_PRESETS[index];
+    SETTINGS.saveToFile();
+  });
+  requestUpdate();
+}
+
 std::string SettingsActivity::settingValueText(const SettingInfo& setting) {
   if (setting.action == SettingAction::HomeButton) return tr(STR_CONFIGURE);
   if (setting.type == SettingType::TOGGLE && setting.valuePtr != nullptr) {
@@ -580,8 +639,8 @@ void SettingsActivity::drawChrome() {
   // indicator; the rest of the screen renders through the app.
   // Version rides in the header's trailing label slot: the footer position
   // conflicts with button hints on non-touch devices.
-  GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_SETTINGS_TITLE),
-                 FIRMWARE_DISPLAY_VERSION);
+  GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight},
+                 scope == Scope::Global ? tr(STR_GLOBAL_SETTINGS) : tr(STR_SETTINGS_TITLE), FIRMWARE_DISPLAY_VERSION);
 }
 
 void SettingsActivity::drawFooter() {

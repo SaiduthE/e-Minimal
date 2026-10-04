@@ -23,8 +23,12 @@
 // once and blitted from PSRAM after, so a focus move reads nothing from SD.
 class TiledDashboardActivity final : public TimedDashboardActivity {
  public:
-  explicit TiledDashboardActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
-      : TimedDashboardActivity("Dashboard", renderer, mappedInput) {}
+  // timerWake: opened by a timer wake from deep sleep for a due widget; it
+  // repaints without the focus frame and goes back to sleep.
+  explicit TiledDashboardActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, bool timerWake = false)
+      : TimedDashboardActivity("Dashboard", renderer, mappedInput, timerWake) {
+    if (timerWake) showFocus = false;
+  }
 
   void onEnter() override;
   void onExit() override;

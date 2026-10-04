@@ -42,7 +42,9 @@
 #include "platform/UsbSerialJtagHandoff.h"
 #include "util/ButtonNavigator.h"
 #include "util/CardFolders.h"
+#include "util/PowerProbe.h"
 #include "util/ScreenshotUtil.h"
+#include "util/TaskWatchdog.h"
 #include "util/Timezones.h"
 
 #if CROSSPOINT_VECTOR_FONTS
@@ -321,11 +323,24 @@ static bool loadSleepFrameBuffer() {
 void enterDeepSleep(bool fromTimeout = false) {
   HalPowerManager::Lock powerLock;  // Ensure we are at normal CPU frequency for sleep preparation
   APP_STATE.lastSleepFromReader = activityManager.isReaderActivity();
+#if FREEINK_DEVICE_EMINIMAL
+  // The Dashboard sleeps with its own screen on the glass instead of the sleep
+  // screen, and wakes on a timer when one of its widgets is due. Both read
+  // before goToSleep() closes its screens.
+  const bool fromDashboard = activityManager.isDashboardActivity();
+  const unsigned long timerWakeMs = fromDashboard ? activityManager.deepSleepWakeInMs() : 0;
+  APP_STATE.dashboardViewOpen = fromDashboard && activityManager.dashboardViewOpen();
+#else
+  constexpr bool fromDashboard = false;
+  constexpr unsigned long timerWakeMs = 0;
+#endif
+  APP_STATE.lastSleepFromDashboard = fromDashboard;
 
   const bool isQuickResumeSleep =
-      SETTINGS.sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::QUICK_RESUME ||
-      (fromTimeout &&
-       SETTINGS.quickResumeSleepScreen == CrossPointSettings::QUICK_RESUME_SLEEP_SCREEN::QUICK_RESUME_AFTER_TIMEOUT);
+      !fromDashboard &&
+      (SETTINGS.sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::QUICK_RESUME ||
+       (fromTimeout &&
+        SETTINGS.quickResumeSleepScreen == CrossPointSettings::QUICK_RESUME_SLEEP_SCREEN::QUICK_RESUME_AFTER_TIMEOUT));
   // Every sleep mode leaves a complete retained frame on the e-ink panel. Keep
   // it visible until the first useful reader or home paint replaces it.
   APP_STATE.showBootScreen = false;
@@ -335,7 +350,7 @@ void enterDeepSleep(bool fromTimeout = false) {
   // Commit to sleeping before goToSleep() runs the outgoing activity's onExit():
   // a WiFi activity would otherwise silentRestart() here and reboot instead.
   deepSleepInProgress = true;
-  activityManager.goToSleep(fromTimeout);
+  activityManager.goToSleep(fromTimeout, /*keepScreen=*/fromDashboard);
 
   if (isQuickResumeSleep) {
     saveSleepFrameBuffer();
@@ -356,7 +371,7 @@ void enterDeepSleep(bool fromTimeout = false) {
   Storage.prepareForDeepSleep();
   LOG_DBG("MAIN", "Entering deep sleep");
 
-  powerManager.startDeepSleep(gpio);
+  powerManager.startDeepSleep(gpio, timerWakeMs);
 }
 
 void setupDisplayAndFonts(bool seamless = false) {
@@ -485,7 +500,11 @@ void setup() {
 
   APP_STATE.loadFromFile();
   const bool isSleepWake = wakeupReason == HalGPIO::WakeupReason::PowerButton;
-  const bool isPersistedSleepWake = isSleepWake && !APP_STATE.showBootScreen;
+  // Woken (a key, or its timer for a due widget) from a sleep that left a
+  // Dashboard screen on the glass: back to it, painted over the kept frame.
+  const bool isDashboardWake = esp_reset_reason() == ESP_RST_DEEPSLEEP && APP_STATE.lastSleepFromDashboard;
+  const bool isDashboardTimerWake = isDashboardWake && esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER;
+  const bool isPersistedSleepWake = (isSleepWake || isDashboardWake) && !APP_STATE.showBootScreen;
 
   if (recoveryFirmwareMode) {
     LOG_INF("MAIN", "Recovery firmware mode (%s + POWER held at boot)",
@@ -529,20 +548,22 @@ void setup() {
       if (!wakeHoldVerified && SETTINGS.shortPwrBtn != CrossPointSettings::SHORT_PWRBTN::SLEEP) {
         LOG_DBG("MAIN", "Power-button wake not held through verification, sleeping");
         Storage.prepareForDeepSleep();
-        powerManager.startDeepSleep(gpio);
+        powerManager.resumeDeepSleep(gpio);  // a Dashboard sleep keeps its timer wake
       }
       wakePowerReleasePending = true;
       break;
     case HalGPIO::WakeupReason::AfterUSBPower:
       // Most devices return to sleep after a USB-powered cold boot.
       LOG_DBG("MAIN", "Wakeup reason: After USB Power");
-#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_X4CLASSIC || FREEINK_DEVICE_PAPERMONO || FREEINK_DEVICE_EEGO_A4
+#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_X4CLASSIC || FREEINK_DEVICE_PAPERMONO || FREEINK_DEVICE_EEGO_A4 || \
+    FREEINK_DEVICE_EMINIMAL
       // X4 Pro must stay awake so USB Serial/JTAG remains available after leaving
       // USB Drive and reconnecting the cable. Paper Mono has no armable GPIO wake
       // (its button is behind the PMIC). EEGO A4's post-flash reset reads as
       // POWERON (native-USB), so a flash would otherwise be misclassified as a
       // USB-power cold boot and sleep. Sleeping any of these here would strand
       // the device in a USB-replug boot loop (or sleep right after a flash).
+      // e-Minimal's slide switch cuts the ESP, so its cold boot is a switch-on.
       break;
 #else
       Storage.prepareForDeepSleep();
@@ -570,6 +591,7 @@ void setup() {
   bool allowFastInitialReaderRefresh = false;
   bool needsWakeRefresh = false;
 
+  if (isDashboardWake) display.keepGlassOnNextBegin();
   setupDisplayAndFonts(resume != BootResume::Splash);
 
   switch (resume) {
@@ -639,6 +661,8 @@ void setup() {
     // through to the sleep-wake "resume reader" logic, which fires on stale
     // openEpubPath + lastSleepFromReader from a prior session.
     activityManager.goHome();
+  } else if (isDashboardWake && !backHeldAtBoot) {
+    activityManager.goToDashboard(APP_STATE.dashboardViewOpen, isDashboardTimerWake);
   } else if (APP_STATE.lastApp != AppId::READER && !backHeldAtBoot) {
     // Last in the Dashboard or Games: offer the apps rather than reopen one
     // unasked (Games would bring its hotspot up). Back held is the way to Home.
@@ -676,6 +700,40 @@ void setup() {
 
   allowSleepAt = millis() + 2000;
 }
+
+#if FREEINK_DEVICE_EMINIMAL
+// Between page turns the reader light-sleeps: the ESP stops, the parked IT8951
+// keeps the page on the glass, and a key wakes it in a few ms. The press is
+// polled after the wake, so that key still turns the page. The Dashboard's menus
+// do the same (its timed screens and to-do list run their own standby). Only
+// with such a screen itself on top and nothing left for the loop or the render
+// task; never with a USB host (a light sleep drops the console), WiFi up or a
+// Meter window running. Returns false, without sleeping, when any of that does
+// not hold.
+bool idleLightSleep(unsigned long sleepTimeoutMs, unsigned long idleMs) {
+  constexpr unsigned long MIN_SLEEP_MS = 50;  // shorter waits stay in the 50 ms idle slices
+  if (!(activityManager.currentIsReader() || activityManager.currentIsDashboard()) ||
+      activityManager.preventAutoSleep() || !activityManager.renderIdle() ||
+      RenderLock::peek() || gpio.rawInputActive() || gpio.isUsbConnected() || logSerial ||
+      WiFi.getMode() != WIFI_MODE_NULL || power_probe::windowRunning()) {
+    return false;
+  }
+  // Until a key, the reader's own next timer, or the auto-sleep deadline so deep
+  // sleep still lands on time.
+  unsigned long maxMs = 0;
+  if (sleepTimeoutMs > 0) maxMs = idleMs < sleepTimeoutMs ? sleepTimeoutMs - idleMs : 1;
+  const unsigned long timerMs = activityManager.idleWakeInMs();
+  if (timerMs > 0 && (maxMs == 0 || timerMs < maxMs)) maxMs = timerMs;
+  if (maxMs > 0 && maxMs < MIN_SLEEP_MS) return false;
+
+  RenderLock lock;                                  // a repaint is never frozen halfway
+  if (!activityManager.renderIdle()) return false;  // requested between the check and the lock
+  resetTaskWatchdogIfSubscribed();
+  powerManager.lightSleep(maxMs);
+  resetTaskWatchdogIfSubscribed();
+  return true;
+}
+#endif
 
 void loop() {
   static unsigned long maxLoopDuration = 0;
@@ -732,13 +790,36 @@ void loop() {
         logSerial.write(buf, bufferSize);
         logSerial.printf("SCREENSHOT_END\n");
       } else if (cmd == "BATTERY") {
-        // Bench check of the battery divider (GPIO 8 on eMinimal): raw ADC
-        // millivolts x divider, the 10 % notch, and the smoothed value the
-        // status bar shows. Reads the pin right now, no cache.
+        // Bench check of the battery path, read now with no cache: the backend's
+        // mV and % (a gauge's SoC, or the divider's 10 % notch), the value the
+        // status bar shows, and the charge-status and USB-detect lines. On
+        // e-Minimal also the Gauge's charge rate and the GPIO 8 divider beside it.
         const BatteryMonitor battery;
-        const uint16_t mv = battery.readMillivolts();
-        logSerial.printf("BATTERY %u mV, notch %u%%, shown %u%%\n", mv, BatteryMonitor::percentageFromMillivolts(mv),
-                         powerManager.getBatteryPercentage());
+        const BatteryMonitor::Status st = battery.readStatus();
+        logSerial.printf("BATTERY %u mV, %u%%, shown %u%%, charging %d, usb %d", st.millivolts, st.percentage,
+                         powerManager.getBatteryPercentage(), st.chargingKnown ? (int)st.charging : -1,
+                         (int)gpio.isUsbConnected());
+#if FREEINK_DEVICE_EMINIMAL
+        float rate = 0;
+        if (power_probe::readGaugeRate(rate)) logSerial.printf(", rate %+.1f %%/h", rate);
+        if (BoardConfig::ACTIVE.batteryAdc >= 0) {
+          const uint32_t dividerMv = analogReadMilliVolts(BoardConfig::ACTIVE.batteryAdc);
+          logSerial.printf(", divider %u mV", (unsigned)(dividerMv * BoardConfig::ACTIVE.batteryDividerMultiplier));
+        }
+#endif
+        logSerial.printf("\n");
+#if FREEINK_DEVICE_EMINIMAL
+      } else if (cmd.startsWith("POWER SLEEP")) {
+        // Bench light-sleep floor: CMD:POWER SLEEP <s>, 10..600 s. The sleep drops
+        // the USB console; replug, then CMD:POWER LAST.
+        power_probe::measureLightSleep(cmd.length() > 12 ? cmd.substring(12).toInt() : 20);
+      } else if (cmd == "POWER LAST") {
+        power_probe::printLastSleep();
+      } else if (cmd == "POWER" || cmd.startsWith("POWER ")) {
+        // Bench Meter window: CMD:POWER samples 1 s, CMD:POWER <s> up to 600 s in
+        // the background, so pages can be turned while it runs.
+        power_probe::startWindow(cmd.length() > 6 ? cmd.substring(6).toInt() : 1);
+#endif
       } else if (cmd == "METRICS") {
         // Bench layout tuning without a reflash (see UITheme::setMetric):
         //   CMD:METRICS                       list every tunable metric
@@ -963,6 +1044,9 @@ void loop() {
     if (millis() - lastActivityTime >= HalPowerManager::IDLE_POWER_SAVING_MS) {
       // If we've been inactive for a while, increase the delay to save power
       powerManager.setPowerSaving(true);  // Lower CPU frequency after extended inactivity
+#if FREEINK_DEVICE_EMINIMAL
+      if (idleLightSleep(sleepTimeoutMs, millis() - lastActivityTime)) return;
+#endif
       // Sleep in short slices and wake the poll as soon as a button contact closes.
       // InputManager commits a press only when two consecutive polls agree, so a
       // press shorter than one 50 ms sleep could land in a single sample and be lost.

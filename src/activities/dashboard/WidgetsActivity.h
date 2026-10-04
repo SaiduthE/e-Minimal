@@ -38,6 +38,7 @@ class WidgetsActivity final : public UiListActivity {
       : UiListActivity("DashboardWidgets", renderer, mappedInput) {}
 
   void onEnter() override;
+  bool isDashboardActivity() const override { return true; }
 
  private:
   // A folder path (up to DashboardConfigStore::MAX_FOLDER_LENGTH) and a count.

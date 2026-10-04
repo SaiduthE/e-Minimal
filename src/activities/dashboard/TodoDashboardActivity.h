@@ -15,6 +15,7 @@ class TodoDashboardActivity final : public UiListActivity {
                                  bool cleanInitialRefresh = false);
 
   void onEnter() override;
+  bool isDashboardActivity() const override { return true; }
   void onExit() override;
   void loop() override;
   void render(RenderLock&&) override;

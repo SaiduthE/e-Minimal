@@ -5,12 +5,20 @@
 #include <HalStorage.h>
 #include <Logging.h>
 
+#include <ctime>
 #include <string_view>
 
 #include "CrossPointState.h"
 #include "DashboardConfigStore.h"
 #include "DashboardImage.h"
 #include "activities/RenderLock.h"
+
+namespace {
+// When the next picture is due, in system time (which the RTC keeps through deep
+// sleep); 0 = not scheduled since power-up. RTC memory, so a Dashboard deep
+// sleep's timer wake finds the change it woke for.
+RTC_DATA_ATTR time_t changeDueAt = 0;
+}  // namespace
 
 void CarouselImages::load() {
   DASHBOARD_CONFIG.loadFromFile();
@@ -46,7 +54,7 @@ void CarouselImages::load() {
     index = images.empty() ? 0 : APP_STATE.carouselIndex % images.size();
   }
   intervalMs = static_cast<unsigned long>(DASHBOARD_CONFIG.carouselIntervalMinutes) * 60UL * 1000UL;
-  nextChange = images.size() > 1 ? millis() + intervalMs : 0;
+  scheduleNext(false);
   LOG_DBG("CAROUSEL", "%u images in %s", static_cast<unsigned>(images.size()), folderPath.c_str());
 }
 
@@ -70,5 +78,21 @@ void CarouselImages::step(const int delta) {
   }
   APP_STATE.carouselIndex = static_cast<uint16_t>(index);
   APP_STATE.saveToFile();
-  nextChange = images.size() > 1 ? millis() + intervalMs : 0;
+  scheduleNext(true);
+}
+
+void CarouselImages::scheduleNext(const bool restart) {
+  if (images.size() <= 1 || intervalMs == 0) {
+    nextChange = 0;
+    return;
+  }
+  const time_t now = time(nullptr);
+  // Over a day late is not a missed change but a clock that was set since (the
+  // forecast sets it): start the interval over.
+  if (changeDueAt != 0 && now - changeDueAt > 24 * 3600) changeDueAt = 0;
+  if (restart || changeDueAt == 0) changeDueAt = now + static_cast<time_t>(intervalMs / 1000);
+  // A change that fell due while the device slept runs on the first pass.
+  const time_t left = changeDueAt > now ? changeDueAt - now : 0;
+  const unsigned long leftMs = static_cast<unsigned long>(left) * 1000UL;
+  nextChange = millis() + (leftMs < intervalMs ? leftMs : intervalMs);
 }

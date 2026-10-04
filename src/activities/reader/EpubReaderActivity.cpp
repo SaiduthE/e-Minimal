@@ -1116,6 +1116,21 @@ void EpubReaderActivity::onReturnFromEndOfBook() {
   }
 }
 
+// The soonest of the reader's own timers: the auto page turn and the bookmark /
+// dictionary messages' dismissal. Background builds run under skipLoopDelay().
+unsigned long EpubReaderActivity::idleWakeInMs() const {
+  const unsigned long now = millis();
+  unsigned long wake = 0;
+  const auto due = [&](const unsigned long start, const unsigned long duration) {
+    const unsigned long left = now - start < duration ? duration - (now - start) : 1;
+    if (wake == 0 || left < wake) wake = left;
+  };
+  if (automaticPageTurnActive) due(lastPageTurnTime, pageTurnDuration);
+  if (showBookmarkMessage) due(bookmarkMessageTime, ReaderUtils::BOOKMARK_MESSAGE_DURATION_MS);
+  if (showDictionaryMessage) due(dictionaryMessageTime, ReaderUtils::BOOKMARK_MESSAGE_DURATION_MS);
+  return wake;
+}
+
 bool EpubReaderActivity::skipLoopDelay() {
   return section && section->isBuilding() && !buildHeapPaused &&
          (section->isPartial() || static_cast<int>(section->pageCount) < section->currentPage + BUILD_WINDOW_AHEAD);

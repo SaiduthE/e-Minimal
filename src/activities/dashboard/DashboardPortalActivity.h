@@ -29,6 +29,7 @@ class DashboardPortalActivity final : public Activity {
   static std::string pagePath(Section section, uint8_t layoutId);
 
   void onEnter() override;
+  bool isDashboardActivity() const override { return true; }
   void onExit() override;
   void loop() override;
   void render(RenderLock&&) override;

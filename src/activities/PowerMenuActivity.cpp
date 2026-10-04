@@ -3,10 +3,12 @@
 #include <GfxRenderer.h>
 #include <I18n.h>
 #include <Logging.h>
+#include <Memory.h>
 
 #include <algorithm>
 
 #include "MappedInputManager.h"
+#include "activities/settings/SettingsActivity.h"
 #include "components/UITheme.h"
 #include "components/icons/appIcons96.h"
 
@@ -15,7 +17,7 @@ namespace fui = freeink::ui;
 namespace {
 constexpr StrId menuItems[PowerMenuActivity::MENU_ITEM_COUNT] = {
     StrId::STR_SLEEP,
-    StrId::STR_GO_HOME_BUTTON,
+    StrId::STR_GLOBAL_SETTINGS,
     StrId::STR_FORCE_REFRESH,
 };
 
@@ -99,10 +101,22 @@ void PowerMenuActivity::activateIndex(const int index) {
       // on the stack, so the wake still resumes the book.
       activityManager.requestDeepSleep();
       return;
-    case Action::GO_HOME:
-      activityManager.goHome();
+    case Action::GLOBAL_SETTINGS: {
+      auto settings = makeUniqueNoThrow<SettingsActivity>(renderer, mappedInput, SettingsActivity::Scope::Global);
+      if (!settings) {
+        LOG_ERR("PWR", "OOM: Global Settings");
+        return;
+      }
+      startActivityForResult(std::move(settings), [this](const ActivityResult&) { requestUpdate(); });
       return;
+    }
     case Action::REFRESH_SCREEN:
+      if (mode == Mode::LAUNCHER) {
+        // Nothing underneath: the launcher repaints itself with a clearing refresh.
+        renderer.promoteNextRefresh(HalDisplay::HALF_REFRESH);
+        requestUpdate();
+        return;
+      }
       // Applied by openPowerMenu()'s result handler on the screen underneath.
       setResult(MenuResult{static_cast<int>(Action::REFRESH_SCREEN)});
       finish();

@@ -9,6 +9,7 @@
 #include <soc/soc_caps.h>
 
 #include <cassert>
+#include <ctime>
 
 #include "HalGPIO.h"
 
@@ -67,12 +68,36 @@ void HalPowerManager::setPowerSaving(bool enabled) {
   // Otherwise, no change needed
 }
 
-void HalPowerManager::startDeepSleep(HalGPIO& gpio) const {
+namespace {
+// When the armed timer wake is due, in system time (kept through deep sleep by
+// the RTC); 0 = none. RTC memory, so a wake that goes straight back to sleep can
+// re-arm what is left of it.
+RTC_DATA_ATTR time_t timerWakeAt = 0;
+}  // namespace
+
+void HalPowerManager::resumeDeepSleep(HalGPIO& gpio) const {
+  uint32_t timerWakeMs = 0;
+  if (timerWakeAt != 0) {
+    const time_t left = timerWakeAt - time(nullptr);
+    timerWakeMs = left > 1 ? static_cast<uint32_t>(left) * 1000UL : 1000UL;
+  }
+  startDeepSleep(gpio, timerWakeMs);
+}
+
+void HalPowerManager::startDeepSleep(HalGPIO& gpio, const uint32_t timerWakeMs) const {
+  if (timerWakeMs > 0) {
+    timerWakeAt = time(nullptr) + static_cast<time_t>((timerWakeMs + 999) / 1000);
+    esp_sleep_enable_timer_wakeup(static_cast<uint64_t>(timerWakeMs) * 1000ULL);
+    LOG_DBG("PWR", "Deep sleep with a timer wake in %lu s", static_cast<unsigned long>(timerWakeMs / 1000));
+  } else {
+    timerWakeAt = 0;
+  }
 #ifdef ENABLE_SERIAL_LOG
   // Tear down HWCDC so the host sees a clean disconnect and the peripheral
   // doesn't hold power domains that interfere with USB-powered GPIO wake.
   // logSerial is the raw HWCDC reference; Serial is the MySerialImpl proxy
-  // (which doesn't expose end()).
+  // (which doesn't expose end()). Flush first: the last lines say how it sleeps.
+  logSerial.flush();
   logSerial.end();
 #endif
 

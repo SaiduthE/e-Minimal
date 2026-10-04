@@ -12,15 +12,20 @@
 // restarts on the way, like the other WiFi screens.
 class DashboardHomeActivity final : public UiListActivity {
  public:
-  explicit DashboardHomeActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
-      : UiListActivity("DashboardHome", renderer, mappedInput) {}
+  // resumeView / timerWake: see ActivityManager::goToDashboard().
+  explicit DashboardHomeActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, bool resumeView = false,
+                                 bool timerWake = false)
+      : UiListActivity("DashboardHome", renderer, mappedInput), resumeView(resumeView), timerWake(timerWake) {}
 
   void onEnter() override;
+  bool isDashboardActivity() const override { return true; }
   void onExit() override;
   bool isHomeActivity() const override { return true; }
 
  private:
   enum Row : int { LAUNCH, LAYOUT, WIDGETS, ORIENTATION, ROW_COUNT };
+  bool resumeView = false;
+  const bool timerWake = false;
   static constexpr int VALUE_LENGTH = 64;
 
   int listCount() const override { return ROW_COUNT; }

@@ -31,6 +31,11 @@ void DashboardHomeActivity::onEnter() {
   // After a wake the panel still shows the sleep image; a clean refresh clears it.
   renderer.promoteNextRefresh(HalDisplay::HALF_REFRESH);
   UiListActivity::onEnter();
+  if (resumeView) {
+    // Back to the dashboard the sleep left on screen; this menu is not painted.
+    resumeView = false;
+    open(makeUniqueNoThrow<TiledDashboardActivity>(renderer, mappedInput, timerWake), true);
+  }
 }
 
 void DashboardHomeActivity::onExit() {

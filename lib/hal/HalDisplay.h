@@ -35,6 +35,9 @@ class HalDisplay {
   // counter; otherwise the first two paints get promoted to FULL
   // (~770ms each on X3).
   void begin(bool seamless = false);
+  // The next begin() keeps what the glass shows (no clearing pass where the
+  // controller would clear): a wake that repaints the same screen. One-shot.
+  void keepGlassOnNextBegin() { einkDisplay.keepGlassOnNextBegin(); }
 
   // Display dimensions
   static constexpr uint16_t DISPLAY_WIDTH = EInkDisplay::DISPLAY_WIDTH;

@@ -43,10 +43,20 @@ class Activity {
 
   virtual bool skipLoopDelay() { return false; }
   virtual bool preventAutoSleep() { return false; }
+  // Milliseconds until loop() must run again with no input, for a timer of the
+  // activity's own (auto page turn); 0 = only input needs it. Bounds the idle
+  // light sleep.
+  virtual unsigned long idleWakeInMs() const { return 0; }
   // Exclusive storage activities suspend global controls and normal activity
   // transitions so no filesystem code races a raw SD-card owner.
   virtual bool requiresExclusiveStorageLoop() const { return false; }
   virtual bool isReaderActivity() const { return false; }
+  // Part of the Dashboard app, a display left on: no auto deep sleep while one
+  // is open (Power menu > Sleep still sleeps).
+  virtual bool isDashboardActivity() const { return false; }
+  // Milliseconds until a timer wake from deep sleep is due for this screen (the
+  // Dashboard's next widget update); 0 = only a key needs to wake it.
+  virtual unsigned long deepSleepWakeInMs() const { return 0; }
   // Returns true when the activity schedules its own forced refresh.
   virtual bool handleForcedRefresh() { return false; }
   virtual bool isHomeActivity() const { return false; }
