@@ -32,4 +32,6 @@ class CarouselImages {
   size_t index = 0;
   unsigned long intervalMs = 0;
   unsigned long nextChange = 0;
+  // nextChange from the persisted due time; restart: a change just happened.
+  void scheduleNext(bool restart);
 };

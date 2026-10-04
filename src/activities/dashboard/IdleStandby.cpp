@@ -1,10 +1,14 @@
 #include "IdleStandby.h"
 
 #include <Arduino.h>
+#include <HalGPIO.h>
 #include <HalPowerManager.h>
 #include <Logging.h>
 
+#include "CrossPointSettings.h"
 #include "MappedInputManager.h"
+#include "activities/Activity.h"
+#include "activities/ActivityManager.h"
 #include "activities/RenderLock.h"
 #include "util/TaskWatchdog.h"
 
@@ -41,21 +45,35 @@ bool IdleStandby::poll(const MappedInputManager& input, const bool busy) {
   }
   if (unsupported || now - lastActivity < IDLE_MS) return false;
 
+  // Past Time to Sleep, deep sleep with the screen left on the glass
+  // (enterDeepSleep); until then light sleep, capped at that deadline.
+  const unsigned long sleepAfter = SETTINGS.getSleepTimeoutMs();
+  const unsigned long idle = now - lastActivity;
+  if (sleepAfter > 0 && idle >= sleepAfter) {
+    activityManager.requestDeepSleep();
+    return true;
+  }
+  // No light standby with a USB host: it drops the console (as in the reader).
+  if (gpio.isUsbConnected() || logSerial) return false;
+  const unsigned long capMs = sleepAfter > 0 ? sleepAfter - idle : 0;
+
   LOG_DBG("DASH", "Idle standby until a key");
   HalPowerManager::LightSleepWake wake;
   {
     // Holding the render lock keeps a repaint from being frozen halfway.
     RenderLock lock;
     resetTaskWatchdogIfSubscribed();
-    wake = powerManager.lightSleep(0);
+    wake = powerManager.lightSleep(capMs);
     resetTaskWatchdogIfSubscribed();
   }
   lastPoll = millis();
-  lastActivity = lastPoll;
   if (wake == HalPowerManager::LightSleepWake::NotSupported) {
     unsupported = true;
     return false;
   }
+  // The deadline's timer: the next poll deep-sleeps.
+  if (wake == HalPowerManager::LightSleepWake::Timer) return true;
+  lastActivity = lastPoll;
   swallowKeys = true;
   return true;
 }

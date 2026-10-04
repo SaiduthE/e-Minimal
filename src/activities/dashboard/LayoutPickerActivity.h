@@ -27,6 +27,7 @@ class LayoutPickerActivity final : public UiListActivity {
   explicit LayoutPickerActivity(GfxRenderer& renderer, MappedInputManager& mappedInput);
 
   void onEnter() override;
+  bool isDashboardActivity() const override { return true; }
   void render(RenderLock&& lock) override;
 
  private:

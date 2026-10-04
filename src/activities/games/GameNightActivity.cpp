@@ -6,6 +6,7 @@
 #include <WiFi.h>
 #include <esp_random.h>
 
+#include "CrossPointSettings.h"
 #include "GameBoards.h"
 #include "MappedInputManager.h"
 #include "SilentRestart.h"
@@ -42,6 +43,8 @@ void GameNightActivity::onEnter() {
   session.reseed(esp_random());
   session.selectGame(initialGame);
   state = State::AP_STARTING;
+  lastPresenceMs = millis();
+  presenceHolding = true;
   paintedVersion = 0;
   paintedAway = 0;
   paintsSinceFullRefresh = 0;
@@ -211,6 +214,10 @@ bool GameNightActivity::applyInput(const bool staleMenu) {
   return false;
 }
 
+bool GameNightActivity::preventAutoSleep() {
+  return server && server->isRunning() && millis() - lastPresenceMs < PRESENCE_GRACE_MS;
+}
+
 void GameNightActivity::loop() {
   if (state != State::RUNNING || !server || !server->isRunning()) return;
 
@@ -238,6 +245,23 @@ void GameNightActivity::loop() {
       yield();
       mappedInput.update();
       if (handleInput()) return;
+    }
+  }
+
+  const uint32_t presenceNow = millis();
+  for (uint8_t seat = 0; seat < party::MAX_PLAYERS; seat++) {
+    if (session.isSeated(seat) && !session.isTestSeat(seat) && !session.isAway(seat, presenceNow)) {
+      lastPresenceMs = presenceNow;
+      break;
+    }
+  }
+  const bool holding = presenceNow - lastPresenceMs < PRESENCE_GRACE_MS;
+  if (holding != presenceHolding) {
+    presenceHolding = holding;
+    if (holding) {
+      LOG_DBG("GAMES", "A phone is at the table: holding the device awake");
+    } else {
+      LOG_DBG("GAMES", "No phone for 2 min: auto-sleep in %lu s", SETTINGS.getSleepTimeoutMs() / 1000);
     }
   }
 

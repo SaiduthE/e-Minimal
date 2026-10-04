@@ -135,6 +135,8 @@ void HalGPIO::begin() {
   }
 #else
   _deviceType = DeviceType::X4;
+  // VBUS through 56k/100k sets the level, so a plain input with no pull.
+  if (BoardConfig::isEMinimal78()) pinMode(BoardConfig::ACTIVE.usbDetect, INPUT);
 #endif
   inputMgr.begin();
 }

@@ -15,6 +15,7 @@ class OrientationPickerActivity final : public UiListActivity {
       : UiListActivity("DashboardOrientation", renderer, mappedInput) {}
 
   void onEnter() override;
+  bool isDashboardActivity() const override { return true; }
 
   // The name of a CrossPointSettings::DASHBOARD_ORIENTATION value.
   static const char* orientationName(uint8_t orientation);

@@ -16,14 +16,17 @@ class TimedDashboardActivity : public Activity {
  public:
   // Subclasses call this first: it starts the idle countdown.
   void onEnter() override;
+  bool isDashboardActivity() const override { return true; }
   void loop() final;
   void render(RenderLock&& lock) final;
   void requestUpdate(bool immediate = false) override;
   bool preventAutoSleep() override { return true; }
+  unsigned long deepSleepWakeInMs() const override;
 
  protected:
-  TimedDashboardActivity(const char* name, GfxRenderer& renderer, MappedInputManager& mappedInput)
-      : Activity(name, renderer, mappedInput) {}
+  TimedDashboardActivity(const char* name, GfxRenderer& renderer, MappedInputManager& mappedInput,
+                         bool timerWake = false)
+      : Activity(name, renderer, mappedInput), timerWake(timerWake) {}
 
   // millis() at which update() should next run; 0 when nothing is scheduled.
   virtual unsigned long nextUpdateMs() const = 0;
@@ -42,8 +45,11 @@ class TimedDashboardActivity : public Activity {
   // Paints the frame; the base tracks when the requested repaints are done.
   virtual void draw(RenderLock&& lock) = 0;
 
-  // Restarts the idle countdown before standby.
-  void noteActivity() { lastActivityMs = millis(); }
+  // Restarts the idle countdowns: before standby, and before deep sleep.
+  void noteActivity() {
+    lastActivityMs = millis();
+    lastUserMs = lastActivityMs;
+  }
   // A requested repaint has not finished yet.
   bool repaintPending() const { return repaintsDone.load() != repaintsRequested.load(); }
 
@@ -58,9 +64,15 @@ class TimedDashboardActivity : public Activity {
   static constexpr unsigned long COVERED_GAP_MS = 1000;
 
   bool anyKeyDown() const;
-  void standby();
+  // Light sleep until the next update, a key, or capMs (the deep-sleep deadline;
+  // 0 = none).
+  void standby(unsigned long capMs);
 
   unsigned long lastActivityMs = 0;
+  // A key or entry, never a timer wake: Time to Sleep counts from here.
+  unsigned long lastUserMs = 0;
+  // Opened by a timer wake: back to deep sleep once the update is painted.
+  bool timerWake = false;
   unsigned long lastLoopMs = 0;
   bool swallowKeys = false;
   bool standbyUnsupported = false;

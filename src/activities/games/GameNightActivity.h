@@ -34,7 +34,10 @@ class GameNightActivity final : public Activity {
   void loop() override;
   void render(RenderLock&&) override;
   bool skipLoopDelay() override { return server && server->isRunning(); }
-  bool preventAutoSleep() override { return server && server->isRunning(); }
+  // Awake only while a phone is at the table, or the lobby opened within
+  // PRESENCE_GRACE_MS: past that the normal auto-sleep timeout runs, and deep
+  // sleep takes the access point down with it.
+  bool preventAutoSleep() override;
 
  private:
   enum class State : uint8_t { AP_STARTING, RUNNING, SHUTTING_DOWN };
@@ -84,4 +87,9 @@ class GameNightActivity final : public Activity {
   // Fast refreshes leave ghosting; clear it on a cadence rather than on a timer
   // nobody is watching.
   static constexpr uint8_t FULL_REFRESH_EVERY = 8;
+  // The last time a phone polled (a seated, non-test player not away), or the
+  // lobby opened.
+  unsigned long lastPresenceMs = 0;
+  bool presenceHolding = true;  // last state logged
+  static constexpr unsigned long PRESENCE_GRACE_MS = 2UL * 60 * 1000;
 };

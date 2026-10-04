@@ -8,8 +8,10 @@ class HalFile;
 
 class SleepActivity final : public Activity {
  public:
-  explicit SleepActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, bool fromTimeout = false)
-      : Activity("Sleep", renderer, mappedInput), fromTimeout(fromTimeout) {}
+  // keepScreen: draw nothing, so the screen being left stays on the glass.
+  explicit SleepActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, bool fromTimeout = false,
+                         bool keepScreen = false)
+      : Activity("Sleep", renderer, mappedInput), fromTimeout(fromTimeout), keepScreen(keepScreen) {}
   void onEnter() override;
 
  private:
@@ -25,4 +27,5 @@ class SleepActivity final : public Activity {
   void renderBlankSleepScreen() const;
 
   bool fromTimeout = false;
+  bool keepScreen = false;
 };

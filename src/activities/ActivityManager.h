@@ -68,6 +68,11 @@ class ActivityManager {
   // Whether to trigger a render after the current loop()
   // This variable must only be set by the main loop, to avoid race conditions
   std::atomic<bool> requestedUpdate{false};
+  // Set whenever the render task is notified, cleared once it holds the render
+  // lock for the render that covers it: notified-but-not-started is otherwise
+  // invisible (the task drains its notification before taking the lock).
+  std::atomic<bool> renderPending{false};
+  void notifyRender();
 
   bool deepSleepRequested = false;
 
@@ -97,13 +102,16 @@ class ActivityManager {
   // Game Night for one game: raises the hotspot. Leaving it reboots.
   void goToGameNight(party::GameId game);
   // The Dashboard app's root: its home page (launch, layout, widget settings).
-  void goToDashboard();
+  // resumeView: open the tiled dashboard straight away (a wake from a sleep
+  // that left it on screen); timerWake: that wake was the timer for a due widget.
+  void goToDashboard(bool resumeView = false, bool timerWake = false);
   void goToSettings();
   void goToFileBrowser(std::string path = {});
   void goToLibrary();
   void goToBrowser();
   void goToReader(std::string path, bool allowFastInitialRefresh = false);
-  void goToSleep(bool fromTimeout = false);
+  // keepScreen: the sleep leaves the current screen on the glass (the Dashboard).
+  void goToSleep(bool fromTimeout = false, bool keepScreen = false);
   void goToBoot();
   void goToFullScreenMessage(std::string message, EpdFontFamily::Style style = EpdFontFamily::REGULAR);
   void goToCrashReport();
@@ -130,6 +138,19 @@ class ActivityManager {
   bool isEnteringReader() const;
   bool handleForcedRefresh();
   bool skipLoopDelay() const;
+  // The reader itself is on top (not a menu or popup over it).
+  bool currentIsReader() const;
+  // A Dashboard screen is open, on top or under a menu.
+  bool isDashboardActivity() const;
+  // A Dashboard screen itself is on top.
+  bool currentIsDashboard() const;
+  // The tiled dashboard is open, on top or under a view or menu.
+  bool dashboardViewOpen() const;
+  // The soonest timer wake any open screen needs from deep sleep; 0 = none.
+  unsigned long deepSleepWakeInMs() const;
+  unsigned long idleWakeInMs() const;
+  // No render requested, queued or running.
+  bool renderIdle() const { return !requestedUpdate.load() && !renderPending.load(); }
   ScreenshotInfo getScreenshotInfo() const;
 
   // The power button's long-press menu (eMinimal): pushed over the current

@@ -71,6 +71,7 @@ void ActivityManager::renderTaskLoop() {
     // Acquire the lock before reading currentActivity to avoid a TOCTOU race
     // where the main task deletes the activity between the null-check and render().
     RenderLock lock;
+    renderPending = false;  // this render covers every request made before it
     if (currentActivity) {
       HalPowerManager::Lock powerLock;  // Ensure we don't go into low-power mode while rendering
       // Night mode is a global output polarity applied to every activity.
@@ -98,9 +99,7 @@ void ActivityManager::loop() {
     // An exclusive-storage activity must restart rather than navigate away:
     // processing a pending action here could re-enable filesystem users while
     // the USB host still owns the raw SD card.
-    if (requestedUpdate.exchange(false) && renderTaskHandle) {
-      xTaskNotify(renderTaskHandle, 1, eIncrement);
-    }
+    if (requestedUpdate.exchange(false)) notifyRender();
     return;
   }
 
@@ -212,9 +211,7 @@ void ActivityManager::loop() {
   if (requestedUpdate.exchange(false)) {
     // Using direct notification to signal the render task to update
     // Increment counter so multiple rapid calls won't be lost
-    if (renderTaskHandle) {
-      xTaskNotify(renderTaskHandle, 1, eIncrement);
-    }
+    notifyRender();
   }
 }
 
@@ -265,8 +262,8 @@ void ActivityManager::goToGameNight(const party::GameId game) {
   replaceActivity(std::move(activity));
 }
 
-void ActivityManager::goToDashboard() {
-  auto activity = makeUniqueNoThrow<DashboardHomeActivity>(renderer, mappedInput);
+void ActivityManager::goToDashboard(const bool resumeView, const bool timerWake) {
+  auto activity = makeUniqueNoThrow<DashboardHomeActivity>(renderer, mappedInput, resumeView, timerWake);
   if (!activity) {
     LOG_ERR("ACT", "OOM: dashboard activity");
     return;
@@ -377,8 +374,8 @@ void ActivityManager::goToReader(std::string path, const bool allowFastInitialRe
   }
 }
 
-void ActivityManager::goToSleep(bool fromTimeout) {
-  replaceActivity(std::make_unique<SleepActivity>(renderer, mappedInput, fromTimeout));
+void ActivityManager::goToSleep(bool fromTimeout, bool keepScreen) {
+  replaceActivity(std::make_unique<SleepActivity>(renderer, mappedInput, fromTimeout, keepScreen));
   loop();  // Important: sleep screen must be rendered immediately, the caller will go to sleep right after this returns
 }
 
@@ -443,6 +440,39 @@ bool ActivityManager::isReaderActivity() const {
 
 bool ActivityManager::isEnteringReader() const { return pendingActivity && pendingActivity->isReaderActivity(); }
 
+bool ActivityManager::currentIsReader() const { return currentActivity && currentActivity->isReaderActivity(); }
+
+bool ActivityManager::isDashboardActivity() const {
+  return std::any_of(stackActivities.begin(), stackActivities.end(),
+                     [](const auto& activity) { return activity->isDashboardActivity(); }) ||
+         currentIsDashboard();
+}
+
+bool ActivityManager::currentIsDashboard() const {
+  return currentActivity && currentActivity->isDashboardActivity();
+}
+
+bool ActivityManager::dashboardViewOpen() const {
+  const auto isView = [](const Activity* activity) { return activity && activity->name == "Dashboard"; };
+  return isView(currentActivity.get()) ||
+         std::any_of(stackActivities.begin(), stackActivities.end(),
+                     [&isView](const auto& activity) { return isView(activity.get()); });
+}
+
+unsigned long ActivityManager::deepSleepWakeInMs() const {
+  unsigned long soonest = 0;
+  const auto consider = [&soonest](const Activity* activity) {
+    if (!activity) return;
+    const unsigned long ms = activity->deepSleepWakeInMs();
+    if (ms > 0 && (soonest == 0 || ms < soonest)) soonest = ms;
+  };
+  consider(currentActivity.get());
+  for (const auto& activity : stackActivities) consider(activity.get());
+  return soonest;
+}
+
+unsigned long ActivityManager::idleWakeInMs() const { return currentActivity ? currentActivity->idleWakeInMs() : 0; }
+
 bool ActivityManager::handleForcedRefresh() { return currentActivity && currentActivity->handleForcedRefresh(); }
 
 bool ActivityManager::isPowerMenuOpen() const { return currentActivity && currentActivity->name == "PowerMenu"; }
@@ -473,11 +503,15 @@ ScreenshotInfo ActivityManager::getScreenshotInfo() const {
   return {};
 }
 
+void ActivityManager::notifyRender() {
+  if (!renderTaskHandle) return;
+  renderPending = true;
+  xTaskNotify(renderTaskHandle, 1, eIncrement);
+}
+
 void ActivityManager::requestUpdate(bool immediate) {
   if (immediate) {
-    if (renderTaskHandle) {
-      xTaskNotify(renderTaskHandle, 1, eIncrement);
-    }
+    notifyRender();
   } else {
     // Deferring the update until current loop is finished
     // This is to avoid multiple updates being requested in the same loop
@@ -510,7 +544,7 @@ void ActivityManager::requestUpdateAndWait() {
   // Cannot call while holding RenderLock or it will cause a deadlock
   assert(!holdingRenderLock && "Cannot call requestUpdateAndWait() while holding RenderLock");
 
-  xTaskNotify(renderTaskHandle, 1, eIncrement);
+  notifyRender();
   ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 }
 

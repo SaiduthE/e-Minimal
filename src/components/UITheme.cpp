@@ -178,6 +178,10 @@ const ThemeMetrics& UITheme::getMetrics() const {
     // CMD:METRIC: 0 (glyph centred on the band's top edge) is right. Lyra's
     // detached 40 px strip is right as it is.
     if (currentMetrics == &RoundedRaffMetrics::values) adjustedMetrics.batteryBarHeight = 0;
+    // The battery glyph sits beside the small font's percent label, which is the
+    // 2x tier here: on uiScale it came out 18 px tall against 24 px digits.
+    adjustedMetrics.batteryWidth = currentMetrics->batteryWidth * 2;
+    adjustedMetrics.batteryHeight = currentMetrics->batteryHeight * 2;
     // The reader footer's text lane follows the small font, which is the 2x
     // tier here, not uiScale: BaseTheme::drawStatusBar sets that font's line at
     // screenHeight - lane - 4 above the bottom inset, so lane + 4 must hold its

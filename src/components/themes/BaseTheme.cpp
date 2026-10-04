@@ -453,8 +453,16 @@ void BaseTheme::drawHeader(const GfxRenderer& renderer, Rect rect, const char* t
   const int16_t batteryEdgeInset = static_cast<int16_t>(headerStatusInset());
   const int16_t batteryX = batteryLeft ? static_cast<int16_t>(band.x + batteryEdgeInset)
                                        : static_cast<int16_t>(band.right() - batteryEdgeInset - batteryReserve);
-  const int16_t batteryH = static_cast<int16_t>(metrics.batteryBarHeight);
-  fui::batteryIndicator(ui.frame, fui::Rect{batteryX, band.y, batteryReserve, batteryH}, battery);
+  // A 0 px strip (RoundedRaff on e-Minimal) centres the glyph on the band's top
+  // edge. Give it a line of its own centred on that edge: the glyph lands where
+  // it did, and the percent label no longer clips to a 0 px rect.
+  int16_t batteryY = band.y;
+  int16_t batteryH = static_cast<int16_t>(metrics.batteryBarHeight);
+  if (batteryH == 0) {
+    batteryH = static_cast<int16_t>(ui.target.lineHeight(fui::GfxRendererTarget::FONT_SMALL));
+    batteryY = static_cast<int16_t>(band.y - batteryH / 2);
+  }
+  fui::batteryIndicator(ui.frame, fui::Rect{batteryX, batteryY, batteryReserve, batteryH}, battery);
 
   if (clockText[0] != '\0') {
     // Ink-align a left-anchored clock: the first digit's ink starts its side
@@ -474,18 +482,18 @@ void BaseTheme::drawHeader(const GfxRenderer& renderer, Rect rect, const char* t
     // side, so the two read as one balanced status line.
     const int16_t clockX = batteryLeft ? static_cast<int16_t>(band.right() - batteryEdgeInset - clockWidth)
                                        : static_cast<int16_t>(band.x + batteryEdgeInset - clockBearing);
-    ui.target.text(fui::Rect{clockX, band.y, clockWidth, batteryH}, clockText, tokens.smallText);
+    ui.target.text(fui::Rect{clockX, batteryY, clockWidth, batteryH}, clockText, tokens.smallText);
   }
 
   if (linkReserve > 0) {
     // Inboard of the battery and on its centre line: the component centres
-    // the glyph on rect.y + rect.height / 2, which for a 0-height strip
+    // the glyph on rect.y + rect.height / 2, which for a 0 px strip
     // (RoundedRaff) is the band's top edge. The bitmaps carry 6 px of blank
     // rows above their ink, so a box centred there would put the ink's top
     // above the screen; keep the ink's first row on the panel instead.
     constexpr int linkIconInkTop = 6;
     const int iconX = batteryLeft ? batteryX + batteryReserve + batteryPercentSpacing * 2 : batteryX - linkReserve;
-    const int iconY = std::max(band.y + batteryH / 2 - linkIconSize / 2, -linkIconInkTop);
+    const int iconY = std::max(batteryY + batteryH / 2 - linkIconSize / 2, -linkIconInkTop);
     renderer.drawIcon(link == NetworkLink::State::STATION ? WifiIcon : HotspotIcon, iconX, iconY, linkIconSize);
   }
 
