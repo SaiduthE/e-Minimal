@@ -10,6 +10,7 @@
 namespace fui = freeink::ui;
 
 void HomeCoverCache::begin() {
+  invalidate();
   // Cover regions do not overlap. Each may widen by one physical byte per row.
   coverCacheCapacity = renderer.getRegionByteSize(0, 0, renderer.getScreenWidth(), renderer.getScreenHeight()) +
                        MAX_COVERS * std::max(renderer.getScreenWidth(), renderer.getScreenHeight());
@@ -66,7 +67,9 @@ bool HomeCoverCache::paint(fui::Rect rect, size_t index, const std::string& path
     coverFile.close();
   }
   if (!drawn) GUI.drawCoverPlaceholder(renderer, Rect{rect.x, rect.y, rect.width, rect.height});
-  if (coverCache) {
+  // Placeholders are not cached, so a thumb generated later at the same path
+  // is picked up by the next paint.
+  if (coverCache && drawn) {
     const size_t needed = renderer.getRegionByteSize(rect.x, rect.y, rect.width, rect.height);
     if (needed > cached.bytes && needed <= coverCacheCapacity - coverCacheUsed) {
       cached.offset = coverCacheUsed;

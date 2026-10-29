@@ -101,7 +101,8 @@ Select opens search when the feed offers one (no synthetic row, which would
 shift every entry's index). Back climbs the feed hierarchy.
 
 ## Power
-Hold Power ~0.7 s while awake for the power menu. Hold Power ~1 s while
+Hold Power ~0.7 s while awake for the power menu (headed **Quick Menu**). It
+opens with a clearing refresh over any app. Hold Power ~1 s while
 asleep to wake. A short tap does nothing either way — no double-click
 frontlight shortcut here.
 
