@@ -18,13 +18,14 @@
 #include "WidgetsActivity.h"
 #include "components/UITheme.h"
 #include "network/SavedWifi.h"
+#include "util/UiOrientation.h"
 
 namespace fui = freeink::ui;
 
 void DashboardHomeActivity::onEnter() {
   {
     RenderLock lock;
-    renderer.setOrientation(GfxRenderer::Orientation::Portrait);
+    ui_orientation::apply(renderer);
   }
   DASHBOARD_CONFIG.loadFromFile();
   refreshRows();
@@ -94,7 +95,7 @@ void DashboardHomeActivity::open(std::unique_ptr<Activity> screen, const bool tu
     if (turned) {
       // The dashboard turns itself back; make sure before painting.
       RenderLock lock;
-      renderer.setOrientation(GfxRenderer::Orientation::Portrait);
+      ui_orientation::apply(renderer);
     }
     refreshRows();
     // Back from another orientation, a fast refresh would leave the old one ghosted.

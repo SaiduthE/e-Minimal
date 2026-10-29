@@ -531,21 +531,19 @@ void SleepActivity::onEnter() {
       ReaderUtils::applyOrientation(renderer, SETTINGS.orientation);
     }
     drawSleepPopupPreservingFrame(renderer);
-    if (APP_STATE.lastSleepFromReader) {
-      renderer.setOrientation(GfxRenderer::Orientation::Portrait);
-    }
+    // Sleep images are portrait, whichever way the UI was turned.
+    renderer.setOrientation(GfxRenderer::Orientation::Portrait);
     releaseSdFontCachesForDecode(renderer);
     return renderTransparentCustomSleepScreen();
   }
 
-  // Show popup with reader orientation only when going to sleep from reader
+  // Show popup with reader orientation only when going to sleep from reader;
+  // elsewhere the UI's own. Sleep images are portrait either way.
   if (APP_STATE.lastSleepFromReader) {
     ReaderUtils::applyOrientation(renderer, SETTINGS.orientation);
-    GUI.drawPopup(renderer, tr(STR_ENTERING_SLEEP));
-    renderer.setOrientation(GfxRenderer::Orientation::Portrait);
-  } else {
-    GUI.drawPopup(renderer, tr(STR_ENTERING_SLEEP));
   }
+  GUI.drawPopup(renderer, tr(STR_ENTERING_SLEEP));
+  renderer.setOrientation(GfxRenderer::Orientation::Portrait);
 
   switch (SETTINGS.sleepScreen) {
     case (CrossPointSettings::SLEEP_SCREEN_MODE::BLANK):

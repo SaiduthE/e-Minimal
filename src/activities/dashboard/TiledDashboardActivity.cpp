@@ -14,6 +14,7 @@
 #include "TodoDashboardActivity.h"
 #include "WeatherDashboardActivity.h"
 #include "components/UITheme.h"
+#include "util/UiOrientation.h"
 
 namespace {
 bool isDue(const unsigned long at, const unsigned long now) {
@@ -35,8 +36,8 @@ void TiledDashboardActivity::onExit() {
   images.unload();
   // Called under the render lock, like draw().
   for (auto& cache : imageCaches) cache.release();
-  // The rest of the UI is portrait.
-  renderer.setOrientation(GfxRenderer::Orientation::Portrait);
+  // Back to the orientation the rest of the UI draws in.
+  ui_orientation::apply(renderer);
 }
 
 void TiledDashboardActivity::requestContentRepaint(const bool immediate) {

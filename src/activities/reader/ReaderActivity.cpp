@@ -14,6 +14,7 @@
 #include "SdCardFontSystem.h"
 #include "TxtReaderActivity.h"
 #include "XtcReaderActivity.h"
+#include "util/UiOrientation.h"
 
 ReaderActivity::ReaderActivity(const char* name, GfxRenderer& renderer, MappedInputManager& mappedInput,
                                std::string bookPath, const bool allowFastInitialRefresh)
@@ -78,7 +79,7 @@ void ReaderActivity::onExit() {
 
   LOG_INF("MEM", "reader exit: free=%u max_block=%u", (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
 
-  renderer.setOrientation(GfxRenderer::Orientation::Portrait);
+  ui_orientation::apply(renderer);
   APP_STATE.readerActivityLoadCount = 0;
   APP_STATE.saveToFile();
 

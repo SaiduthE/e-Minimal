@@ -26,8 +26,16 @@ is the user's key map (next section).
   forward" (default) or "Down = back, Up = forward". Same `sideButtonLayout`
   field and indices as upstream's Side Button Layout; its other values
   (Disabled, Next/Next, Prev/Prev) aren't offered here.
+- **Display Orientation** (Global Settings > Display & System; the web
+  Settings page lists it under Display) turns the whole device: Home, menus,
+  settings, the Dashboard's menus and the reader. It is the reader's
+  `orientation` field, so the reader's own orientation tile moves it too, and
+  it no longer appears in the reader's Settings. Sleep images stay portrait;
+  the Dashboard keeps its own Dashboard Orientation. The panel sits upside
+  down in the case; the renderer turns every frame 180 degrees for it
+  (`GfxRenderer::getPanelOrientation()`), so the names stay true to the keys.
 - **Orient Front Buttons** (off by default) turns Up/Down with the device when
-  the reader is rotated: swapped in Inverted and Landscape CCW (the Down key
+  it is rotated: swapped in Inverted and Landscape CCW (the Down key
   comes first on screen there), unchanged in Portrait and Landscape CW. The
   hint bar labels swap with them. Table: `MappedInputManager::upDownKey()`.
 - Stays physical whatever the map: the boot-time Up+Power recovery hold and
