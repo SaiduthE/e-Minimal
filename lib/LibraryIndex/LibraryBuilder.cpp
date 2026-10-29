@@ -433,6 +433,12 @@ void walk(WalkState& st, const std::string& path, const int depth) {
   HalFile dir = Storage.open(path.c_str());
   if (!dir || !dir.isDirectory()) {
     if (dir) dir.close();
+    // The root always exists, so failing to open it is a card error, not an empty
+    // library: fail the rebuild and keep the previous index.
+    if (depth == 0) {
+      LOG_ERR("LIBIDX", "cannot open library root %s", path.c_str());
+      st.failed = true;
+    }
     return;
   }
   dir.rewindDirectory();
