@@ -43,6 +43,9 @@ class ReaderActivity : public Activity {
   bool endOfBookMenuActive() const;
   bool handleEndOfBookMenu(bool suppressConfirmRelease = false);
   bool handleEndOfBookPageTurn(bool prevTriggered, bool nextTriggered);
+  // A page is being drawn or is queued to be. Page turns pressed meanwhile are
+  // dropped, not replayed afterwards: a replay would land pages the reader never saw.
+  static bool pageDrawBusy() { return RenderLock::peek() || !activityManager.renderIdle(); }
   void clearEndOfBookOptionsIfNeeded();
   void disableFastInitialRefresh();
 

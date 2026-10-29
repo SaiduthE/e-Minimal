@@ -53,7 +53,12 @@ class GfxRenderer {
   // on a board whose panel is mounted upside down (see begin()).
   Orientation orientation;
   Orientation callerOrientation;
+  Orientation uiOrientation = Portrait;  // last setOrientation(); see getUiOrientation()
   bool mountFlipped = false;
+  void applyOrientation(const Orientation o) {
+    callerOrientation = o;
+    orientation = mountFlipped ? static_cast<Orientation>((o + 2) % 4) : o;
+  }
   bool fadingFix;
   uint8_t* frameBuffer = nullptr;
   uint16_t panelWidth = HalDisplay::DISPLAY_WIDTH;
@@ -228,11 +233,31 @@ class GfxRenderer {
 
   // Orientation control (affects logical width/height and coordinate transforms)
   void setOrientation(const Orientation o) {
-    callerOrientation = o;
-    orientation = mountFlipped ? static_cast<Orientation>((o + 2) % 4) : o;
+    uiOrientation = o;
+    applyOrientation(o);
   }
   // The orientation as the user holds the device: layout, button hints, labels.
   Orientation getOrientation() const { return callerOrientation; }
+  // The screen's orientation, ignoring any ScopedOrientation: what key mapping
+  // follows. It is read on the main task while the render task draws, and a
+  // render that briefly draws upright must not turn the keys with it.
+  Orientation getUiOrientation() const { return uiOrientation; }
+  // Draws in `o` until the scope ends (upright button hints). Only drawing
+  // follows it; getUiOrientation() keeps the screen's own orientation.
+  class ScopedOrientation {
+   public:
+    ScopedOrientation(GfxRenderer& renderer, const Orientation o)
+        : renderer(renderer), saved(renderer.callerOrientation) {
+      renderer.applyOrientation(o);
+    }
+    ~ScopedOrientation() { renderer.applyOrientation(saved); }
+    ScopedOrientation(const ScopedOrientation&) = delete;
+    ScopedOrientation& operator=(const ScopedOrientation&) = delete;
+
+   private:
+    GfxRenderer& renderer;
+    const Orientation saved;
+  };
   // The orientation logical coordinates land on panel memory in; what code that
   // writes the frame buffer directly must follow.
   Orientation getPanelOrientation() const { return orientation; }

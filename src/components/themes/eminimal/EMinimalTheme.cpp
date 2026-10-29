@@ -23,8 +23,7 @@ void EMinimalTheme::drawButtonHints(GfxRenderer& renderer, const char* btn1, con
     return;
   }
 
-  const GfxRenderer::Orientation origOrientation = renderer.getOrientation();
-  renderer.setOrientation(GfxRenderer::Orientation::Portrait);
+  const GfxRenderer::ScopedOrientation upright(renderer, GfxRenderer::Orientation::Portrait);
 
   const int pageWidth = renderer.getScreenWidth();
   const int pageHeight = renderer.getScreenHeight();
@@ -39,7 +38,6 @@ void EMinimalTheme::drawButtonHints(GfxRenderer& renderer, const char* btn1, con
   if (renderer.getRenderMode() != GfxRenderer::BW && !renderer.grayPlanesAreAbsolute()) {
     renderer.fillRect(sidePadding, hintY, groupWidth, hintHeight, true);
     renderer.fillRect(sidePadding + groupWidth + groupGap, hintY, groupWidth, hintHeight, true);
-    renderer.setOrientation(origOrientation);
     return;
   }
 
@@ -75,6 +73,4 @@ void EMinimalTheme::drawButtonHints(GfxRenderer& renderer, const char* btn1, con
 
   renderer.drawText(HINT_FONT_ID, upX, textY, upText.c_str(), true, EpdFontFamily::REGULAR);
   renderer.drawText(HINT_FONT_ID, downX, textY, downText.c_str(), true, EpdFontFamily::REGULAR);
-
-  renderer.setOrientation(origOrientation);
 }

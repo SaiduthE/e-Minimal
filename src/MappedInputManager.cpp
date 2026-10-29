@@ -48,7 +48,7 @@ void MappedInputManager::update(const bool deferHomeButtonAction) const {
 bool MappedInputManager::isNavDirectionSwapped() const {
   // Touch boards always follow the rendered orientation; button-only boards keep the user toggle.
   // Home and settings render in portrait except on e-Minimal, where they turn with the device.
-  const auto orientation = renderer.getOrientation();
+  const auto orientation = renderer.getUiOrientation();
   return (gpio.hasTouch() || SETTINGS.frontButtonFollowOrientation) &&
          (orientation == GfxRenderer::PortraitInverted || orientation == GfxRenderer::LandscapeCounterClockwise);
 }
@@ -83,7 +83,7 @@ MappedInputManager::Button MappedInputManager::mapScreenDirection(const Button b
   // Five-button boards turn Up/Down in upDownKey() instead; rotating here as
   // well would flip them twice.
   const uint8_t orientation = SETTINGS.frontButtonFollowOrientation && !five_button::active()
-                                  ? static_cast<uint8_t>(renderer.getOrientation())
+                                  ? static_cast<uint8_t>(renderer.getUiOrientation())
                                   : 0;
   return directions[orientation][direction];
 }
