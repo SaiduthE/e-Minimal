@@ -39,6 +39,7 @@
 #include "components/UIThemeTokens.h"
 #include "components/UiAppHelpers.h"
 #include "fontIds.h"
+#include "util/UiOrientation.h"
 
 namespace fui = freeink::ui;
 
@@ -53,7 +54,7 @@ int globalSettingTab(const SettingInfo& setting) {
       p == &CrossPointSettings::shortPwrBtn) {
     return 0;
   }
-  if (p == &CrossPointSettings::screenInverted) return 1;
+  if (p == &CrossPointSettings::screenInverted || p == &CrossPointSettings::orientation) return 1;
   return -1;
 }
 
@@ -92,8 +93,13 @@ void SettingsActivity::rebuildSettingsLists() {
     if (global) {
       if (globalTab < 0) continue;
       auto& tab = tabSettings[globalTab];
-      // Time to Sleep leads its tab.
-      if (setting.valuePtr == &CrossPointSettings::sleepTimeoutMinutes) {
+      // Time to Sleep and Display Orientation lead their tabs; the orientation
+      // turns the whole device here, not only the reader.
+      if (setting.valuePtr == &CrossPointSettings::orientation) {
+        SettingInfo displayOrientation = setting;
+        displayOrientation.nameId = StrId::STR_DISPLAY_ORIENTATION;
+        tab.insert(tab.begin(), displayOrientation);
+      } else if (setting.valuePtr == &CrossPointSettings::sleepTimeoutMinutes) {
         tab.insert(tab.begin(), setting);
       } else {
         tab.push_back(setting);
@@ -249,6 +255,14 @@ void SettingsActivity::onExit() {
 }
 
 void SettingsActivity::applyUiSettingChange(uint8_t CrossPointSettings::* valuePtr) {
+  // A new orientation turns this screen at once; the full refresh keeps the
+  // old layout from ghosting under the new one.
+  if (valuePtr == &CrossPointSettings::orientation && ui_orientation::followsSetting()) {
+    ui_orientation::apply(renderer);
+    renderer.promoteNextRefresh(HalDisplay::HALF_REFRESH);
+    resetUi();
+    return;
+  }
   // Theme changes take effect immediately, on this screen — reload the theme
   // and re-derive the app's tokens so the very next repaint is in the new look.
   if (valuePtr != &CrossPointSettings::uiTheme) {

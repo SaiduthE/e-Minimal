@@ -46,6 +46,7 @@
 #include "util/ScreenshotUtil.h"
 #include "util/TaskWatchdog.h"
 #include "util/Timezones.h"
+#include "util/UiOrientation.h"
 
 #if CROSSPOINT_VECTOR_FONTS
 // Rendering (incl. FreeType TTF rasterization) runs on the Arduino loop task.
@@ -593,6 +594,7 @@ void setup() {
 
   if (isDashboardWake) display.keepGlassOnNextBegin();
   setupDisplayAndFonts(resume != BootResume::Splash);
+  ui_orientation::apply(renderer);
 
   switch (resume) {
     case BootResume::Silent:

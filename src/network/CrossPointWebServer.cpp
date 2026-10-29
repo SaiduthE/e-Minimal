@@ -44,6 +44,7 @@
 #include "html/js/pdf_worker_minJs.generated.h"
 #include "util/BookCacheUtils.h"
 #include "util/TaskWatchdog.h"
+#include "util/UiOrientation.h"
 
 namespace {
 // Folders/files to hide from the web interface file browser
@@ -1468,8 +1469,10 @@ void CrossPointWebServer::handleGetSettings() const {
 
     doc.clear();
     doc["key"] = s.key;
-    doc["name"] = I18N.get(s.nameId);
-    doc["category"] = I18N.get(s.category);
+    // On e-Minimal the orientation turns the whole device, as in Global Settings.
+    const bool deviceOrientation = s.valuePtr == &CrossPointSettings::orientation && ui_orientation::followsSetting();
+    doc["name"] = I18N.get(deviceOrientation ? StrId::STR_DISPLAY_ORIENTATION : s.nameId);
+    doc["category"] = I18N.get(deviceOrientation ? StrId::STR_CAT_DISPLAY : s.category);
 
     switch (s.type) {
       case SettingType::TOGGLE: {

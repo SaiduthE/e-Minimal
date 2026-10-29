@@ -21,6 +21,7 @@
 #include "fontIds.h"
 #include "network/CrossPointWebServer.h"
 #include "util/TaskWatchdog.h"
+#include "util/UiOrientation.h"
 
 namespace {
 // APP_STATE.dashboardPortalMode values.
@@ -83,9 +84,9 @@ void DashboardPortalActivity::onEnter() {
 
   {
     RenderLock lock;
-    // Portrait like the rest of the UI; the Dashboard underneath may be landscape.
+    // Turned like the rest of the UI; the Dashboard underneath may be turned otherwise.
     previousOrientation = renderer.getOrientation();
-    renderer.setOrientation(GfxRenderer::Orientation::Portrait);
+    ui_orientation::apply(renderer);
     renderer.promoteNextRefresh(HalDisplay::HALF_REFRESH);
     phase = Phase::Choosing;
     onHotspot = false;
