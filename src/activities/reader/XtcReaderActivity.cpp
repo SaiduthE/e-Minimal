@@ -1,12 +1,15 @@
 #include "XtcReaderActivity.h"
 
+#include <BoardConfig.h>
 #include <FsHelpers.h>
 #include <GfxRenderer.h>
 #include <HalStorage.h>
 #include <I18n.h>
 #include <Memory.h>
+#include <esp_timer.h>
 
 #include <algorithm>
+#include <cstring>
 
 #include "CrossPointSettings.h"
 #include "ProgressFile.h"
@@ -84,13 +87,39 @@ struct XthGray4Rows {
   size_t rowBytes;
   size_t planeSize;
   bool flipped;
-  uint64_t ink;  // black 3, dark 2, light 1 a pixel, summed over the page
+  uint64_t ink;           // black 3, dark 2, light 1 a pixel, summed over the page
+  XtcPageStream* stream;  // set while the planes are still arriving from SD
 };
+
+// Longest the row fill waits for one row before giving the page up as unreadable.
+constexpr int64_t STREAM_ROW_TIMEOUT_US = 2000000;
+
+// Blocks until `row` is in the page buffer. Waiting idles the wire but keeps it
+// correct: the driver's DMA timeouts cover its own queue, not the fill.
+bool waitForStreamRow(XtcPageStream& s, const uint16_t row) {
+  if (s.rowsReady.load(std::memory_order_acquire) > row) return true;
+  const int64_t t0 = esp_timer_get_time();
+  while (s.rowsReady.load(std::memory_order_acquire) <= row && !s.failed.load(std::memory_order_acquire)) {
+    xSemaphoreTake(s.chunk, pdMS_TO_TICKS(20));
+    if (esp_timer_get_time() - t0 > STREAM_ROW_TIMEOUT_US) {
+      LOG_ERR("XTR", "Stream stalled at row %u", row);
+      s.failed.store(true, std::memory_order_release);
+    }
+  }
+  s.waitUs += static_cast<uint32_t>(esp_timer_get_time() - t0);
+  return s.rowsReady.load(std::memory_order_acquire) > row;
+}
 
 void fillXthGray4Row(void* ctx, const uint16_t row, uint8_t* dst) {
   auto& rows = *static_cast<XthGray4Rows*>(ctx);
   const size_t n = rows.rowBytes;
   const size_t start = static_cast<size_t>(row) * n;
+  if (rows.stream && !waitForStreamRow(*rows.stream, row)) {
+    // Never read: white here, and renderPage() sends the page again once it is in.
+    memset(dst, 0xFF, n * 4);
+    memset(rows.fb + start, 0xFF, n);
+    return;
+  }
   const size_t srcStart = rows.flipped ? rows.planeSize - start - n : start;
   const uint8_t* const p1 = rows.plane1 + srcStart;
   const uint8_t* const p2 = rows.plane2 + srcStart;
@@ -109,7 +138,91 @@ void fillXthGray4Row(void* ctx, const uint16_t row, uint8_t* dst) {
   }
   rows.ink += ink;
 }
+
+// Reads one posted page in chunks of chunkRows panel rows: each chunk is one
+// slice of each plane, at the offsets loadPage() would put it, taken from the
+// end of the planes first on a flipped mount (where panel row 0 lives).
+void streamTaskMain(void* arg) {
+  auto& s = *static_cast<XtcPageStream*>(arg);
+  for (;;) {
+    xSemaphoreTake(s.start, portMAX_DELAY);
+    if (s.quit.load(std::memory_order_acquire)) {
+      s.exited.store(true, std::memory_order_release);  // the last touch of `s`
+      vTaskDelete(nullptr);
+    }
+    const size_t n = s.rowBytes;
+    for (uint16_t r0 = 0; r0 < s.rows && !s.failed.load(std::memory_order_acquire); r0 += s.chunkRows) {
+      const uint16_t r1 = std::min<uint16_t>(s.rows, r0 + s.chunkRows);
+      const size_t off = s.flipped ? s.planeSize - r1 * n : r0 * n;
+      const size_t len = (r1 - r0) * n;
+      if (s.xtc->readPageData(s.dataOffset + off, s.buffer + off, len) &&
+          s.xtc->readPageData(s.dataOffset + s.planeSize + off, s.buffer + s.planeSize + off, len)) {
+        s.rowsReady.store(r1, std::memory_order_release);
+      } else {
+        LOG_ERR("XTR", "Stream read failed at rows %u-%u", r0, r1);
+        s.failed.store(true, std::memory_order_release);
+      }
+      xSemaphoreGive(s.chunk);
+    }
+    xSemaphoreGive(s.done);
+  }
+}
+
+// A panel-sized XTH page in portrait maps onto the frame buffer byte for byte
+// (see the 2-bit path in renderPage()).
+bool xthMapsOntoFrame(const GfxRenderer& renderer, const uint16_t pageWidth, const uint16_t pageHeight) {
+  uint8_t* const fb = renderer.getFrameBuffer();
+  return fb && renderer.getOrientation() == GfxRenderer::Orientation::Portrait && renderer.getWriteTarget() == fb &&
+         pageHeight % 8 == 0 && pageHeight == renderer.getDisplayWidth() && pageWidth == renderer.getDisplayHeight() &&
+         (pageHeight + 7) / 8 == renderer.getDisplayWidthBytes();
+}
 }  // namespace
+
+void XtcReaderActivity::onEnter() {
+  ReaderActivity::onEnter();
+  startStreamTask();
+}
+
+void XtcReaderActivity::onExit() {
+  stopStreamTask();
+  ReaderActivity::onExit();
+}
+
+void XtcReaderActivity::startStreamTask() {
+#if FREEINK_SD_SDMMC
+  // Only an SD card on its own bus: the panel send holds the display's SPI bus
+  // for the whole page, so a card on that bus could not be read under it.
+  if (!renderer.supportsGray4() || stream.task) return;
+  stream.start = xSemaphoreCreateBinary();
+  stream.chunk = xSemaphoreCreateBinary();
+  stream.done = xSemaphoreCreateBinary();
+  // 4 KB of internal stack, held while the book is open: the task only runs
+  // HalFile seeks and reads. Core 0 keeps it off the reader's core.
+  if (!stream.start || !stream.chunk || !stream.done ||
+      xTaskCreatePinnedToCore(streamTaskMain, "XtcStream", 4096, &stream, 1, &stream.task, 0) != pdPASS) {
+    LOG_ERR("XTR", "Stream task unavailable; pages read before they are sent");
+    stream.task = nullptr;
+    stopStreamTask();
+  }
+#endif
+}
+
+void XtcReaderActivity::stopStreamTask() {
+  if (stream.task) {
+    stream.quit.store(true, std::memory_order_release);
+    xSemaphoreGive(stream.start);
+    for (int i = 0; i < 200 && !stream.exited.load(std::memory_order_acquire); i++) vTaskDelay(pdMS_TO_TICKS(10));
+    if (!stream.exited.load(std::memory_order_acquire)) {
+      LOG_ERR("XTR", "Stream task did not stop; deleting it");
+      vTaskDelete(stream.task);
+    }
+    stream.task = nullptr;
+  }
+  for (SemaphoreHandle_t* sem : {&stream.start, &stream.chunk, &stream.done}) {
+    if (*sem) vSemaphoreDelete(*sem);
+    *sem = nullptr;
+  }
+}
 
 bool XtcReaderActivity::loadBook() {
   auto loadedXtc = makeUniqueNoThrow<Xtc>(bookPath, "/.crosspoint");
@@ -276,7 +389,36 @@ void XtcReaderActivity::renderPage() {
   }
 
   const unsigned long tLoad = millis();
-  size_t bytesRead = xtc->loadPage(currentPage, pageBuffer, pageBufferSize);
+  // A page that goes out through fillXthGray4Row (the gray4 branch below) is
+  // read under the send when the stream task is up: posted now, so the reads
+  // also overlap the white flash and the clear.
+  const size_t streamPlaneSize = pageBufferSize / 2;
+  bool streamed = false;
+  bool contiguous = false;
+  if (bitDepth == 2 && stream.task && xthMapsOntoFrame(renderer, pageWidth, pageHeight) &&
+      streamPlaneSize == renderer.getBufferSize()) {
+    uint64_t dataOffset = 0;
+    if (xtc->openPageData(currentPage, pageBufferSize, dataOffset) == pageBufferSize) {
+      // A backward seek in a FAT-chained file walks the chain from its start,
+      // so fewer, larger chunks there.
+      contiguous = xtc->isFileContiguous();
+      stream.xtc = xtc.get();
+      stream.buffer = pageBuffer;
+      stream.dataOffset = dataOffset;
+      stream.planeSize = streamPlaneSize;
+      stream.rowBytes = renderer.getDisplayWidthBytes();
+      stream.rows = renderer.getDisplayHeight();
+      stream.chunkRows = contiguous ? 32 : 128;
+      stream.flipped = renderer.isMountFlipped();
+      stream.rowsReady.store(0, std::memory_order_relaxed);
+      stream.failed.store(false, std::memory_order_relaxed);
+      stream.waitUs = 0;
+      xSemaphoreTake(stream.chunk, 0);  // drop a give left over from the last page
+      xSemaphoreGive(stream.start);
+      streamed = true;
+    }
+  }
+  size_t bytesRead = streamed ? pageBufferSize : xtc->loadPage(currentPage, pageBuffer, pageBufferSize);
   if (bytesRead == 0) {
     LOG_ERR("XTR", "Failed to load page %lu: bufferSize=%lu bitDepth=%u error=%s", currentPage, pageBufferSize,
             bitDepth, xtc::errorToString(xtc->getLastError()));
@@ -335,10 +477,7 @@ void XtcReaderActivity::renderPage() {
     // column-major planes against the cache (~13 s a page on 1404x1872).
     // Frame-buffer bit 1 = white. Pixel values: 0 white, 1 dark, 2 light, 3 black.
     uint8_t* const fb = renderer.getFrameBuffer();
-    const bool direct = fb && renderer.getOrientation() == GfxRenderer::Orientation::Portrait &&
-                        renderer.getWriteTarget() == fb && pageHeight % 8 == 0 &&
-                        pageHeight == renderer.getDisplayWidth() && pageWidth == renderer.getDisplayHeight() &&
-                        colBytes == renderer.getDisplayWidthBytes();
+    const bool direct = xthMapsOntoFrame(renderer, pageWidth, pageHeight);
     const bool flipped = renderer.isMountFlipped();
     enum class Pass { Base, Lsb, Msb };
     auto fillPass = [&](const Pass pass) {
@@ -376,10 +515,34 @@ void XtcReaderActivity::renderPage() {
     // keeps the row fill's frame-buffer writes and plane reads in step with
     // the rows the driver asks for.
     if (direct && renderer.supportsGray4() && planeSize == renderer.getBufferSize()) {
-      XthGray4Rows rows{plane1, plane2, fb, renderer.getDisplayWidthBytes(), planeSize, flipped, 0};
+      XthGray4Rows rows{
+          plane1, plane2, fb, renderer.getDisplayWidthBytes(), planeSize, flipped, 0, streamed ? &stream : nullptr};
       // HALF, as the staged base asked of displayGrayBuffer(): GC16 every page.
       // The planes are only read until this returns; pageBuffer is freed after.
-      if (renderer.displayGray4Rows(fillXthGray4Row, &rows, HalDisplay::HALF_REFRESH)) {
+      bool sent = renderer.displayGray4Rows(fillXthGray4Row, &rows, HalDisplay::HALF_REFRESH);
+      bool resent = false;
+      if (streamed) {
+        // The page buffer is the stream task's until it signals done.
+        xSemaphoreTake(stream.done, portMAX_DELAY);
+        if (stream.failed.load(std::memory_order_acquire)) {
+          LOG_ERR("XTR", "Page %lu streamed incompletely; reading it whole", currentPage + 1);
+          if (xtc->loadPage(currentPage, pageBuffer, pageBufferSize) == 0) {
+            LOG_ERR("XTR", "Failed to load page %lu: error=%s", currentPage, xtc::errorToString(xtc->getLastError()));
+            free(pageBuffer);
+            renderer.clearScreen();
+            renderer.drawCenteredText(UI_12_FONT_ID, 300, tr(STR_PAGE_LOAD_ERROR), true, EpdFontFamily::BOLD);
+            renderer.displayBuffer();
+            return;
+          }
+          if (sent) {
+            rows.ink = 0;
+            rows.stream = nullptr;
+            sent = renderer.displayGray4Rows(fillXthGray4Row, &rows, HalDisplay::HALF_REFRESH);
+            resent = true;
+          }
+        }
+      }
+      if (sent) {
         // Only the next page's cleanup reads this, so it can wait for the sum.
         prevPageDark = rows.ink > static_cast<uint64_t>(planeSize) * 8 * 3 * DARK_PAGE_PERCENT / 100;
         pagesUntilFullRefresh = SETTINGS.getRefreshFrequency();
@@ -392,12 +555,19 @@ void XtcReaderActivity::renderPage() {
 
         free(pageBuffer);
 
-        LOG_INF("XTR", "Page %lu/%lu (2-bit, gray4%s%s): load %lu ms, gray4 %lu, cleanup %lu", currentPage + 1,
-                xtc->getPageCount(),
+        // load is the page header plus any white flash when streamed; sd wait is
+        // how long the send stood waiting for the card.
+        LOG_INF("XTR", "Page %lu/%lu (2-bit, gray4%s%s%s): load %lu ms, gray4 %lu, cleanup %lu, sd wait %lu",
+                currentPage + 1, xtc->getPageCount(),
+                !streamed    ? ""
+                : resent     ? ", stream failed, resent"
+                : contiguous ? ", stream"
+                             : ", stream, chained",
                 flashed  ? ", white flash first"
                 : repeat ? ", repeated"
                          : "",
-                prevPageDark ? ", dark" : "", t0 - tLoad, tGray - t0, millis() - tGray);
+                prevPageDark ? ", dark" : "", t0 - tLoad, tGray - t0, millis() - tGray,
+                streamed ? static_cast<unsigned long>(stream.waitUs / 1000) : 0UL);
         return;
       }
       LOG_ERR("XTR", "displayGray4Rows refused the page; using the plane path");

@@ -58,6 +58,17 @@ class XtcParser {
   size_t loadPage(uint32_t pageIndex, uint8_t* buffer, size_t bufferSize);
 
   /**
+   * Check a page's header without reading its bitmap, for callers that read it in pieces
+   * with readPageData().
+   *
+   * @param dataOffset Set to the bitmap's file offset (just past the page header)
+   * @return The bitmap's size in bytes, 0 on failure (or if it is larger than bufferSize)
+   */
+  size_t openPageData(uint32_t pageIndex, size_t bufferSize, uint64_t& dataOffset);
+  bool readPageData(uint64_t offset, uint8_t* buffer, size_t size);
+  bool isFileContiguous();
+
+  /**
    * Streaming page load
    * Memory-efficient method that reads page data in chunks.
    *

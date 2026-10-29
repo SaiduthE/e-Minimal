@@ -112,6 +112,8 @@ class HalFile : public Print {
   size_t write(uint8_t b) override;
   bool rename(const char* newPath);
   bool isDirectory() const;
+  // Contiguous files seek in O(1); others re-walk the cluster chain on every backward seek.
+  bool isContiguous() const;
   void rewindDirectory();
   bool close();
   HalFile openNextFile();
