@@ -84,6 +84,12 @@ class Xtc {
    */
   size_t loadPage(uint32_t pageIndex, uint8_t* buffer, size_t bufferSize) const;
 
+  // A page read in pieces: openPageData() checks the header and gives the bitmap's size and
+  // file offset (0 on failure); readPageData() reads any range of the file.
+  size_t openPageData(uint32_t pageIndex, size_t bufferSize, uint64_t& dataOffset) const;
+  bool readPageData(uint64_t offset, uint8_t* buffer, size_t size) const;
+  bool isFileContiguous() const;
+
   /**
    * Load page with streaming callback
    * @param pageIndex Page index

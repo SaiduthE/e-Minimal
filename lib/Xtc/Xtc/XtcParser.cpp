@@ -391,6 +391,39 @@ const std::vector<ChapterInfo>& XtcParser::getChapters() {
 bool XtcParser::getPageInfo(uint32_t pageIndex, PageInfo& info) { return readPageTableEntry(pageIndex, info); }
 
 size_t XtcParser::loadPage(uint32_t pageIndex, uint8_t* buffer, size_t bufferSize) {
+  uint64_t dataOffset = 0;
+  const size_t bitmapSize = openPageData(pageIndex, bufferSize, dataOffset);
+  if (bitmapSize == 0) {
+    return 0;
+  }
+
+  // openPageData() leaves the file at the bitmap.
+  size_t bytesRead = m_file.read(buffer, bitmapSize);
+  if (bytesRead != bitmapSize) {
+    LOG_DBG("XTC", "Page read error: expected %u, got %u", bitmapSize, bytesRead);
+    m_lastError = XtcError::READ_ERROR;
+    return 0;
+  }
+
+  m_lastError = XtcError::OK;
+  return bytesRead;
+}
+
+bool XtcParser::readPageData(uint64_t offset, uint8_t* buffer, size_t size) {
+  if (!ensureFileOpen() || !m_file.seek64(offset)) {
+    m_lastError = XtcError::READ_ERROR;
+    return false;
+  }
+  if (static_cast<size_t>(m_file.read(buffer, size)) != size) {
+    m_lastError = XtcError::READ_ERROR;
+    return false;
+  }
+  return true;
+}
+
+bool XtcParser::isFileContiguous() { return ensureFileOpen() && m_file.isContiguous(); }
+
+size_t XtcParser::openPageData(uint32_t pageIndex, size_t bufferSize, uint64_t& dataOffset) {
   if (!m_isOpen) {
     m_lastError = XtcError::FILE_NOT_FOUND;
     return 0;
@@ -461,16 +494,9 @@ size_t XtcParser::loadPage(uint32_t pageIndex, uint8_t* buffer, size_t bufferSiz
     return 0;
   }
 
-  // Read bitmap data
-  size_t bytesRead = m_file.read(buffer, bitmapSize);
-  if (bytesRead != bitmapSize) {
-    LOG_DBG("XTC", "Page read error: expected %u, got %u", bitmapSize, bytesRead);
-    m_lastError = XtcError::READ_ERROR;
-    return 0;
-  }
-
+  dataOffset = page.offset + sizeof(XtgPageHeader);
   m_lastError = XtcError::OK;
-  return bytesRead;
+  return bitmapSize;
 }
 
 XtcError XtcParser::loadPageStreaming(uint32_t pageIndex,

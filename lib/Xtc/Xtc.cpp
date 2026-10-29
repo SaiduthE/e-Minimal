@@ -524,6 +524,21 @@ size_t Xtc::loadPage(uint32_t pageIndex, uint8_t* buffer, size_t bufferSize) con
   return const_cast<xtc::XtcParser*>(parser.get())->loadPage(pageIndex, buffer, bufferSize);
 }
 
+size_t Xtc::openPageData(uint32_t pageIndex, size_t bufferSize, uint64_t& dataOffset) const {
+  if (!loaded || !parser) {
+    return 0;
+  }
+  return const_cast<xtc::XtcParser*>(parser.get())->openPageData(pageIndex, bufferSize, dataOffset);
+}
+
+bool Xtc::readPageData(uint64_t offset, uint8_t* buffer, size_t size) const {
+  return loaded && parser && const_cast<xtc::XtcParser*>(parser.get())->readPageData(offset, buffer, size);
+}
+
+bool Xtc::isFileContiguous() const {
+  return loaded && parser && const_cast<xtc::XtcParser*>(parser.get())->isFileContiguous();
+}
+
 xtc::XtcError Xtc::loadPageStreaming(uint32_t pageIndex,
                                      std::function<void(const uint8_t* data, size_t size, size_t offset)> callback,
                                      size_t chunkSize) const {
