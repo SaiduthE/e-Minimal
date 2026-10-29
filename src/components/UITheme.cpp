@@ -178,6 +178,11 @@ const ThemeMetrics& UITheme::getMetrics() const {
     // CMD:METRIC: 0 (glyph centred on the band's top edge) is right. Lyra's
     // detached 40 px strip is right as it is.
     if (currentMetrics == &RoundedRaffMetrics::values) adjustedMetrics.batteryBarHeight = 0;
+    // Phone-style status bar: a fixed strip for battery/clock on every screen,
+    // with every header (topPadding) starting below it. 76 px holds the small
+    // font's line with the battery centred where it was judged right on glass.
+    adjustedMetrics.statusBarHeight = 76;
+    adjustedMetrics.topPadding = std::max(adjustedMetrics.topPadding, adjustedMetrics.statusBarHeight);
     // The battery glyph sits beside the small font's percent label, which is the
     // 2x tier here: on uiScale it came out 18 px tall against 24 px digits.
     adjustedMetrics.batteryWidth = currentMetrics->batteryWidth * 2;
@@ -209,6 +214,7 @@ constexpr MetricField kMetricFields[] = {
     {"batteryHeight", &ThemeMetrics::batteryHeight},
     {"topPadding", &ThemeMetrics::topPadding},
     {"batteryBarHeight", &ThemeMetrics::batteryBarHeight},
+    {"statusBarHeight", &ThemeMetrics::statusBarHeight},
     {"headerHeight", &ThemeMetrics::headerHeight},
     {"verticalSpacing", &ThemeMetrics::verticalSpacing},
     {"previewPadding", &ThemeMetrics::previewPadding},
