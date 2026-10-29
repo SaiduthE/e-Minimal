@@ -60,8 +60,8 @@ class GameSession {
   bool isAway(uint8_t seat, uint32_t nowMs) const;
 
   // Test players: seats with no phone behind them, so one person can open a
-  // game alone and play every seat from one phone (GameServer's `as`). A bench
-  // feature, off unless the device turns it on (GAMES_TEST_MODE).
+  // game alone and play every seat from one phone (GameServer's `as`). Off
+  // until the device arms it for the session (the lobby's Up key).
   void setTestMode(bool on) { testMode_ = on; }
   bool testMode() const { return testMode_; }
   // Lobby only. Returns the seat, or -1 when the table is full, a round runs or

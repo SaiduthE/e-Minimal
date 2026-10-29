@@ -33,8 +33,8 @@ beyond the reader itself.
 | Games | Up / Down, Confirm | Move through the tiles; Confirm opens the game's lobby and starts the hotspot |
 | Games | Back | Nothing (the app's root; the power menu switches apps) |
 | Lobby | Confirm | Start the selected game |
-| Lobby | Up | Add a test player (test builds only) |
-| Lobby | Down | Remove the last test player (test builds only) |
+| Lobby | Up | Add a test player (the first press arms test mode for the session) |
+| Lobby | Down | Remove the last test player (while there is one) |
 | Lobby | Back | Leave Game Night: asks first ("Leave Game Night? Every phone drops off." - Stay / Leave Game Night) when anyone is seated, else leaves directly; the device reboots into the games list to shed the WiFi heap |
 | Round | Confirm | The host's "next": push the phase along |
 | Round | Back | Opens the menu: Resume the round, End the round - back to the lobby, Leave Game Night |
@@ -96,10 +96,11 @@ they are added). It lets one person with one phone start any game and play every
 seat; Codenames needs four, so join, then press Up three times.
 
 - **Adding and removing.** Only in the lobby, never mid-round. On the device, Up
-  adds one and Down removes the highest-numbered; the hints read "+ Test" and
-  "- Test" and follow the key remap and Orient Front Buttons. A help line under
-  the seat list reads "Testing alone? + Test seats a test player; play its turns
-  from your phone", and test seats show "(test)". On the phone the host has "Add a
+  adds one and Down removes the highest-numbered; the hints read "+ Test", and
+  "- Test" while there is a test player to drop, and follow the key remap and
+  Orient Front Buttons. Once test mode is armed, a help line under the seat list
+  reads "Testing alone? + Test seats a test player; play its turns from your
+  phone", and test seats show "(test)". On the phone the host then has "Add a
   test player" and "Remove one" buttons.
 - **Hosting.** A test player is never shown as away. A phone that joins takes
   over as host from a test player, and when the host leaves, hosting passes to a
@@ -110,11 +111,12 @@ seat; Codenames needs four, so join, then press Up three times.
   as that seat. No other phone gets it, since that view holds the seat's
   secrets. The choice is not remembered across a reload.
 
-Test mode is the build flag `GAMES_TEST_MODE`, on in the `eminimal` env for
-bench testing. Deleting its line from `platformio.ini` builds a production image
-with no test players: no lobby key, hint or help line; no test card or switcher
-on the phone; and the server refuses `addtest`/`droptest` and ignores `as`. The
-state document's `testMode` says which build a phone is talking to.
+Test mode is off when Game Night opens, and there is no build flag for it.
+The first press of Up in the lobby arms it for the rest of that session (it is
+not saved: leaving Game Night turns it off again). Until then there is no help
+line, no test card or switcher on the phone, and the server refuses
+`addtest`/`droptest` and ignores `as`. The state document's `testMode` tells a
+phone whether it is armed.
 
 ## The games
 

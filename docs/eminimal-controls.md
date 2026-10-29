@@ -129,9 +129,10 @@ reading order, Select opens the game's lobby and starts the hotspot. Back does
 nothing (the app's root; the power menu switches apps).
 
 **Lobby.** Select starts the game. Up adds a test player and Down removes the
-highest-numbered one (test builds only; a test player is a seat with no phone,
-for trying a game alone). The hints read "+ Test" and "- Test" and follow the
-key remap and Orient Front Buttons. Test players can be added or removed only in
+highest-numbered one (a test player is a seat with no phone, for trying a game
+alone; the first Up arms test mode for the session). The hints read "+ Test",
+and "- Test" while there is one to drop, and follow the key remap and Orient
+Front Buttons. Test players can be added or removed only in
 the lobby. Back leaves Game Night: when anyone is seated it asks "Leave Game
 Night? Every phone drops off." (Stay / Leave Game Night), else it leaves
 directly.

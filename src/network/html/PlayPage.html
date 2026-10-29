@@ -241,7 +241,7 @@
     return p ? p.n : "Seat " + (seat + 1);
   }
 
-  // Only the host of a test-mode build plays test seats.
+  // Only the host plays test seats, once the reader has armed test mode.
   function canSwitch(s) {
     var p = player(s, mySeat);
     return s.testMode === true && !!token && !!p && !!p.host;

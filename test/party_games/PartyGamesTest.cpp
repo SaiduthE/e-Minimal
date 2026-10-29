@@ -574,10 +574,10 @@ TEST(TestPlayers, TheDocumentMarksThem) {
   EXPECT_NE(std::string(buf).find("\"seat\":-1,\"me\":-1,"), std::string::npos) << buf;
 }
 
-TEST(TestPlayers, AreOffUnlessTheBuildTurnsThemOn) {
+TEST(TestPlayers, AreOffUntilTheDeviceArmsThem) {
   GameSession session(213);
   seat(session, 2);
-  EXPECT_FALSE(session.testMode()) << "production is the default";
+  EXPECT_FALSE(session.testMode()) << "every session starts with them off";
   const uint32_t before = session.version();
   EXPECT_EQ(session.addTestPlayer(), -1);
   EXPECT_FALSE(session.applyAction(0, verb(Verb::AddTest))) << "the host's verb is a no-op";

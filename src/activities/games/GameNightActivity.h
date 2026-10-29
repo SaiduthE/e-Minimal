@@ -21,9 +21,9 @@
 // Back never throws a round away by accident: mid-round it opens a menu
 // (resume, end the round, leave), after a round it returns to the lobby, and in
 // the lobby it asks before leaving for the picker, which reboots on the way to
-// shed the WiFi heap. On a test build (GAMES_TEST_MODE) the lobby's
-// previous/next keys seat and drop test players, so one person can open any
-// game and play every seat from a single phone.
+// shed the WiFi heap. In the lobby the previous/next keys seat and drop test
+// players, so one person can open any game and play every seat from a single
+// phone; the first press arms test mode for the session.
 class GameNightActivity final : public Activity {
  public:
   explicit GameNightActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, party::GameId game)
