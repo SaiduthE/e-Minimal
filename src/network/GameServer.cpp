@@ -107,7 +107,7 @@ int8_t GameServer::seatFromRequest() {
 
 int8_t GameServer::viewSeat(const int8_t own) {
   // A test seat's view carries its secrets, so only the host may play one, and
-  // only on a test build.
+  // only once the device has armed test mode.
   if (!session_.testMode() || own < 0 || !session_.isHost(static_cast<uint8_t>(own))) return own;
   const String raw = server_->arg("as");
   if (raw.isEmpty()) return own;

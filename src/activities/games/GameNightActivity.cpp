@@ -15,12 +15,6 @@
 #include "fontIds.h"
 #include "util/TaskWatchdog.h"
 
-// Test players are a bench feature (platformio.ini); production builds leave
-// them out.
-#ifndef GAMES_TEST_MODE
-#define GAMES_TEST_MODE 0
-#endif
-
 namespace {
 constexpr const char* AP_SSID = "eMinimal Games";
 constexpr const char* AP_HOSTNAME = "eminimal";
@@ -31,7 +25,8 @@ constexpr uint8_t AP_MAX_CONNECTIONS = party::MAX_PLAYERS;
 
 void GameNightActivity::onEnter() {
   Activity::onEnter();
-  session.setTestMode(GAMES_TEST_MODE != 0);
+  // Off until the lobby's Up key arms it for this session.
+  session.setTestMode(false);
   LOG_DBG("GAMES", "Free heap at onEnter: %d bytes", ESP.getFreeHeap());
 
   // Same heap-critical transition as file transfer: WiFi plus the HTTP server
@@ -202,10 +197,15 @@ bool GameNightActivity::applyInput(const bool staleMenu) {
     } else {
       hostAction(party::Verb::Next);
     }
-  } else if (session.inLobby() && session.testMode()) {
-    // Test players let one person open any game alone; the version bump they
-    // cause is what repaints the seat list.
+  } else if (session.inLobby()) {
+    // Test players let one person open any game alone. The first Up arms test
+    // mode for the session, which also opens the phones' test controls; the
+    // version bump a seat change causes is what repaints the seat list.
     if (mappedInput.wasReleased(MappedInputManager::Button::NavPrevious)) {
+      if (!session.testMode()) {
+        session.setTestMode(true);
+        session.bump();
+      }
       session.addTestPlayer();
     } else if (mappedInput.wasReleased(MappedInputManager::Button::NavNext)) {
       session.removeTestPlayer();
@@ -303,7 +303,7 @@ void GameNightActivity::renderLobby(const Rect& content) const {
   const Rect cardBounds(content.x - pad, content.y, content.width + pad * 2, content.height * 3 / 5);
   const int cardBottom = PhoneJoinPanel::draw(renderer, cardBounds, card);
 
-  // On a test build, one line at the bottom points a lone tester at the
+  // Once test mode is armed, one line at the bottom points a lone tester at the
   // test-player keys.
   int seatsBottom = content.y + content.height;
   if (session.testMode()) {
@@ -375,14 +375,13 @@ void GameNightActivity::render(RenderLock&&) {
   // handleInput() dismisses it.
   if (menuMatchesTable() && menu.processRender(renderer, mappedInput)) return;
 
-  // On a test build the lobby's previous/next keys seat and drop test players
-  // (handleInput()). Mid-round Back opens the menu; after a round it is the
-  // lobby.
-  const bool testKeys = inLobby && session.testMode();
+  // The lobby's previous/next keys seat and drop test players (handleInput());
+  // "- Test" shows only while there is one to drop. Mid-round Back opens the
+  // menu; after a round it is the lobby.
   const char* backLabel = inLobby ? tr(STR_BACK) : roundOver ? tr(STR_GAMES_END_ROUND) : tr(STR_GAMES_MENU);
   const char* confirmLabel = inLobby ? tr(STR_GAMES_START) : tr(STR_GAMES_NEXT);
-  const char* addLabel = testKeys ? tr(STR_GAMES_ADD_TEST) : "";
-  const char* dropLabel = testKeys ? tr(STR_GAMES_REMOVE_TEST) : "";
+  const char* addLabel = inLobby ? tr(STR_GAMES_ADD_TEST) : "";
+  const char* dropLabel = inLobby && session.testPlayerCount() > 0 ? tr(STR_GAMES_REMOVE_TEST) : "";
   const auto labels = mappedInput.mapLabels(backLabel, confirmLabel, addLabel, dropLabel);
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
 
