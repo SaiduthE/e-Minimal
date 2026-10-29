@@ -168,6 +168,12 @@ void GfxRenderer::begin() {
   panelHeight = display.getDisplayHeight();
   panelWidthBytes = display.getDisplayWidthBytes();
   frameBufferSize = display.getBufferSize();
+  // A panel mounted upside down (BoardProfile ROTATE_180) is turned here for the
+  // IT8951, whose driver loads frames unrotated; the other drivers apply it.
+  const BoardConfig::BoardProfile& board = BoardConfig::ACTIVE;
+  mountFlipped = board.displayController == BoardConfig::DisplayController::IT8951 && board.orientation.mirrorX &&
+                 board.orientation.mirrorY;
+  setOrientation(callerOrientation);
   bwBufferChunks.assign((frameBufferSize + BW_BUFFER_CHUNK_SIZE - 1) / BW_BUFFER_CHUNK_SIZE, nullptr);
 
   // Evictable-cache sinks for the SDK memory manager: layout's OOM choke
@@ -2572,9 +2578,10 @@ void GfxRenderer::cleanupGrayscaleWithFrameBuffer() const {
 
 void GfxRenderer::getOrientedViewableTRBL(int* outTop, int* outRight, int* outBottom, int* outLeft) const {
   // Board truth: the bezel insets live in the active profile (panel-native
-  // portrait frame); this only rotates them into the current orientation.
+  // portrait frame); this only rotates them into the current orientation. The
+  // bezel belongs to the case, so a mount flip does not turn it.
   const BoardConfig::ViewableInsets& vi = BoardConfig::ACTIVE.viewableInsets;
-  switch (orientation) {
+  switch (callerOrientation) {
     case Portrait:
       *outTop = vi.top;
       *outRight = vi.right;

@@ -120,7 +120,7 @@ struct Span {
 void toPanel(const GfxRenderer& renderer, const int x, const int y, int& panelX, int& panelY) {
   const int panelWidth = renderer.getDisplayWidth();
   const int panelHeight = renderer.getDisplayHeight();
-  switch (renderer.getOrientation()) {
+  switch (renderer.getPanelOrientation()) {
     case GfxRenderer::Portrait:
       panelX = y;
       panelY = panelHeight - 1 - x;

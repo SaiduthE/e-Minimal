@@ -51,6 +51,22 @@ static_assert(kXthGray4.v[0x80] == 0xFFAF, "XTH value 2 must be light grey (0xA)
 static_assert(kXthGray4.v[0x88] == 0xFF0F, "XTH value 3 must be black");
 static_assert(kXthGray4.v[0x00] == 0xFFFF, "XTH value 0 must be white");
 
+// A byte's 8 pixels in the opposite order. A panel mounted upside down
+// (GfxRenderer::isMountFlipped) holds a portrait page turned 180 degrees: byte
+// i of the frame is byte size-1-i of the unturned one, its bits reversed.
+struct ReverseBitsTable {
+  uint8_t v[256];
+  constexpr ReverseBitsTable() : v() {
+    for (unsigned i = 0; i < 256; i++) {
+      unsigned r = 0;
+      for (unsigned k = 0; k < 8; k++) r |= ((i >> k) & 1u) << (7 - k);
+      v[i] = static_cast<uint8_t>(r);
+    }
+  }
+};
+constexpr ReverseBitsTable kReverseBits;
+static_assert(kReverseBits.v[0x01] == 0x80 && kReverseBits.v[0xC4] == 0x23, "bit reversal");
+
 // A panel-sized XTH page expanded one physical row at a time into the rows
 // GfxRenderer::displayGray4Rows() sends. Plane byte i is frame-buffer byte i
 // (8 physical pixels, MSB first), so row y is plane bytes y * rowBytes ..
@@ -59,26 +75,32 @@ static_assert(kXthGray4.v[0x00] == 0xFFFF, "XTH value 0 must be white");
 // frame buffer -- what the plane path leaves there for whatever draws over the
 // page next -- and weighs the ink for the dark-page test. Runs on the reader's
 // task, a row at a time, while the rows before it are on the wire: no
-// blocking, no allocation.
+// blocking, no allocation. On a flipped mount panel row y is plane row
+// (last - y) read backwards, each byte's bits reversed.
 struct XthGray4Rows {
   const uint8_t* plane1;
   const uint8_t* plane2;
   uint8_t* fb;
   size_t rowBytes;
+  size_t planeSize;
+  bool flipped;
   uint64_t ink;  // black 3, dark 2, light 1 a pixel, summed over the page
 };
 
 void fillXthGray4Row(void* ctx, const uint16_t row, uint8_t* dst) {
   auto& rows = *static_cast<XthGray4Rows*>(ctx);
-  const size_t start = static_cast<size_t>(row) * rows.rowBytes;
-  const uint8_t* const p1 = rows.plane1 + start;
-  const uint8_t* const p2 = rows.plane2 + start;
+  const size_t n = rows.rowBytes;
+  const size_t start = static_cast<size_t>(row) * n;
+  const size_t srcStart = rows.flipped ? rows.planeSize - start - n : start;
+  const uint8_t* const p1 = rows.plane1 + srcStart;
+  const uint8_t* const p2 = rows.plane2 + srcStart;
   uint8_t* const fb = rows.fb + start;
   // The driver's send rows are word-aligned DMA buffers; one store a plane byte.
   uint32_t* const out = reinterpret_cast<uint32_t*>(dst);
   uint32_t ink = 0;  // at most 8 * 3 a byte, so a row's sum fits easily
-  for (size_t i = 0, n = rows.rowBytes; i < n; i++) {
-    const uint8_t a = p1[i], b = p2[i];
+  for (size_t i = 0; i < n; i++) {
+    const uint8_t a = rows.flipped ? kReverseBits.v[p1[n - 1 - i]] : p1[i];
+    const uint8_t b = rows.flipped ? kReverseBits.v[p2[n - 1 - i]] : p2[i];
     fb[i] = static_cast<uint8_t>(~(a | b));
     // black 3, dark 2, light 1 == popcount(a) + 2 * popcount(b)
     ink += __builtin_popcount(a) + 2 * __builtin_popcount(b);
@@ -317,14 +339,20 @@ void XtcReaderActivity::renderPage() {
                         renderer.getWriteTarget() == fb && pageHeight % 8 == 0 &&
                         pageHeight == renderer.getDisplayWidth() && pageWidth == renderer.getDisplayHeight() &&
                         colBytes == renderer.getDisplayWidthBytes();
+    const bool flipped = renderer.isMountFlipped();
     enum class Pass { Base, Lsb, Msb };
     auto fillPass = [&](const Pass pass) {
       if (direct) {
         for (size_t i = 0; i < planeSize; i++) {
           const uint8_t a = plane1[i], b = plane2[i];
-          fb[i] = pass == Pass::Base ? static_cast<uint8_t>(~(a | b))
-                  : pass == Pass::Lsb ? static_cast<uint8_t>(~a & b)
-                                      : static_cast<uint8_t>(a ^ b);
+          const uint8_t v = pass == Pass::Base ? static_cast<uint8_t>(~(a | b))
+                            : pass == Pass::Lsb ? static_cast<uint8_t>(~a & b)
+                                                : static_cast<uint8_t>(a ^ b);
+          if (flipped) {
+            fb[planeSize - 1 - i] = kReverseBits.v[v];
+          } else {
+            fb[i] = v;
+          }
         }
         return;
       }
@@ -348,7 +376,7 @@ void XtcReaderActivity::renderPage() {
     // keeps the row fill's frame-buffer writes and plane reads in step with
     // the rows the driver asks for.
     if (direct && renderer.supportsGray4() && planeSize == renderer.getBufferSize()) {
-      XthGray4Rows rows{plane1, plane2, fb, renderer.getDisplayWidthBytes(), 0};
+      XthGray4Rows rows{plane1, plane2, fb, renderer.getDisplayWidthBytes(), planeSize, flipped, 0};
       // HALF, as the staged base asked of displayGrayBuffer(): GC16 every page.
       // The planes are only read until this returns; pageBuffer is freed after.
       if (renderer.displayGray4Rows(fillXthGray4Row, &rows, HalDisplay::HALF_REFRESH)) {
@@ -449,6 +477,9 @@ void XtcReaderActivity::renderPage() {
                         renderer.getWriteTarget() == fb && pageHeight % 8 == 0 &&
                         pageHeight == renderer.getDisplayWidth() && pageWidth == renderer.getDisplayHeight() &&
                         fbRowBytes * 8 == pageHeight;
+    // Flipped mount: the 180-degree turn of the portrait byte (see kReverseBits).
+    const bool flipped = renderer.isMountFlipped();
+    const size_t lastByte = static_cast<size_t>(pageWidth) * fbRowBytes - 1;
     if (direct) {
       for (uint16_t y0 = 0; y0 < pageHeight; y0 += 8) {
         const uint8_t* src = pageBuffer + static_cast<size_t>(y0) * srcRowBytes;
@@ -461,7 +492,12 @@ void XtcReaderActivity::renderPage() {
             if (x >= pageWidth) break;  // row padding in the last byte
             uint8_t t = 0;
             for (int k = 0; k < 8; k++) t |= static_cast<uint8_t>(((s[k] >> (7 - j)) & 1) << (7 - k));
-            fb[(pageWidth - 1 - x) * fbRowBytes + fbByte] = t;
+            const size_t at = (pageWidth - 1 - x) * fbRowBytes + fbByte;
+            if (flipped) {
+              fb[lastByte - at] = kReverseBits.v[t];
+            } else {
+              fb[at] = t;
+            }
           }
         }
       }

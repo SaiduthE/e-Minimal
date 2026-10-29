@@ -79,7 +79,8 @@ void ScreenshotUtil::takeScreenshot(GfxRenderer& renderer) {
   char filename[256];
   buildFilename(info, filename, sizeof(filename));
 
-  bool saved = saveFramebufferAsBmp(filename, fb, renderer.getDisplayWidth(), renderer.getDisplayHeight());
+  bool saved = saveFramebufferAsBmp(filename, fb, renderer.getDisplayWidth(), renderer.getDisplayHeight(),
+                                    renderer.isMountFlipped());
   if (saved) {
     LOG_DBG("SCR", "Screenshot saved to %s", filename);
   } else {
@@ -102,7 +103,8 @@ void ScreenshotUtil::takeScreenshot(GfxRenderer& renderer) {
   }
 }
 
-bool ScreenshotUtil::saveFramebufferAsBmp(const char* filename, const uint8_t* framebuffer, int width, int height) {
+bool ScreenshotUtil::saveFramebufferAsBmp(const char* filename, const uint8_t* framebuffer, int width, int height,
+                                          const bool flipped) {
   if (!framebuffer) {
     return false;
   }
@@ -160,6 +162,10 @@ bool ScreenshotUtil::saveFramebufferAsBmp(const char* filename, const uint8_t* f
       // BMP rows are bottom-to-top, so outY=0 is the bottom of the displayed image
       int srcX = width - 1 - outY;     // phyHeight == width
       int srcY = phyWidth - 1 - outX;  // phyWidth == height
+      if (flipped) {
+        srcX = width - 1 - srcX;
+        srcY = height - 1 - srcY;
+      }
       int fbIndex = srcY * (width / 8) + (srcX / 8);
       uint8_t pixel = (framebuffer[fbIndex] >> (7 - (srcX % 8))) & 0x01;
       rowBuffer[outX / 8] |= pixel << (7 - (outX % 8));

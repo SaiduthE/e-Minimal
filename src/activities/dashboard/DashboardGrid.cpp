@@ -91,7 +91,7 @@ Rect tileRect(const GfxRenderer& renderer, const DashboardTile& tile) {
   const int height = renderer.getScreenHeight();
   Axis xAxis;
   Axis yAxis;
-  axesFor(renderer.getOrientation(), xAxis, yAxis);
+  axesFor(renderer.getPanelOrientation(), xAxis, yAxis);
   const int originX = alignedOrigin(width, columns * dashboard_layout::CELL_PX, xAxis);
   const int originY = alignedOrigin(height, rows * dashboard_layout::CELL_PX, yAxis);
 
