@@ -539,10 +539,12 @@ void SleepActivity::onEnter() {
 
   // Show popup with reader orientation only when going to sleep from reader;
   // elsewhere the UI's own. Sleep images are portrait either way.
-  if (APP_STATE.lastSleepFromReader) {
-    ReaderUtils::applyOrientation(renderer, SETTINGS.orientation);
+  if (!redraw) {
+    if (APP_STATE.lastSleepFromReader) {
+      ReaderUtils::applyOrientation(renderer, SETTINGS.orientation);
+    }
+    GUI.drawPopup(renderer, tr(STR_ENTERING_SLEEP));
   }
-  GUI.drawPopup(renderer, tr(STR_ENTERING_SLEEP));
   renderer.setOrientation(GfxRenderer::Orientation::Portrait);
 
   switch (SETTINGS.sleepScreen) {

@@ -5,6 +5,7 @@
 #include <PowerManager.h>
 #include <WiFi.h>
 #include <driver/gpio.h>
+#include <driver/rtc_io.h>
 #include <esp_sleep.h>
 #include <soc/soc_caps.h>
 
@@ -73,7 +74,27 @@ namespace {
 // the RTC); 0 = none. RTC memory, so a wake that goes straight back to sleep can
 // re-arm what is left of it.
 RTC_DATA_ATTR time_t timerWakeAt = 0;
+RTC_DATA_ATTR bool badgeShown = false;
+RTC_DATA_ATTR bool chargeTickWasArmed = false;
+RTC_DATA_ATTR uint8_t usbBounces = 0;
+RTC_DATA_ATTR bool wakeRequested = false;
+constexpr uint32_t HANDOVER_WAKE_MS = 10;
 }  // namespace
+
+bool HalPowerManager::badgeOnGlass() { return badgeShown; }
+void HalPowerManager::setBadgeOnGlass(const bool shown) { badgeShown = shown; }
+void HalPowerManager::requestWake() { wakeRequested = true; }
+bool HalPowerManager::takeWakeRequest() {
+  const bool requested = wakeRequested;
+  wakeRequested = false;
+  return requested;
+}
+
+bool HalPowerManager::chargeTickArmed() { return chargeTickWasArmed; }
+void HalPowerManager::noteUsbBounce() {
+  if (usbBounces < MAX_USB_BOUNCES) usbBounces++;
+}
+void HalPowerManager::clearUsbBounces() { usbBounces = 0; }
 
 void HalPowerManager::resumeDeepSleep(HalGPIO& gpio) const {
   uint32_t timerWakeMs = 0;
@@ -85,12 +106,37 @@ void HalPowerManager::resumeDeepSleep(HalGPIO& gpio) const {
 }
 
 void HalPowerManager::startDeepSleep(HalGPIO& gpio, const uint32_t timerWakeMs) const {
-  if (timerWakeMs > 0) {
-    timerWakeAt = time(nullptr) + static_cast<time_t>((timerWakeMs + 999) / 1000);
-    esp_sleep_enable_timer_wakeup(static_cast<uint64_t>(timerWakeMs) * 1000ULL);
-    LOG_DBG("PWR", "Deep sleep with a timer wake in %lu s", static_cast<unsigned long>(timerWakeMs / 1000));
-  } else {
-    timerWakeAt = 0;
+  // timerWakeAt is the caller's own wake; resumeDeepSleep() re-arms what is left of it.
+  timerWakeAt = timerWakeMs > 0 ? time(nullptr) + static_cast<time_t>((timerWakeMs + 999) / 1000) : 0;
+  uint32_t armMs = timerWakeMs;
+  chargeTickWasArmed = false;
+  if (BoardConfig::isEMinimal78() && BoardConfig::ACTIVE.usbDetect >= 0 &&
+      rtc_gpio_is_valid_gpio(static_cast<gpio_num_t>(BoardConfig::ACTIVE.usbDetect))) {
+    // Wake when the USB-detect line differs from what the glass shows: on the
+    // cable going out with the badge up, in without it. Level-triggered, so a
+    // cable that moved while awake wakes this sleep at once. The line is a
+    // divider off VBUS, so no pull of our own.
+    const auto usbPin = static_cast<gpio_num_t>(BoardConfig::ACTIVE.usbDetect);
+    if (usbBounces < MAX_USB_BOUNCES) {
+      rtc_gpio_pullup_dis(usbPin);
+      rtc_gpio_pulldown_dis(usbPin);
+      esp_sleep_enable_ext0_wakeup(usbPin, badgeShown ? 0 : 1);
+    } else {
+      LOG_ERR("PWR", "USB-detect line too noisy to wake on; not watching it this sleep");
+    }
+    if (badgeShown && gpio.isUsbConnected() && (armMs == 0 || armMs > CHARGE_TICK_MS)) {
+      armMs = CHARGE_TICK_MS;
+      chargeTickWasArmed = true;
+    }
+  }
+  if (wakeRequested) {
+    armMs = HANDOVER_WAKE_MS;
+    chargeTickWasArmed = false;
+  }
+  if (armMs > 0) {
+    esp_sleep_enable_timer_wakeup(static_cast<uint64_t>(armMs) * 1000ULL);
+    LOG_DBG("PWR", "Deep sleep with a timer wake in %lu s%s", static_cast<unsigned long>(armMs / 1000),
+            chargeTickWasArmed ? " (charge badge)" : "");
   }
 #ifdef ENABLE_SERIAL_LOG
   // Tear down HWCDC so the host sees a clean disconnect and the peripheral
@@ -154,6 +200,12 @@ void HalPowerManager::startDeepSleep(HalGPIO& gpio, const uint32_t timerWakeMs) 
   }
 #endif
 
+  if (wakeRequested) {
+    // Asleep only to hand over to a wake: no wait for the key's release, and a
+    // power key still held wakes it at once like the timer above.
+    freeink::PowerManager::armPowerButtonWakeup();
+    freeink::PowerManager::deepSleep();
+  }
   // Waits for the power button to be physically released (so holding it doesn't
   // immediately wake the device again), then arms the wake source and sleeps.
   freeink::PowerManager::deepSleepUntilPowerButton();

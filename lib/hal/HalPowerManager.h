@@ -46,6 +46,29 @@ class HalPowerManager {
   // to verify), keeping the timer wake the last sleep had armed.
   void resumeDeepSleep(HalGPIO& gpio) const;
 
+  // e-Minimal: a deep sleep also wakes when the USB-detect line (ext0) stops
+  // matching the glass (the charging badge shown with the cable out, or not
+  // shown with it in) and, while the badge is up, every CHARGE_TICK_MS to
+  // refresh it.
+#ifndef EMINIMAL_CHARGE_TICK_S
+#define EMINIMAL_CHARGE_TICK_S 1800
+#endif
+  static constexpr uint32_t CHARGE_TICK_MS = static_cast<uint32_t>(EMINIMAL_CHARGE_TICK_S) * 1000UL;
+  static bool badgeOnGlass();
+  static void setBadgeOnGlass(bool shown);
+  static bool chargeTickArmed();  // the timer armed was the badge's, not the caller's
+  // A USB-detect wake that found no change. After MAX_USB_BOUNCES in a row the
+  // line is taken for noise (a divider sitting at the input threshold) and
+  // sleeps stop waking on it until a user wake clears the count.
+  static constexpr uint8_t MAX_USB_BOUNCES = 3;
+  static void noteUsbBounce();
+  static void clearUsbBounces();
+  // A key pressed during a badge wake: the next sleep wakes at once, without
+  // waiting for the key's release, and that boot takes it as a verified
+  // power-button wake (takeWakeRequest()).
+  static void requestWake();
+  static bool takeWakeRequest();
+
   enum class LightSleepWake : uint8_t { Timer, Button, NotSupported };
   // Light sleep until maxMs passes (0: no timer) or any key goes down. RAM, the
   // running activity and the panel's image survive; the CPUs stop. For screens

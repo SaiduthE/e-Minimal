@@ -111,7 +111,7 @@ class ActivityManager {
   void goToBrowser();
   void goToReader(std::string path, bool allowFastInitialRefresh = false);
   // keepScreen: the sleep leaves the current screen on the glass (the Dashboard).
-  void goToSleep(bool fromTimeout = false, bool keepScreen = false);
+  void goToSleep(bool fromTimeout = false, bool keepScreen = false, bool redraw = false);
   void goToBoot();
   void goToFullScreenMessage(std::string message, EpdFontFamily::Style style = EpdFontFamily::REGULAR);
   void goToCrashReport();

@@ -1785,6 +1785,44 @@ bool GfxRenderer::glyphIntersectsStrip(int x0, int y0, int x1, int y1) const {
   return !(maxY < _stripY0 || minY >= _stripY0 + _stripRows);
 }
 
+void GfxRenderer::displayWindow(const int x, const int y, const int width, const int height) const {
+  const AlignedMemRect mem = screenRectToAlignedMemRect(orientation, x, y, width, height, panelWidth, panelHeight);
+  if (!mem.valid) return;
+  display.displayWindow(mem.x, mem.y, mem.w, mem.h);
+}
+
+void GfxRenderer::panelRectToScreen(const int px, const int py, const int pw, const int ph, int* x, int* y, int* width,
+                                    int* height) const {
+  // rotateCoordinates() run backwards on two opposite corners.
+  auto toScreen = [this](const int phyX, const int phyY, int* sx, int* sy) {
+    switch (orientation) {
+      case Portrait:
+        *sx = panelHeight - 1 - phyY;
+        *sy = phyX;
+        break;
+      case LandscapeClockwise:
+        *sx = panelWidth - 1 - phyX;
+        *sy = panelHeight - 1 - phyY;
+        break;
+      case PortraitInverted:
+        *sx = phyY;
+        *sy = panelWidth - 1 - phyX;
+        break;
+      case LandscapeCounterClockwise:
+        *sx = phyX;
+        *sy = phyY;
+        break;
+    }
+  };
+  int x0, y0, x1, y1;
+  toScreen(px, py, &x0, &y0);
+  toScreen(px + pw - 1, py + ph - 1, &x1, &y1);
+  *x = std::min(x0, x1);
+  *y = std::min(y0, y1);
+  *width = std::max(x0, x1) - *x + 1;
+  *height = std::max(y0, y1) - *y + 1;
+}
+
 void GfxRenderer::invertScreen() const {
   for (uint32_t i = 0; i < frameBufferSize; i++) {
     frameBuffer[i] = ~frameBuffer[i];
