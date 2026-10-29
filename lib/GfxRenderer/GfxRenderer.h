@@ -49,7 +49,11 @@ class GfxRenderer {
   HalDisplay& display;
   RenderMode renderMode;
   mutable bool absoluteGrayPlanes = false;
+  // What panel memory is drawn in: the caller's orientation, turned 180 degrees
+  // on a board whose panel is mounted upside down (see begin()).
   Orientation orientation;
+  Orientation callerOrientation;
+  bool mountFlipped = false;
   bool fadingFix;
   uint8_t* frameBuffer = nullptr;
   uint16_t panelWidth = HalDisplay::DISPLAY_WIDTH;
@@ -151,7 +155,7 @@ class GfxRenderer {
 
  public:
   explicit GfxRenderer(HalDisplay& halDisplay)
-      : display(halDisplay), renderMode(BW), orientation(Portrait), fadingFix(false) {}
+      : display(halDisplay), renderMode(BW), orientation(Portrait), callerOrientation(Portrait), fadingFix(false) {}
   ~GfxRenderer() {
     freeBwBufferChunks();
     releaseGray4Target();
@@ -223,8 +227,16 @@ class GfxRenderer {
                              bool includeSpace, bool includeHyphen, uint8_t styleMask = 0x0F) const;
 
   // Orientation control (affects logical width/height and coordinate transforms)
-  void setOrientation(const Orientation o) { orientation = o; }
-  Orientation getOrientation() const { return orientation; }
+  void setOrientation(const Orientation o) {
+    callerOrientation = o;
+    orientation = mountFlipped ? static_cast<Orientation>((o + 2) % 4) : o;
+  }
+  // The orientation as the user holds the device: layout, button hints, labels.
+  Orientation getOrientation() const { return callerOrientation; }
+  // The orientation logical coordinates land on panel memory in; what code that
+  // writes the frame buffer directly must follow.
+  Orientation getPanelOrientation() const { return orientation; }
+  bool isMountFlipped() const { return mountFlipped; }
 
   // Fading fix control
   void setFadingFix(const bool enabled) { fadingFix = enabled; }

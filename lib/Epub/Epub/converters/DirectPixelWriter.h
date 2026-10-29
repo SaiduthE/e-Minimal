@@ -57,7 +57,7 @@ struct DirectPixelWriter {
     const int phyW = renderer.getDisplayWidth();
     const int phyH = renderer.getDisplayHeight();
 
-    switch (renderer.getOrientation()) {
+    switch (renderer.getPanelOrientation()) {
       case GfxRenderer::Portrait:
         // phyX = y, phyY = (phyH-1) - x
         phyXBase = 0;
