@@ -82,16 +82,20 @@ void EMinimalHomeUi::begin(const std::vector<RecentBook>& recent, bool opds, boo
 }
 
 void EMinimalHomeUi::refreshCoverPaths() {
-  coverCache.invalidate();
   for (size_t i = 0; i < books->size() && i < coverPaths.size(); ++i) refreshCoverPath(i);
 }
 
 void EMinimalHomeUi::refreshCoverPath(size_t index) {
   if (index >= books->size() || index >= coverPaths.size()) return;
-  coverCache.invalidate(index);
-  coverPaths[index] = thumbHeights[index] > 0
-                          ? UITheme::getCoverThumbPath((*books)[index].coverBmpPath, thumbHeights[index])
-                          : std::string();
+  std::string path = thumbHeights[index] > 0
+                         ? UITheme::getCoverThumbPath((*books)[index].coverBmpPath, thumbHeights[index])
+                         : std::string();
+  // A snapshot stays good while the path does: a thumb is fixed by its path,
+  // and a missing one is never cached (HomeCoverCache::paint).
+  if (path != coverPaths[index]) {
+    coverCache.invalidate(index);
+    coverPaths[index] = std::move(path);
+  }
   if (index != 0) return;
   coverCache.readSize(coverPaths[0], featuredCoverWidth, featuredCoverHeight);
 }

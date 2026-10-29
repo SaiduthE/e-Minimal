@@ -481,10 +481,14 @@ void ActivityManager::openPowerMenu() {
   if (!currentActivity || isPowerMenuOpen() || pendingAction != PendingAction::None) return;
   // The handler runs on the pop, before the returned-to activity repaints, so a
   // forced refresh scheduled here lands on that repaint (the reader turns it
-  // into a full-refresh page render; the others repaint as a screen change,
-  // which the driver already clears with a GC16).
+  // into a full-refresh page render; the others repaint as a screen change).
+  // The menu covers the whole screen, and a DU over a clean screen (Home,
+  // Dashboard, Games) leaves its shadow, so it opens with a clearing refresh.
+  // The mostly white menu leaves none, so Back repaints with the usual DU.
   currentActivity->startActivityForResult(
-      std::make_unique<PowerMenuActivity>(renderer, mappedInput), [this](const ActivityResult& result) {
+      std::make_unique<PowerMenuActivity>(renderer, mappedInput, PowerMenuActivity::Mode::POWER_MENU,
+                                          /*cleanInitialRefresh=*/true),
+      [this](const ActivityResult& result) {
         if (result.isCancelled) return;
         const auto* menu = std::get_if<MenuResult>(&result.data);
         if (!menu) return;
