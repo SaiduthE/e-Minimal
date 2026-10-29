@@ -26,6 +26,10 @@ with the reader's rotation. Detect this board at runtime with
 `MappedInputManager`, not `HalGPIO::BTN_*`, unless a site must stay physical.
 Pin table: `e-Minimal-Notes/MAP.md` §2; controls: `docs/eminimal-controls.md`.
 
+**Branch.** Work directly on `eminimal-7in8` in the main checkout
+(`D:\Personal_Projects\e-Minimal\e-Minimal`); the SDK submodule's branch is
+`eminimal-7in8` too. No feature branches or worktrees unless Sai asks for one.
+
 **Build env.** Always pass `-e eminimal`: `platformio.ini:2`
 `default_envs = default` is the Xteink C3 target; on a clone without
 `platformio.local.ini` (which pins `default_envs = eminimal` on this PC), a
