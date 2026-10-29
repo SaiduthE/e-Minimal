@@ -256,7 +256,6 @@ int EpubReaderActivity::bookPercentFor(const ChapterPosition& position) const {
 }
 
 void EpubReaderActivity::openReaderMenu() {
-  pendingManualTurn = 0;
   if (usesToolbarMenu()) {
     // Reached from a child activity's result handler (footnotes, bookmarks,
     // go-to-percent... cancelled back to the menu), so the framebuffer holds
@@ -573,7 +572,6 @@ void EpubReaderActivity::loop() {
     // Toolbar style: the page is on screen and in the framebuffer, so paint the
     // toolbar over it (one refresh) instead of pushing a full-screen menu.
     if (usesToolbarMenu() && section) {
-      pendingManualTurn = 0;
       openOverlay(Overlay::Toolbar);
     } else {
       openReaderMenu();
@@ -615,18 +613,7 @@ void EpubReaderActivity::loop() {
   }
 
   constexpr unsigned long kMinManualTurnGapMs = 200;
-  const bool turnGuardActive = RenderLock::peek() || (millis() - lastPageTurnTime) < kMinManualTurnGapMs;
-  if (pendingManualTurn != 0 && !turnGuardActive) {
-    if (!section) {
-      pendingManualTurn = 0;
-      return;
-    }
-    const bool forward = pendingManualTurn > 0;
-    pendingManualTurn = 0;
-    pageTurn(forward);
-    requestUpdate();
-    return;
-  }
+  const bool turnGuardActive = pageDrawBusy() || (millis() - lastPageTurnTime) < kMinManualTurnGapMs;
 
   auto [prevTriggered, nextTriggered, fromTilt] = ReaderUtils::detectPageTurn(mappedInput);
   prevTriggered = prevTriggered || touch.prev;
@@ -666,10 +653,7 @@ void EpubReaderActivity::loop() {
     return;
   }
 
-  if (turnGuardActive) {
-    pendingManualTurn = prevTriggered ? -1 : 1;
-    return;
-  }
+  if (turnGuardActive) return;  // see pageDrawBusy()
 
   if (prevTriggered) {
     pageTurn(false);

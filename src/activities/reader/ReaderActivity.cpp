@@ -157,6 +157,7 @@ void ReaderActivity::loop() {
   prevTriggered = prevTriggered || touch.prev;
   nextTriggered = nextTriggered || touch.next;
   if (!prevTriggered && !nextTriggered) return;
+  if (pageDrawBusy()) return;
   if (isRightToLeft()) std::swap(prevTriggered, nextTriggered);
   if (handleEndOfBookPageTurn(prevTriggered, nextTriggered)) return;
 
