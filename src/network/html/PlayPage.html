@@ -466,7 +466,7 @@
 
   function joinCard(box, s) {
     var open = s.phase === "lobby", c = card(box, open ? "Join the table" : "A round is on"), back = rejoinable(s);
-    if (!open) c.appendChild(text("p", "Rejoin under your name, or watch it on the reader.", "small muted"));
+    if (!open) c.appendChild(text("p", "Rejoin under your name, or watch it on e-mini.", "small muted"));
     var f = div("field"), label = text("label", "Your name");
     var name = input("nameInput", "text", nameDraft, function (v) { nameDraft = v; });
     label.htmlFor = "nameInput";
@@ -506,7 +506,7 @@
     if (s.host) c.appendChild(button("Start " + s.title, "btn btn-primary btn-block", function () { hostAct("next"); }, !s.canStart));
     else c.appendChild(text("p", hostLine(s, "pick the game and start it"), "small muted"));
     var hint = !s.canStart ? "Needs " + s.minPlayers + " players – " + ps.length + " here"
-      : ps.length > s.maxPlayers ? "The first " + s.maxPlayers + " play; the others watch the reader." : "";
+      : ps.length > s.maxPlayers ? "The first " + s.maxPlayers + " play; the others watch e-mini." : "";
     if (hint) c.appendChild(text("span", hint, "field-hint"));
     if (!s.host || s.testMode !== true) return;
 
@@ -565,7 +565,7 @@
 
   function seatsOnly(box, game, n) {
     var c = card(box, "Watching");
-    c.appendChild(text("p", game + " seats the first " + n + " players – watch the reader.", "small muted"));
+    c.appendChild(text("p", game + " seats the first " + n + " players – watch e-mini.", "small muted"));
     return c;
   }
 
