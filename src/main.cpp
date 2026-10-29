@@ -42,6 +42,7 @@
 #include "platform/UsbSerialJtagHandoff.h"
 #include "util/ButtonNavigator.h"
 #include "util/CardFolders.h"
+#include "util/ChargeBadge.h"
 #include "util/PowerProbe.h"
 #include "util/ScreenshotUtil.h"
 #include "util/TaskWatchdog.h"
@@ -306,7 +307,8 @@ static void saveSleepFrameBuffer() {
   file.close();
 }
 
-static bool loadSleepFrameBuffer() {
+// keepFile: the sleep goes on (the charging badge leaving), so the wake still needs it.
+static bool loadSleepFrameBuffer(const bool keepFile = false) {
   HalFile file;
   if (!Storage.openFileForRead("SLP", SLEEP_FRAME_FILE, file)) return false;
   const size_t bufferSize = display.getBufferSize();
@@ -316,13 +318,14 @@ static bool loadSleepFrameBuffer() {
     Storage.remove(SLEEP_FRAME_FILE);
     return false;
   }
-  Storage.remove(SLEEP_FRAME_FILE);
+  if (!keepFile) Storage.remove(SLEEP_FRAME_FILE);
   return true;
 }
 
 // Enter deep sleep mode
 void enterDeepSleep(bool fromTimeout = false) {
   HalPowerManager::Lock powerLock;  // Ensure we are at normal CPU frequency for sleep preparation
+  HalPowerManager::clearUsbBounces();  // a sleep the user chose watches the USB line afresh
   APP_STATE.lastSleepFromReader = activityManager.isReaderActivity();
 #if FREEINK_DEVICE_EMINIMAL
   // The Dashboard sleeps with its own screen on the glass instead of the sleep
@@ -359,6 +362,14 @@ void enterDeepSleep(bool fromTimeout = false) {
     // A stale Quick Resume frame must not replace the selected sleep screen during wake.
     Storage.remove(SLEEP_FRAME_FILE);
   }
+
+#if FREEINK_DEVICE_EMINIMAL
+  // A fresh sleep screen carries no charging badge. On the charger, the sleep
+  // then wakes at once (the line disagrees with the glass) and draws it from
+  // that wake; drawn here, straight after the sleep screen, it never reached
+  // the glass.
+  HalPowerManager::setBadgeOnGlass(false);
+#endif
 
   // Tear down WiFi so the modem power domain isn't held alive across deep sleep.
   // Wake from deep sleep is effectively a chip reset, so no state needs to survive.
@@ -431,6 +442,76 @@ void setupDisplayAndFonts(bool seamless = false) {
   LOG_DBG("MAIN", "Fonts setup");
 }
 
+#if FREEINK_DEVICE_EMINIMAL
+constexpr unsigned long CHARGE_WAKE_DEBOUNCE_MS = 100;
+
+// A key seen down at any point of a badge wake: the user is waking it.
+static bool chargeWakeKeySeen = false;
+static void noteChargeWakeKey() { chargeWakeKeySeen = chargeWakeKeySeen || gpio.rawInputActive(); }
+
+static void sleepAfterChargeWake(const bool displayStarted = true) {
+  if (displayStarted) display.deepSleep();
+  Storage.prepareForDeepSleep();
+  noteChargeWakeKey();  // the last look, as late as it can be
+  if (chargeWakeKeySeen) {
+    // Hand over: the next boot, a moment from now, is an ordinary wake.
+    LOG_INF("MAIN", "Key pressed during a charge wake: waking");
+    HalPowerManager::requestWake();
+  }
+  // A cable moved meanwhile no longer matches the glass, and wakes this sleep at once.
+  powerManager.resumeDeepSleep(gpio);  // a Dashboard sleep keeps its own timer wake
+}
+
+// A deep sleep wakes when the USB-detect line stops matching the charging badge
+// on the glass (ext0) and, while the badge is up, on its timer. None of these
+// is the user waking it: show or refresh the badge over the kept glass, or
+// redraw the sleep screen once the cable is out, and sleep again. A key pressed
+// meanwhile hands over to an ordinary wake. Returns true when the sleep was the
+// Dashboard's and the cable is out: its timer-wake repaint does that.
+static bool handleChargeWake() {
+  if (esp_reset_reason() != ESP_RST_DEEPSLEEP) return false;
+  const esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
+  const bool edge = cause == ESP_SLEEP_WAKEUP_EXT0;
+  if (!edge && !(cause == ESP_SLEEP_WAKEUP_TIMER && HalPowerManager::chargeTickArmed())) return false;
+
+  noteChargeWakeKey();
+  delay(CHARGE_WAKE_DEBOUNCE_MS);  // a cable going in or out bounces
+  noteChargeWakeKey();
+  if (chargeWakeKeySeen) sleepAfterChargeWake(/*displayStarted=*/false);  // waking anyway: draw nothing
+  const bool usb = gpio.isUsbConnected();
+  const bool badge = HalPowerManager::badgeOnGlass();
+  if (edge && usb == badge) {
+    // Woke on the line but it agrees with the glass: noise, or a cable in and out.
+    HalPowerManager::noteUsbBounce();
+    LOG_DBG("MAIN", "USB-detect wake with no change, sleeping");
+    sleepAfterChargeWake(/*displayStarted=*/false);
+  }
+  HalPowerManager::clearUsbBounces();
+
+  if (usb) {
+    LOG_INF("MAIN", "%s: charging badge", badge ? "Charge tick" : "USB in");
+    display.keepGlassOnNextBegin();
+    setupDisplayAndFonts(true);
+    charge_badge::show(renderer, powerManager);
+    HalPowerManager::setBadgeOnGlass(true);
+    sleepAfterChargeWake();
+  }
+
+  LOG_INF("MAIN", "USB out: the sleep screen again");
+  HalPowerManager::setBadgeOnGlass(false);
+  if (APP_STATE.lastSleepFromDashboard) return true;
+  display.keepGlassOnNextBegin();
+  setupDisplayAndFonts(true);
+  if (Storage.exists(SLEEP_FRAME_FILE) && loadSleepFrameBuffer(/*keepFile=*/true)) {
+    renderer.displayBuffer(HalDisplay::HALF_REFRESH);  // Quick Resume: the saved frame
+  } else {
+    activityManager.goToSleep(false, false, /*redraw=*/true);
+  }
+  sleepAfterChargeWake();
+  return false;
+}
+#endif
+
 void setup() {
   BoardConfig::holdPowerRails();
 
@@ -464,12 +545,16 @@ void setup() {
   gpio.begin();
   powerManager.begin();
 
-  const auto wakeupReason = gpio.getWakeupReason();
+  // A key pressed during an e-Minimal charging-badge wake handed over to this
+  // boot: a power-button wake, already verified.
+  const bool handedWake = HalPowerManager::takeWakeRequest();
+  const auto wakeupReason = handedWake ? HalGPIO::WakeupReason::PowerButton : gpio.getWakeupReason();
   // Sample the wake hold now — a click wake is released within milliseconds of
   // boot — but defer the sleep-or-boot decision until SETTINGS is loaded below:
   // click-to-wake is a setting, and an X4 battery power-off cuts all power, so
   // only SD state survives to the next boot.
-  const bool wakeHoldVerified = wakeupReason != HalGPIO::WakeupReason::PowerButton || gpio.verifyPowerButtonWakeup();
+  const bool wakeHoldVerified =
+      handedWake || wakeupReason != HalGPIO::WakeupReason::PowerButton || gpio.verifyPowerButtonWakeup();
 
   // X4 Pro and X4 Classic both map BTN_UP to GPIO0 — an ESP32-S3 boot strap — so
   // gate recovery on the non-strap Down key (GPIO7) to avoid a stuck-in-recovery loop.
@@ -541,6 +626,12 @@ void setup() {
   const bool restoreLightOn =
       isSilentReboot ? silentRebootLightOn : (SETTINGS.frontlightOn != 0 && SETTINGS.frontlightRestoreOnWake != 0);
   Frontlight.begin(SETTINGS.frontlightBrightness, SETTINGS.frontlightWarmth, restoreLightOn);
+
+#if FREEINK_DEVICE_EMINIMAL
+  const bool chargeDashboardRepaint = handleChargeWake();
+#else
+  constexpr bool chargeDashboardRepaint = false;
+#endif
 
   switch (wakeupReason) {
     case HalGPIO::WakeupReason::PowerButton:
@@ -664,7 +755,7 @@ void setup() {
     // openEpubPath + lastSleepFromReader from a prior session.
     activityManager.goHome();
   } else if (isDashboardWake && !backHeldAtBoot) {
-    activityManager.goToDashboard(APP_STATE.dashboardViewOpen, isDashboardTimerWake);
+    activityManager.goToDashboard(APP_STATE.dashboardViewOpen, isDashboardTimerWake || chargeDashboardRepaint);
   } else if (APP_STATE.lastApp != AppId::READER && !backHeldAtBoot) {
     // Last in the Dashboard or Games: offer the apps rather than reopen one
     // unasked (Games would bring its hotspot up). Back held is the way to Home.

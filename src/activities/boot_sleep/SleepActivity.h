@@ -9,9 +9,10 @@ class HalFile;
 class SleepActivity final : public Activity {
  public:
   // keepScreen: draw nothing, so the screen being left stays on the glass.
+  // redraw: the sleep screen again, mid-sleep (the charging badge leaving): no popup first.
   explicit SleepActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, bool fromTimeout = false,
-                         bool keepScreen = false)
-      : Activity("Sleep", renderer, mappedInput), fromTimeout(fromTimeout), keepScreen(keepScreen) {}
+                         bool keepScreen = false, bool redraw = false)
+      : Activity("Sleep", renderer, mappedInput), fromTimeout(fromTimeout), keepScreen(keepScreen), redraw(redraw) {}
   void onEnter() override;
 
  private:
@@ -28,4 +29,5 @@ class SleepActivity final : public Activity {
 
   bool fromTimeout = false;
   bool keepScreen = false;
+  bool redraw = false;
 };

@@ -53,6 +53,9 @@ class HalDisplay {
                             bool fromProgmem = false) const;
 
   void displayBuffer(RefreshMode mode = RefreshMode::FAST_REFRESH, bool turnOffScreen = false);
+  // Refresh only a panel-memory rectangle (x and w multiples of 8). On the
+  // IT8951 a GC16 that leaves the rest of the glass as it is.
+  void displayWindow(uint16_t x, uint16_t y, uint16_t w, uint16_t h) { einkDisplay.displayWindow(x, y, w, h); }
   // Non-blocking refresh (shadow-free): starts the panel waveform and returns
   // while the panel refreshes on its own. The framebuffer must stay untouched
   // until waitRefreshComplete(), and the caller must rebuild the differential
