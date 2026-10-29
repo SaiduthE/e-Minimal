@@ -25,6 +25,11 @@ struct ThemeMetrics {
 
   int topPadding;
   int batteryBarHeight;
+  // Status bar: a strip this tall across the top of the safe area holds the
+  // battery, link glyph and clock, vertically centred, and topPadding starts
+  // at or below it so no header title shares its rows. 0 = no strip (the
+  // status line sits on the header's own line).
+  int statusBarHeight = 0;
   int headerHeight;
   int verticalSpacing;
 
@@ -247,12 +252,11 @@ class BaseTheme {
   // its row height from the font, not the metrics table).
   virtual int getMenuRowHeight(const GfxRenderer& renderer) const;
   // Also draws the wall clock opposite the battery when the user enabled
-  // SETTINGS.clockShowInHeader and an RTC is present.
+  // SETTINGS.clockShowInHeader and an RTC is present. The status line
+  // (battery, link glyph, clock) is placed from the screen's safe area, not
+  // `rect`, so it sits in one spot on every screen; `rect` places the title.
   virtual void drawHeader(const GfxRenderer& renderer, Rect rect, const char* title,
                           const char* subtitle = nullptr) const;
-  // Edge inset drawHeader uses for the clock/battery status line (detached
-  // layouts hug the corner with a legacy 12px inset instead of the padding).
-  static int headerStatusInset();
   virtual void drawSubHeader(const GfxRenderer& renderer, Rect rect, const char* label,
                              const char* rightLabel = nullptr) const;
   virtual void drawRecentBookCover(GfxRenderer& renderer, Rect rect, const std::vector<RecentBook>& recentBooks,

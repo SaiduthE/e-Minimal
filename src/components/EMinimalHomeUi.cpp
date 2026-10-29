@@ -147,15 +147,18 @@ void EMinimalHomeUi::draw(UiScreen& screen) {
   screen.insetContent(fui::Insets{theme.spaceSm, side, theme.spaceSm, side});
   const bool landscape = renderer.getScreenWidth() > renderer.getScreenHeight();
   const auto& metrics = UITheme::getInstance().getMetrics();
-  // A 0 px battery strip (RoundedRaff/e-Minimal on this device, see
-  // UITheme::getMetrics) centres the glyph on the header's top edge; give the
-  // home its own status band and let drawHeaderBand centre the glyph in it.
-  const auto header = screen.takeTop(metrics.batteryBarHeight > 0 ? metrics.batteryBarHeight : 2 * metrics.topPadding);
+  // Reserve the status bar drawHeader centres the battery in (it is measured
+  // from the safe area, which this page's content starts one spaceSm below).
+  const int16_t statusBand =
+      metrics.statusBarHeight > 0
+          ? static_cast<int16_t>(std::max(0, metrics.statusBarHeight - theme.spaceSm))
+          : static_cast<int16_t>(metrics.batteryBarHeight > 0 ? metrics.batteryBarHeight : 2 * metrics.topPadding);
+  const auto header = screen.takeTop(statusBand);
   const auto tabRect = screen.takeBottom(UITheme::scaledPx(metrics.coverGridTabBarHeight), theme.spaceMd);
   if (books->empty()) {
     drawTabs(screen, tabRect);
     drawEmpty(screen);
-    drawHeaderBand(header, tabRect.x, tabRect.right());
+    drawHeaderBand(header);
     return;
   }
   auto headingText = theme.titleText;
@@ -170,26 +173,13 @@ void EMinimalHomeUi::draw(UiScreen& screen) {
   drawGrid(screen);
   screen.target().text(headingRect, hasContinueReading ? tr(STR_CONTINUE_READING) : tr(STR_START_READING), headingText);
   drawTabs(screen, tabRect);
-  // The status line's outer edges (clock left, battery right) land on the
-  // same margin as the covers and tab icons.
-  drawHeaderBand(header, tabRect.x, tabRect.right());
+  drawHeaderBand(header);
 }
 
-void EMinimalHomeUi::drawHeaderBand(fui::Rect header, int coverLeft, int coverRight) {
-  // Same alignment trick as the tabs: the clock's left edge and the battery's
-  // right edge sit on the outer cover columns. drawHeader anchors both at
-  // headerStatusInset() from the band edges, and the clock text is
-  // left-anchored, so 1- vs 2-digit hours never move it.
-  const int inset = GUI.headerStatusInset();
-  const int headerX = std::max(0, coverLeft - inset);
-  const int headerRight = std::min<int>(renderer.getScreenWidth(), coverRight + inset);
-  if (UITheme::getInstance().getMetrics().batteryBarHeight == 0) {
-    // The status line centres on the rect's top edge: start the rect mid-band.
-    const int16_t half = header.height / 2;
-    header.y += half;
-    header.height -= half;
-  }
-  GUI.drawHeader(renderer, Rect{headerX, header.y, headerRight - headerX, header.height}, nullptr);
+void EMinimalHomeUi::drawHeaderBand(fui::Rect header) {
+  // drawHeader puts the status line on the screen-wide grid, which is this
+  // page's side margin, so it lines up with the outer cover columns.
+  GUI.drawHeader(renderer, Rect{header.x, header.y, header.width, header.height}, nullptr);
 }
 
 void EMinimalHomeUi::drawEmpty(UiScreen& screen) {

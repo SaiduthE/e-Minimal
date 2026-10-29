@@ -100,7 +100,7 @@ void CoverGridHomeUi::draw(UiScreen& screen) {
   if (books->empty()) {
     drawTabs(screen, tabRect.inset(fui::Insets{0, 6, 0, 6}));
     drawEmpty(screen);
-    drawHeaderBand(header, tabRect.x + 6, tabRect.x + tabRect.width - 6);
+    drawHeaderBand(header);
     return;
   }
   auto headingText = theme.titleText;
@@ -116,27 +116,20 @@ void CoverGridHomeUi::draw(UiScreen& screen) {
   const auto& gridRect = gridBounds;
   tabRect.x = gridRect.x + grid.cellInset.left;
   tabRect.width = gridRect.width - grid.cellInset.left - grid.cellInset.right;
-  // Heading shares the clock's alignment line (drawHeaderBand lands the
-  // status content on the outer cover columns, i.e. this same x). The
-  // selection ring extends left of this line by design — it reads as a frame
-  // around the cover, not as the column edge.
+  // Heading on the outer cover column. The selection ring extends left of this
+  // line by design — it reads as a frame around the cover, not as the column
+  // edge.
   headingRect.x = tabRect.x;
   headingRect.width = tabRect.width;
   screen.target().text(headingRect, hasContinueReading ? tr(STR_CONTINUE_READING) : tr(STR_START_READING), headingText);
   drawTabs(screen, tabRect);
-  // Drawn last so it can borrow the grid geometry, like the tab bar above.
-  drawHeaderBand(header, tabRect.x, tabRect.x + tabRect.width);
+  drawHeaderBand(header);
 }
 
-void CoverGridHomeUi::drawHeaderBand(fui::Rect header, int coverLeft, int coverRight) {
-  // Same alignment trick as the tabs: the clock's left edge and the battery's
-  // right edge sit on the outer cover columns. drawHeader anchors both at
-  // headerStatusInset() from the band edges, and the clock text is
-  // left-anchored, so 1- vs 2-digit hours never move it.
-  const int inset = GUI.headerStatusInset();
-  const int headerX = std::max(0, coverLeft - inset);
-  const int headerRight = std::min<int>(renderer.getScreenWidth(), coverRight + inset);
-  GUI.drawHeader(renderer, Rect{headerX, header.y, headerRight - headerX, header.height}, nullptr);
+void CoverGridHomeUi::drawHeaderBand(fui::Rect header) {
+  // drawHeader places the status line on the screen-wide grid, the same spot
+  // as every other screen's.
+  GUI.drawHeader(renderer, Rect{header.x, header.y, header.width, header.height}, nullptr);
 }
 
 void CoverGridHomeUi::drawEmpty(UiScreen& screen) {

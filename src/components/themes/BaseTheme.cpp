@@ -320,11 +320,6 @@ void BaseTheme::drawSideButtonHints(const GfxRenderer& renderer, const char* top
   }
 }
 
-int BaseTheme::headerStatusInset() {
-  const ThemeMetrics& metrics = UITheme::getInstance().getMetrics();
-  return metrics.headerBatteryDetached ? 12 : metrics.headerSidePadding;
-}
-
 void BaseTheme::drawHeader(const GfxRenderer& renderer, Rect rect, const char* title, const char* subtitle) const {
   // Every activity header renders through the FreeInkUI header + battery
   // indicator components, styled by the active theme's tokens (padding,
@@ -381,6 +376,36 @@ void BaseTheme::drawHeader(const GfxRenderer& renderer, Rect rect, const char* t
   const int16_t linkReserve =
       link == NetworkLink::State::OFF ? 0 : static_cast<int16_t>(linkIconSize + batteryPercentSpacing * 2);
 
+  // The status line (battery, link glyph, clock) is one strip at the top of the
+  // screen's safe area, wherever the caller's band sits, so it lands in the
+  // same place on every screen and in every orientation: Home's side margin,
+  // one small space down from the top edge.
+  const Rect safe = UITheme::getInstance().getScreenSafeArea(renderer, true);
+  const int16_t statusInset = static_cast<int16_t>(UITheme::scaledPx(24));
+  const int16_t statusLeft = static_cast<int16_t>(safe.x + statusInset);
+  const int16_t statusRight = static_cast<int16_t>(safe.x + safe.width - statusInset);
+  int16_t statusY = 0;
+  int16_t statusH = 0;
+  if (metrics.statusBarHeight > 0) {
+    // Its own strip (e-Minimal): one small-font line centred in it.
+    statusH = static_cast<int16_t>(ui.target.lineHeight(fui::GfxRendererTarget::FONT_SMALL));
+    statusY = static_cast<int16_t>(safe.y + (metrics.statusBarHeight - statusH) / 2);
+  } else {
+    // A 0 px battery strip gives the line a small-font line of its own,
+    // centred topPadding below the strip's top.
+    constexpr int16_t statusDropPx = 10;
+    statusY = static_cast<int16_t>(safe.y + tokens.spaceSm + statusDropPx);
+    statusH = static_cast<int16_t>(metrics.batteryBarHeight);
+    if (statusH == 0) {
+      statusH = static_cast<int16_t>(ui.target.lineHeight(fui::GfxRendererTarget::FONT_SMALL));
+      statusY = static_cast<int16_t>(statusY + metrics.topPadding - statusH / 2);
+    }
+  }
+  // Titles keep clear of the status line: when the band shares its rows the
+  // title is narrowed past it below; a band under the status bar keeps its
+  // full width.
+  const bool statusSharesBand = statusY < band.bottom() && statusY + statusH > band.y;
+
   fui::HeaderProps props;
   props.title = title;
   props.rightLabel = subtitle;  // firmware headers right-align the secondary text
@@ -411,22 +436,19 @@ void BaseTheme::drawHeader(const GfxRenderer& renderer, Rect rect, const char* t
     const int titleLineHeight = ui.target.lineHeight(fui::GfxRendererTarget::FONT_TITLE);
     const int titleTop = static_cast<int>(band.height) - tokens.headerUnderline - tokens.spaceMd - titleLineHeight;
     props.titleOffsetY = static_cast<int16_t>(titleTop - (static_cast<int>(band.height) - titleLineHeight) / 2);
-  } else {
-    const int16_t reserve = static_cast<int16_t>(batteryReserve + linkReserve + tokens.spaceMd);
-    if (batteryLeft) {
-      props.leftReserve = reserve;
-    } else {
-      props.rightReserve = reserve;
+  } else if (statusSharesBand) {
+    // Shared line: keep the title clear of the status items. They sit on the
+    // screen's grid, not the band's, so measure each reserve from the band's
+    // content edge to the item nearest the title.
+    const int contentLeft = band.x + tokens.headerSidePadding;
+    const int contentRight = band.right() - tokens.headerSidePadding;
+    const int leftItem = batteryLeft ? batteryReserve + linkReserve : (clockText[0] != '\0' ? clockWidth : 0);
+    const int rightItem = batteryLeft ? (clockText[0] != '\0' ? clockWidth : 0) : batteryReserve + linkReserve;
+    if (leftItem > 0) {
+      props.leftReserve = static_cast<int16_t>(std::max(0, statusLeft + leftItem + tokens.spaceMd - contentLeft));
     }
-    // The clock sits opposite the battery on the shared line; keep the title
-    // clear of it too.
-    if (clockText[0] != '\0') {
-      const int16_t clockReserve = static_cast<int16_t>(clockWidth + tokens.spaceMd);
-      if (batteryLeft) {
-        props.rightReserve = static_cast<int16_t>(props.rightReserve + clockReserve);
-      } else {
-        props.leftReserve = static_cast<int16_t>(props.leftReserve + clockReserve);
-      }
+    if (rightItem > 0) {
+      props.rightReserve = static_cast<int16_t>(std::max(0, contentRight - (statusRight - rightItem - tokens.spaceMd)));
     }
   }
   // Underline only under a titled header: an untitled band (Lyra home screen)
@@ -445,24 +467,8 @@ void BaseTheme::drawHeader(const GfxRenderer& renderer, Rect rect, const char* t
   battery.glyphWidth = static_cast<int16_t>(metrics.batteryWidth);
   battery.glyphHeight = static_cast<int16_t>(metrics.batteryHeight);
   battery.gap = batteryPercentSpacing;
-  // Detached: hug the corner (12px, the legacy inset) within the battery
-  // strip; shared line: sit on the content grid. Both anchor to the band's top
-  // strip (batteryBarHeight) — the legacy shared-line headers drew the battery
-  // at the top edge, and it keeps the lower-right corner free for the manual
-  // right label below.
-  const int16_t batteryEdgeInset = static_cast<int16_t>(headerStatusInset());
-  const int16_t batteryX = batteryLeft ? static_cast<int16_t>(band.x + batteryEdgeInset)
-                                       : static_cast<int16_t>(band.right() - batteryEdgeInset - batteryReserve);
-  // A 0 px strip (RoundedRaff on e-Minimal) centres the glyph on the band's top
-  // edge. Give it a line of its own centred on that edge: the glyph lands where
-  // it did, and the percent label no longer clips to a 0 px rect.
-  int16_t batteryY = band.y;
-  int16_t batteryH = static_cast<int16_t>(metrics.batteryBarHeight);
-  if (batteryH == 0) {
-    batteryH = static_cast<int16_t>(ui.target.lineHeight(fui::GfxRendererTarget::FONT_SMALL));
-    batteryY = static_cast<int16_t>(band.y - batteryH / 2);
-  }
-  fui::batteryIndicator(ui.frame, fui::Rect{batteryX, batteryY, batteryReserve, batteryH}, battery);
+  const int16_t batteryX = batteryLeft ? statusLeft : static_cast<int16_t>(statusRight - batteryReserve);
+  fui::batteryIndicator(ui.frame, fui::Rect{batteryX, statusY, batteryReserve, statusH}, battery);
 
   if (clockText[0] != '\0') {
     // Ink-align a left-anchored clock: the first digit's ink starts its side
@@ -478,22 +484,18 @@ void BaseTheme::drawHeader(const GfxRenderer& renderer, Rect rect, const char* t
         }
       }
     }
-    // Same top strip and edge inset as the battery, mirrored to the other
-    // side, so the two read as one balanced status line.
-    const int16_t clockX = batteryLeft ? static_cast<int16_t>(band.right() - batteryEdgeInset - clockWidth)
-                                       : static_cast<int16_t>(band.x + batteryEdgeInset - clockBearing);
-    ui.target.text(fui::Rect{clockX, batteryY, clockWidth, batteryH}, clockText, tokens.smallText);
+    // Same status line as the battery, mirrored to the other side.
+    const int16_t clockX = batteryLeft ? static_cast<int16_t>(statusRight - clockWidth)
+                                       : static_cast<int16_t>(statusLeft - clockBearing);
+    ui.target.text(fui::Rect{clockX, statusY, clockWidth, statusH}, clockText, tokens.smallText);
   }
 
   if (linkReserve > 0) {
-    // Inboard of the battery and on its centre line: the component centres
-    // the glyph on rect.y + rect.height / 2, which for a 0 px strip
-    // (RoundedRaff) is the band's top edge. The bitmaps carry 6 px of blank
-    // rows above their ink, so a box centred there would put the ink's top
-    // above the screen; keep the ink's first row on the panel instead.
+    // Inboard of the battery and on its centre line. The bitmaps carry 6 px of
+    // blank rows above their ink; never let the ink's first row leave the panel.
     constexpr int linkIconInkTop = 6;
     const int iconX = batteryLeft ? batteryX + batteryReserve + batteryPercentSpacing * 2 : batteryX - linkReserve;
-    const int iconY = std::max(batteryY + batteryH / 2 - linkIconSize / 2, -linkIconInkTop);
+    const int iconY = std::max(statusY + statusH / 2 - linkIconSize / 2, -linkIconInkTop);
     renderer.drawIcon(link == NetworkLink::State::STATION ? WifiIcon : HotspotIcon, iconX, iconY, linkIconSize);
   }
 
