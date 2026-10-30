@@ -45,9 +45,10 @@ class RecentBooksStore : public PersistableStore<RecentBooksStore> {
 
   // Repoint an entry's path (and coverBmpPath, if it lived under the old cache dir) after the
   // backing file and cache dir were moved on disk. No-op if no entry matches oldPath.
-  // Persists on success. Keeps the entry's list position (does not reorder).
-  void updatePath(const std::string& oldPath, const std::string& newPath, const std::string& oldCachePath,
-                  const std::string& newCachePath);
+  // Persists on success unless save is false (caller then saves once). Keeps the entry's list position
+  // (does not reorder). Returns true if an entry was updated.
+  bool updatePath(const std::string& oldPath, const std::string& newPath, const std::string& oldCachePath,
+                  const std::string& newCachePath, bool save = true);
 
   // True if the book's backing file is no longer present on the SD card.
   static bool isMissing(const RecentBook& book);
