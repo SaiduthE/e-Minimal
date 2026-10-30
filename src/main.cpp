@@ -382,7 +382,7 @@ void enterDeepSleep(bool fromTimeout = false) {
 #if FREEINK_DEVICE_EMINIMAL
   // After display.deepSleep() has flushed any staged base the planes hold the sleep screen; the
   // charging badge's wake puts the pixels under its square back from this file.
-  charge_badge::saveWindow(display);
+  charge_badge::saveWindow(renderer, display);
 #endif
   Storage.prepareForDeepSleep();
   LOG_DBG("MAIN", "Entering deep sleep");
@@ -507,7 +507,7 @@ static bool handleChargeWake() {
   if (APP_STATE.lastSleepFromDashboard) return true;
   display.keepGlassOnNextBegin();
   setupDisplayAndFonts(true);
-  if (charge_badge::restoreWindow(display)) {
+  if (charge_badge::restoreWindow(renderer, display)) {
     // Just the badge's square, from the pixels kept at sleep entry.
   } else if (Storage.exists(SLEEP_FRAME_FILE) && loadSleepFrameBuffer(/*keepFile=*/true)) {
     renderer.displayBuffer(HalDisplay::HALF_REFRESH);  // Quick Resume: the saved frame
@@ -515,7 +515,7 @@ static bool handleChargeWake() {
     activityManager.goToSleep(false, false, /*redraw=*/true);
     // Flush any staged base first so the planes hold the new image, then keep its pixels under the badge.
     display.deepSleep();
-    charge_badge::saveWindow(display);
+    charge_badge::saveWindow(renderer, display);
     sleepAfterChargeWake(/*displayStarted=*/false);  // the panel is already asleep
   }
   sleepAfterChargeWake();

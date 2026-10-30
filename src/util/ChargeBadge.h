@@ -15,7 +15,7 @@ void show(GfxRenderer& renderer, const HalPowerManager& power, HalDisplay& displ
 // Sleep entry, after the sleep screen is on the glass: keep the pixels under the
 // badge square on the SD card (or drop a stale file when they cannot be kept or
 // the badge is off).
-void saveWindow(HalDisplay& display);
+void saveWindow(GfxRenderer& renderer, HalDisplay& display);
 // Puts the saved window back as it was. False, glass untouched, when it cannot.
-bool restoreWindow(HalDisplay& display);
+bool restoreWindow(GfxRenderer& renderer, HalDisplay& display);
 }  // namespace charge_badge

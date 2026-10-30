@@ -56,29 +56,23 @@ constexpr int BOLT_POINTS = sizeof(BOLT_X) / sizeof(BOLT_X[0]);
 constexpr int BOLT_GRID_W = 18;
 constexpr int BOLT_GRID_H = 20;
 
-// Panel pixels of the badge's top-left corner. The screen is Portrait here, so
-// panel X runs down the screen and panel Y runs right-to-left across it.
-void placeBadge(const int position, const int side, const int panelW, const int panelH, int* px, int* py) {
+// Panel pixels of the badge's top-left corner. The corner is chosen on the
+// Portrait screen as the sleep image is seen, then mapped to the panel by the
+// renderer, which also accounts for a panel mounted upside down.
+void placeBadge(const GfxRenderer& renderer, const int position, const int side, int* px, int* py) {
   using S = CrossPointSettings;
   const bool top = position == S::BADGE_TOP_LEFT || position == S::BADGE_TOP_RIGHT;
   const bool bottom = position == S::BADGE_BOTTOM_LEFT || position == S::BADGE_BOTTOM_RIGHT;
   const bool left = position == S::BADGE_TOP_LEFT || position == S::BADGE_BOTTOM_LEFT;
   const bool right = position == S::BADGE_TOP_RIGHT || position == S::BADGE_BOTTOM_RIGHT;
+  const int screenW = renderer.getScreenWidth();
+  const int screenH = renderer.getScreenHeight();
+  const int sx = left ? EDGE_MARGIN : (right ? screenW - side - EDGE_MARGIN : (screenW - side) / 2);
+  const int sy = top ? EDGE_MARGIN : (bottom ? screenH - side - EDGE_MARGIN : (screenH - side) / 2);
+  int pw, ph;
+  renderer.screenRectToPanel(sx, sy, side, side, px, py, &pw, &ph);
   // x stays on a 32-px column in every case; y needs no alignment.
-  if (top) {
-    *px = EDGE_MARGIN;
-  } else if (bottom) {
-    *px = (panelW - side - EDGE_MARGIN) & ~31;
-  } else {
-    *px = ((panelW - side) / 2) & ~31;
-  }
-  if (left) {
-    *py = panelH - side - EDGE_MARGIN;
-  } else if (right) {
-    *py = EDGE_MARGIN;
-  } else {
-    *py = (panelH - side) / 2;
-  }
+  *px &= ~31;
 }
 
 // The badge square in panel pixels for the current settings: the one box the
@@ -89,12 +83,14 @@ struct Box {
   uint8_t position;
 };
 
-Box badgeBox(const int panelW, const int panelH) {
+// Leaves the renderer in Portrait, the orientation the sleep image is drawn in.
+Box badgeBox(GfxRenderer& renderer) {
+  renderer.setOrientation(GfxRenderer::Orientation::Portrait);
   Box b;
   b.sizeIdx = SETTINGS.chargeBadgeSize < CrossPointSettings::CHARGE_BADGE_SIZE_COUNT ? SETTINGS.chargeBadgeSize : 0;
   b.position = SETTINGS.chargeBadgePosition;
   b.side = SIZES[b.sizeIdx].side;
-  placeBadge(b.position, b.side, panelW, panelH, &b.x, &b.y);
+  placeBadge(renderer, b.position, b.side, &b.x, &b.y);
   return b;
 }
 
@@ -199,7 +195,7 @@ void fillWindowRow(void* ctx, const uint16_t row, uint8_t* dst) {
 }  // namespace
 
 void show(GfxRenderer& renderer, const HalPowerManager& power, HalDisplay& display) {
-  const Box box = badgeBox(renderer.getDisplayWidth(), renderer.getDisplayHeight());
+  const Box box = badgeBox(renderer);
   const uint8_t sizeIdx = box.sizeIdx;
   const SizeSpec& sz = SIZES[sizeIdx];
   const bool showBolt = SETTINGS.chargeBadgeStyle != CrossPointSettings::BADGE_PERCENT_ONLY;
@@ -273,12 +269,12 @@ void show(GfxRenderer& renderer, const HalPowerManager& power, HalDisplay& displ
   renderer.displayWindow(x, y, w, h);
 }
 
-void saveWindow(HalDisplay& display) {
+void saveWindow(GfxRenderer& renderer, HalDisplay& display) {
   if (!SETTINGS.chargeBadgeEnabled) {
     if (Storage.exists(WINDOW_FILE)) Storage.remove(WINDOW_FILE);
     return;
   }
-  const Box box = badgeBox(display.getDisplayWidth(), display.getDisplayHeight());
+  const Box box = badgeBox(renderer);
   PsramBuf pixels(windowBytes(box.side));
   if (!pixels.p) {
     LOG_ERR("BADGE", "No memory to save the window");
@@ -306,8 +302,8 @@ void saveWindow(HalDisplay& display) {
   if (Storage.exists(WINDOW_FILE)) Storage.remove(WINDOW_FILE);
 }
 
-bool restoreWindow(HalDisplay& display) {
-  const Box box = badgeBox(display.getDisplayWidth(), display.getDisplayHeight());
+bool restoreWindow(GfxRenderer& renderer, HalDisplay& display) {
+  const Box box = badgeBox(renderer);
   PsramBuf saved(windowBytes(box.side));
   if (!saved.p || !loadWindow(box, saved.p)) return false;
   FillCtx ctx = {saved.p, nullptr, box.x, box.y, box.side, 0, 0, 0};
@@ -318,7 +314,7 @@ bool restoreWindow(HalDisplay& display) {
 #else
 namespace charge_badge {
 void show(GfxRenderer&, const HalPowerManager&, HalDisplay&) {}
-void saveWindow(HalDisplay&) {}
-bool restoreWindow(HalDisplay&) { return false; }
+void saveWindow(GfxRenderer&, HalDisplay&) {}
+bool restoreWindow(GfxRenderer&, HalDisplay&) { return false; }
 }  // namespace charge_badge
 #endif
