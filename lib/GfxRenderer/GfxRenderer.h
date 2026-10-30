@@ -16,6 +16,7 @@ class SdCardFont;
 class TtfEpdFont;
 
 #include <array>
+#include <atomic>
 #include <cstring>
 #include <map>
 #include <string>
@@ -84,7 +85,7 @@ class GfxRenderer {
 
   // One-shot refresh promotion (see promoteNextRefresh). Mutable because
   // displayBuffer() is const but must consume the flag.
-  mutable bool promotedRefreshPending_ = false;
+  mutable std::atomic<bool> promotedRefreshPending_{false};
   mutable HalDisplay::RefreshMode promotedRefresh_ = HalDisplay::FAST_REFRESH;
   // Swap in (and clear) the promoted mode, if one is pending.
   HalDisplay::RefreshMode applyPromotedRefresh(HalDisplay::RefreshMode refreshMode) const;
@@ -277,8 +278,9 @@ class GfxRenderer {
   // ghost-cleanup waveform to the repaint of whatever screen is underneath,
   // which it cannot reach directly.
   void promoteNextRefresh(const HalDisplay::RefreshMode mode) const {
-    promotedRefreshPending_ = true;
+    // Mode first, then the flag: the render task may consume it from another task.
     promotedRefresh_ = mode;
+    promotedRefreshPending_.store(true, std::memory_order_release);
   }
   // Non-blocking refresh: starts the waveform and returns so CPU work (e.g.
   // grayscale strip rendering) can overlap the panel's refresh time. The

@@ -1830,8 +1830,7 @@ void GfxRenderer::invertScreen() const {
 }
 
 HalDisplay::RefreshMode GfxRenderer::applyPromotedRefresh(const HalDisplay::RefreshMode refreshMode) const {
-  if (!promotedRefreshPending_) return refreshMode;
-  promotedRefreshPending_ = false;
+  if (!promotedRefreshPending_.exchange(false, std::memory_order_acquire)) return refreshMode;
   return promotedRefresh_;
 }
 

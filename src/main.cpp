@@ -71,11 +71,10 @@ static unsigned long lastX4ProPowerClickAt = 0;
 namespace {
 constexpr unsigned long X4PRO_POWER_DOUBLE_CLICK_MS = 500;
 constexpr unsigned long X4PRO_POWER_CLICK_MAX_HOLD_MS = 300;
-#if FREEINK_DEVICE_EMINIMAL
 // eMinimal: a hold on the power button opens the power menu instead of sleeping
-// outright. Same feel as the wake hold (HalGPIO::verifyPowerButtonWakeup).
+// outright. Same feel as the wake hold (HalGPIO::verifyPowerButtonWakeup). Also
+// the longest Power release that still counts as a short press on every board.
 constexpr unsigned long POWER_MENU_HOLD_MS = 700;
-#endif
 }  // namespace
 
 // A wake hold must never become an in-app power-button action.  Boot may continue
@@ -1056,6 +1055,10 @@ void loop() {
     // If the screenshot combination is potentially being pressed, don't open it
     if (!gpio.isPressed(HalGPIO::BTN_DOWN)) {
       powerMenuHoldLatched = true;
+  // Set when a hold opens the power menu; that hold's release must not also run
+  // the short-press action.
+  static bool swallowPowerRelease = false;
+
       LOG_DBG("MAIN", "Power button held %lums, opening the power menu", gpio.getPowerButtonHeldTime());
       activityManager.openPowerMenu();
     }
@@ -1067,6 +1070,7 @@ void loop() {
   const bool x4ProAwaitingClickWindow = x4ProDoubleClickPwrLight &&
                                         SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::SLEEP &&
                                         gpio.getPowerButtonHeldTime() <= X4PRO_POWER_CLICK_MAX_HOLD_MS;
+      swallowPowerRelease = true;
 
   if (!x4ProAwaitingClickWindow && powerReleasedSinceWake && millis() >= allowSleepAt &&
       gpio.isPressed(HalGPIO::BTN_POWER) && gpio.getPowerButtonHeldTime() > SETTINGS.getPowerButtonDuration()) {
@@ -1093,17 +1097,22 @@ void loop() {
   }
 #endif
 
-  // Refresh screen when power button is short-pressed with FORCE_REFRESH setting.
+  // Short Power press only: the release of a hold (the power menu's) is not one.
+  const bool powerReleased = mappedInputManager.wasReleased(MappedInputManager::Button::Power);
+  const bool powerShortRelease =
+      powerReleased && !swallowPowerRelease && gpio.getPowerButtonHeldTime() <= POWER_MENU_HOLD_MS;
+  if (powerReleased || !gpio.isPressed(HalGPIO::BTN_POWER)) swallowPowerRelease = false;
+
   if (mappedInputManager.homeButtonAction() == HomeButtonAction::ToggleFrontlight) {
     toggleFrontlight();
   }
   if (mappedInputManager.homeButtonAction() == HomeButtonAction::Refresh ||
-      (SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::FORCE_REFRESH &&
-       mappedInputManager.wasReleased(MappedInputManager::Button::Power))) {
-    LOG_DBG("MAIN", "Manual screen refresh triggered");
+      (SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::FORCE_REFRESH && powerShortRelease)) {
+    LOG_INF("MAIN", "Manual screen refresh triggered");
     if (!activityManager.handleForcedRefresh()) {
-      RenderLock lock;
-      renderer.displayBuffer(HalDisplay::HALF_REFRESH);
+      // Only the render task drives the panel: promote its next refresh and repaint.
+      renderer.promoteNextRefresh(HalDisplay::HALF_REFRESH);
+      activityManager.requestUpdate();
     }
   }
 
