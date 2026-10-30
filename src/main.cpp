@@ -379,6 +379,11 @@ void enterDeepSleep(bool fromTimeout = false) {
 
   halTiltSensor.deepSleep();
   display.deepSleep();
+#if FREEINK_DEVICE_EMINIMAL
+  // After display.deepSleep() has flushed any staged base the planes hold the sleep screen; the
+  // charging badge's wake puts the pixels under its square back from this file.
+  charge_badge::saveWindow(display);
+#endif
   Storage.prepareForDeepSleep();
   LOG_DBG("MAIN", "Entering deep sleep");
 
@@ -492,7 +497,7 @@ static bool handleChargeWake() {
     LOG_INF("MAIN", "%s: charging badge", badge ? "Charge tick" : "USB in");
     display.keepGlassOnNextBegin();
     setupDisplayAndFonts(true);
-    charge_badge::show(renderer, powerManager);
+    charge_badge::show(renderer, powerManager, display);
     HalPowerManager::setBadgeOnGlass(true);
     sleepAfterChargeWake();
   }
@@ -502,10 +507,16 @@ static bool handleChargeWake() {
   if (APP_STATE.lastSleepFromDashboard) return true;
   display.keepGlassOnNextBegin();
   setupDisplayAndFonts(true);
-  if (Storage.exists(SLEEP_FRAME_FILE) && loadSleepFrameBuffer(/*keepFile=*/true)) {
+  if (charge_badge::restoreWindow(display)) {
+    // Just the badge's square, from the pixels kept at sleep entry.
+  } else if (Storage.exists(SLEEP_FRAME_FILE) && loadSleepFrameBuffer(/*keepFile=*/true)) {
     renderer.displayBuffer(HalDisplay::HALF_REFRESH);  // Quick Resume: the saved frame
   } else {
     activityManager.goToSleep(false, false, /*redraw=*/true);
+    // Flush any staged base first so the planes hold the new image, then keep its pixels under the badge.
+    display.deepSleep();
+    charge_badge::saveWindow(display);
+    sleepAfterChargeWake(/*displayStarted=*/false);  // the panel is already asleep
   }
   sleepAfterChargeWake();
   return false;
@@ -1044,6 +1055,10 @@ void loop() {
   static bool powerReleasedSinceWake = false;
   if (!gpio.isPressed(HalGPIO::BTN_POWER)) powerReleasedSinceWake = true;
 
+  // Set when a hold opens the power menu; that hold's release must not also run
+  // the short-press action.
+  static bool swallowPowerRelease = false;
+
 #if FREEINK_DEVICE_EMINIMAL
   // The hold opens the power menu (Sleep is its first row) so the button can
   // carry other shortcuts too. Once per hold: latched until the release, and the
@@ -1055,10 +1070,7 @@ void loop() {
     // If the screenshot combination is potentially being pressed, don't open it
     if (!gpio.isPressed(HalGPIO::BTN_DOWN)) {
       powerMenuHoldLatched = true;
-  // Set when a hold opens the power menu; that hold's release must not also run
-  // the short-press action.
-  static bool swallowPowerRelease = false;
-
+      swallowPowerRelease = true;
       LOG_DBG("MAIN", "Power button held %lums, opening the power menu", gpio.getPowerButtonHeldTime());
       activityManager.openPowerMenu();
     }
@@ -1070,7 +1082,6 @@ void loop() {
   const bool x4ProAwaitingClickWindow = x4ProDoubleClickPwrLight &&
                                         SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::SLEEP &&
                                         gpio.getPowerButtonHeldTime() <= X4PRO_POWER_CLICK_MAX_HOLD_MS;
-      swallowPowerRelease = true;
 
   if (!x4ProAwaitingClickWindow && powerReleasedSinceWake && millis() >= allowSleepAt &&
       gpio.isPressed(HalGPIO::BTN_POWER) && gpio.getPowerButtonHeldTime() > SETTINGS.getPowerButtonDuration()) {

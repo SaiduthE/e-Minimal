@@ -156,6 +156,12 @@ class HalDisplay {
   using Gray4RowFill = void (*)(void* ctx, uint16_t row, uint8_t* dst);
   bool displayGray4Rows(Gray4RowFill fill, void* ctx, RefreshMode mode = FAST_REFRESH, bool turnOffScreen = false,
                         bool updateFrameBuffer = false);
+  // A box of the 16-level page (physical pixels, x and w even): copy it out of
+  // the driver's planes as packed 4bpp rows (w / 2 bytes each), or load it from
+  // rows (fill's row is relative to the box, dst is w / 2 bytes) and refresh
+  // just it. False, nothing done, where unsupported, inverted or not held.
+  bool snapshotWindowGray4(int x, int y, int w, int h, uint8_t* out);
+  bool displayWindowGray4(int x, int y, int w, int h, Gray4RowFill fill, void* ctx, bool turnOffScreen = false);
 
   // Runtime geometry passthrough
   uint16_t getDisplayWidth() const;

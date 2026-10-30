@@ -169,6 +169,14 @@ bool HalDisplay::displayGray4Rows(Gray4RowFill fill, void* ctx, RefreshMode mode
   return einkDisplay.displayGray4Rows(fill, ctx, convertRefreshMode(mode), turnOffScreen, updateFrameBuffer);
 }
 
+bool HalDisplay::snapshotWindowGray4(int x, int y, int w, int h, uint8_t* out) {
+  return einkDisplay.snapshotWindowGray4(x, y, w, h, out);
+}
+
+bool HalDisplay::displayWindowGray4(int x, int y, int w, int h, Gray4RowFill fill, void* ctx, bool turnOffScreen) {
+  return einkDisplay.displayWindowGray4(x, y, w, h, fill, ctx, turnOffScreen);
+}
+
 uint16_t HalDisplay::getDisplayWidth() const { return einkDisplay.getDisplayWidth(); }
 
 uint16_t HalDisplay::getDisplayHeight() const { return einkDisplay.getDisplayHeight(); }
