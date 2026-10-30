@@ -16,6 +16,7 @@
 #include "AboutActivity.h"
 #include "ButtonRemapActivity.h"
 #include "ClearCacheActivity.h"
+#include "ChargeBadgeSettingsActivity.h"
 #include "ClockSettingsActivity.h"
 #include "CrossPointSettings.h"
 #include "FirmwareIdentity.h"
@@ -31,6 +32,7 @@
 #include "SdFirmwareUpdateActivity.h"
 #include "SettingsList.h"
 #include "SilentRestart.h"
+#include "SleepScreenSettingsActivity.h"
 #include "StatusBarSettingsActivity.h"
 #include "TextSettingsActivity.h"
 #include "activities/network/WifiSelectionActivity.h"
@@ -44,15 +46,23 @@
 namespace fui = freeink::ui;
 
 namespace {
+// Settings that left the flat Reader lists for a Global Settings sub-page
+// (Sleep Screen, Charge Badge): reached only through its Action row.
+constexpr int GLOBAL_SUB_PAGE = 2;
+
 // The device-wide settings Global Settings holds: 0 = Power & Sleep, 1 = Display
-// & System (its actions are appended in rebuildSettingsLists()), -1 = not global.
+// & System (its actions are appended in rebuildSettingsLists()), GLOBAL_SUB_PAGE
+// = on a sub-page, -1 = not global.
 int globalSettingTab(const SettingInfo& setting) {
   const auto p = setting.valuePtr;
-  if (p == &CrossPointSettings::sleepTimeoutMinutes || p == &CrossPointSettings::sleepScreen ||
-      p == &CrossPointSettings::sleepScreenCoverMode || p == &CrossPointSettings::sleepScreenCoverFilter ||
-      p == &CrossPointSettings::quickResumeSleepScreen || p == &CrossPointSettings::hideBatteryPercentage ||
+  if (p == &CrossPointSettings::sleepTimeoutMinutes || p == &CrossPointSettings::hideBatteryPercentage ||
       p == &CrossPointSettings::shortPwrBtn) {
     return 0;
+  }
+  if (p == &CrossPointSettings::sleepScreen || p == &CrossPointSettings::sleepScreenCoverMode ||
+      p == &CrossPointSettings::sleepScreenCoverFilter || p == &CrossPointSettings::quickResumeSleepScreen ||
+      isChargeBadgeSetting(setting.valuePtr)) {
+    return GLOBAL_SUB_PAGE;
   }
   if (p == &CrossPointSettings::screenInverted || p == &CrossPointSettings::orientation) return 1;
   return -1;
@@ -91,7 +101,7 @@ void SettingsActivity::rebuildSettingsLists() {
     if (setting.category == StrId::STR_NONE_OPT || home_button::isSetting(setting.valuePtr)) continue;
     const int globalTab = globalSettingTab(setting);
     if (global) {
-      if (globalTab < 0) continue;
+      if (globalTab < 0 || globalTab == GLOBAL_SUB_PAGE) continue;
       auto& tab = tabSettings[globalTab];
       // Time to Sleep and Display Orientation lead their tabs; the orientation
       // turns the whole device here, not only the reader.
@@ -138,6 +148,11 @@ void SettingsActivity::rebuildSettingsLists() {
     tabSettings[1].push_back(SettingInfo::Action(StrId::STR_ABOUT, SettingAction::About));
     tabSettings[1].push_back(SettingInfo::Action(StrId::STR_CHECK_UPDATES, SettingAction::CheckForUpdates));
     tabSettings[1].push_back(SettingInfo::Action(StrId::STR_SD_FIRMWARE_UPDATE, SettingAction::SdFirmwareUpdate));
+    // After Time to Sleep and the other Power & Sleep rows.
+    tabSettings[0].push_back(SettingInfo::Action(StrId::STR_SLEEP_SCREEN, SettingAction::SleepScreen));
+    if (BoardConfig::isEMinimal78()) {
+      tabSettings[0].push_back(SettingInfo::Action(StrId::STR_CHARGE_BADGE, SettingAction::ChargeBadge));
+    }
     if (selectedCategoryIndex >= globalTabCount) selectedCategoryIndex = 0;
     currentSettings = &tabSettings[selectedCategoryIndex];
     settingsCount = static_cast<int>(currentSettings->size());
@@ -404,6 +419,20 @@ void SettingsActivity::toggleCurrentSetting() {
         startActivityForResult(std::move(activity), [this](const ActivityResult&) { requestUpdate(); });
         return;
       }
+      case SettingAction::SleepScreen:
+        if (auto activity = makeUniqueNoThrow<SleepScreenSettingsActivity>(renderer, mappedInput)) {
+          startActivityForResult(std::move(activity), [this](const ActivityResult&) { requestUpdate(); });
+        } else {
+          LOG_ERR("SETTINGS", "OOM: SleepScreenSettingsActivity");
+        }
+        return;
+      case SettingAction::ChargeBadge:
+        if (auto activity = makeUniqueNoThrow<ChargeBadgeSettingsActivity>(renderer, mappedInput)) {
+          startActivityForResult(std::move(activity), [this](const ActivityResult&) { requestUpdate(); });
+        } else {
+          LOG_ERR("SETTINGS", "OOM: ChargeBadgeSettingsActivity");
+        }
+        return;
       case SettingAction::RemapFrontButtons:
         startActivityForResult(std::make_unique<ButtonRemapActivity>(renderer, mappedInput), resultHandler);
         break;
@@ -571,7 +600,10 @@ void SettingsActivity::openSleepPresetPopup() {
 }
 
 std::string SettingsActivity::settingValueText(const SettingInfo& setting) {
-  if (setting.action == SettingAction::HomeButton) return tr(STR_CONFIGURE);
+  if (setting.action == SettingAction::HomeButton || setting.action == SettingAction::SleepScreen ||
+      setting.action == SettingAction::ChargeBadge) {
+    return tr(STR_CONFIGURE);
+  }
   if (setting.type == SettingType::TOGGLE && setting.valuePtr != nullptr) {
     return SETTINGS.*(setting.valuePtr) ? tr(STR_STATE_ON) : tr(STR_STATE_OFF);
   }
@@ -660,10 +692,17 @@ void SettingsActivity::drawChrome() {
 void SettingsActivity::drawFooter() {
   const int ring = ringPos();
   // On the tab band Confirm opens the highlighted tab (Up/Down choose it).
-  const auto confirmLabel =
-      (ring == 0) ? tr(STR_OPEN)
-                  : (ring > 0 && (*currentSettings)[ring - 1].nameId == StrId::STR_TIME_TO_SLEEP ? tr(STR_SELECT)
-                                                                                                 : tr(STR_TOGGLE));
+  const char* confirmLabel = tr(STR_TOGGLE);
+  if (ring == 0) {
+    confirmLabel = tr(STR_OPEN);
+  } else if (ring > 0) {
+    const SettingInfo& row = (*currentSettings)[ring - 1];
+    if (row.nameId == StrId::STR_TIME_TO_SLEEP) {
+      confirmLabel = tr(STR_SELECT);
+    } else if (row.action == SettingAction::SleepScreen || row.action == SettingAction::ChargeBadge) {
+      confirmLabel = tr(STR_OPEN);
+    }
+  }
 
   const auto labels = mappedInput.mapLabels(tr(STR_BACK), confirmLabel, tr(STR_DIR_UP), tr(STR_DIR_DOWN));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);

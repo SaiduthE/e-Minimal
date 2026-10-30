@@ -215,6 +215,13 @@ inline std::vector<StrId> homeThemeValues() {
 #endif
 }
 
+// The charging badge's fields (e-Minimal), edited on ChargeBadgeSettingsActivity.
+inline bool isChargeBadgeSetting(uint8_t CrossPointSettings::* p) {
+  return p == &CrossPointSettings::chargeBadgeEnabled || p == &CrossPointSettings::chargeBadgeInverted ||
+         p == &CrossPointSettings::chargeBadgePosition || p == &CrossPointSettings::chargeBadgeSize ||
+         p == &CrossPointSettings::chargeBadgeStyle;
+}
+
 // Shared settings list used by both the device settings UI and the web settings API.
 // Each entry has a key (for JSON API) and category (for grouping).
 // ACTION-type entries and entries without a key are device-only.
@@ -257,6 +264,23 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
         SettingInfo::Enum(StrId::STR_QUICK_RESUME_TIMEOUT, &CrossPointSettings::quickResumeSleepScreen,
                           {StrId::STR_STATE_OFF, StrId::STR_STATE_ON}, "quickResumeSleepScreen",
                           StrId::STR_CAT_DISPLAY),
+        // e-Minimal's charging badge. Edited on its own sub-page, so SettingsActivity
+        // keeps these out of the flat lists; the web API lists them under Display.
+        SettingInfo::Toggle(StrId::STR_CHARGE_BADGE, &CrossPointSettings::chargeBadgeEnabled, "chargeBadgeEnabled",
+                            StrId::STR_CAT_DISPLAY),
+        SettingInfo::Toggle(StrId::STR_BADGE_INVERTED, &CrossPointSettings::chargeBadgeInverted, "chargeBadgeInverted",
+                            StrId::STR_CAT_DISPLAY),
+        SettingInfo::Enum(StrId::STR_BADGE_POSITION, &CrossPointSettings::chargeBadgePosition,
+                          {StrId::STR_CENTER, StrId::STR_BADGE_TOP_LEFT, StrId::STR_BADGE_TOP_RIGHT,
+                           StrId::STR_BADGE_BOTTOM_LEFT, StrId::STR_BADGE_BOTTOM_RIGHT},
+                          "chargeBadgePosition", StrId::STR_CAT_DISPLAY),
+        SettingInfo::Enum(StrId::STR_BADGE_SIZE, &CrossPointSettings::chargeBadgeSize,
+                          {StrId::STR_BADGE_LARGE, StrId::STR_BADGE_MEDIUM, StrId::STR_BADGE_SMALL},
+                          "chargeBadgeSize", StrId::STR_CAT_DISPLAY),
+        SettingInfo::Enum(StrId::STR_BADGE_STYLE, &CrossPointSettings::chargeBadgeStyle,
+                          {StrId::STR_BADGE_BOLT_AND_PERCENT, StrId::STR_BADGE_BOLT_ONLY,
+                           StrId::STR_BADGE_PERCENT_ONLY},
+                          "chargeBadgeStyle", StrId::STR_CAT_DISPLAY),
         SettingInfo::Enum(StrId::STR_HIDE_BATTERY, &CrossPointSettings::hideBatteryPercentage,
                           {StrId::STR_NEVER, StrId::STR_IN_READER, StrId::STR_ALWAYS}, "hideBatteryPercentage",
                           StrId::STR_CAT_DISPLAY),
@@ -563,6 +587,12 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
   if (!BoardConfig::hasHomeKey()) {
     v.erase(std::remove_if(v.begin(), v.end(),
                            [](const SettingInfo& s) { return s.nameId == StrId::STR_SHOW_READER_MENU; }),
+            v.end());
+  }
+  // The charging badge exists only on e-Minimal; elsewhere its fields are
+  // neither saved nor offered over the web API.
+  if (!BoardConfig::isEMinimal78()) {
+    v.erase(std::remove_if(v.begin(), v.end(), [](const SettingInfo& s) { return isChargeBadgeSetting(s.valuePtr); }),
             v.end());
   }
   if (BoardConfig::hasHomeKey()) {

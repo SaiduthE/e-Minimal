@@ -383,6 +383,7 @@ void enterDeepSleep(bool fromTimeout = false) {
   Storage.prepareForDeepSleep();
   LOG_DBG("MAIN", "Entering deep sleep");
 
+  powerManager.setChargeBadgeEnabled(SETTINGS.chargeBadgeEnabled != 0);
   powerManager.startDeepSleep(gpio, timerWakeMs);
 }
 
@@ -605,6 +606,7 @@ void setup() {
     SETTINGS.readerMenuStyle = CrossPointSettings::READER_MENU_TOOLBAR;
   }
   SETTINGS.loadFromFile();
+  powerManager.setChargeBadgeEnabled(SETTINGS.chargeBadgeEnabled != 0);
   // Push the saved timezone's POSIX rule into the clock (migrating the legacy
   // UTC-offset setting on first boot after the update).
   timezones::applyToClock();

@@ -114,6 +114,13 @@ just closes the menu, Select on another switches to it. Reader resumes the book
 that was on screen when the reader was left, else opens Home; Games opens the
 games list, which keeps the radio off until a game is picked. Go Home is the reader's Home, so it also switches to Reader.
 
+## Global Settings > Power & Sleep
+Two sub-pages. **Charge Badge** (On/Off; Style: bolt + %, bolt only or % only;
+Size: Large 416, Medium 320 or Small 224 px; Position: centre or one of four
+corners; Inverted) draws the charging badge over the sleep screen while USB is
+in. When it is off there is no USB-detect wake and no 30-minute tick. **Sleep
+Screen** holds the sleep screen style, cover mode, cover filter and quick resume.
+
 ## Apps and boot
 When the app last opened (`lastApp` in `/.crosspoint/state.json`) is the
 reader, the device boots and wakes into it as before: the book it slept in, or
