@@ -120,9 +120,13 @@ void HalPowerManager::startDeepSleep(HalGPIO& gpio, const uint32_t timerWakeMs) 
     // divider off VBUS, so no pull of our own.
     const auto usbPin = static_cast<gpio_num_t>(BoardConfig::ACTIVE.usbDetect);
     if (usbBounces < MAX_USB_BOUNCES) {
+#if SOC_PM_SUPPORT_EXT0_WAKEUP  // ESP32-S3 only; isEMinimal78() is false on the C3
       rtc_gpio_pullup_dis(usbPin);
       rtc_gpio_pulldown_dis(usbPin);
       esp_sleep_enable_ext0_wakeup(usbPin, badgeShown ? 0 : 1);
+#else
+      (void)usbPin;
+#endif
     } else {
       LOG_ERR("PWR", "USB-detect line too noisy to wake on; not watching it this sleep");
     }
