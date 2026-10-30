@@ -104,7 +104,8 @@ void BaseTheme::fillBatteryIcon(const GfxRenderer& renderer, Rect rect, uint16_t
 void BaseTheme::drawBatteryLeft(const GfxRenderer& renderer, Rect rect, const bool showPercentage) const {
   // Left aligned: icon on left, percentage on right (reader mode)
   const uint16_t percentage = powerManager.getBatteryPercentage();
-  const int y = rect.y + 6;
+  // Centre the icon on the text's glyph band (top of line .. baseline = ascender) so it tracks the font tier.
+  const int y = rect.y + (renderer.getTextHeight(SMALL_FONT_ID) - rect.height) / 2;
 
   if (showPercentage) {
     const auto percentageText = std::to_string(percentage) + "%";
