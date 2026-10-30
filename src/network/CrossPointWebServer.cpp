@@ -17,12 +17,16 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <string>
+#include <vector>
 
 #include "CrossPointSettings.h"
+#include "CrossPointState.h"
 #include "DashboardConfigStore.h"
 #include "FontInstaller.h"
 #include "OpdsServerStore.h"
 #include "PhonePage.h"
+#include "RecentBooksStore.h"
 #include "SdCardFontSystem.h"
 #include "SettingsList.h"
 #include "TodoStore.h"
@@ -1152,6 +1156,77 @@ void CrossPointWebServer::handleCreateFolder() const {
   }
 }
 
+namespace {
+// Carries a renamed book's cache (reading progress), bookmarks, recent entry and open-book pointer
+// from oldBook to newBook. Paths only; the file itself has already been renamed.
+bool moveBookState(const char* oldBook, const char* newBook, const bool saveRecents) {
+  const std::string oldStr(oldBook);
+  const std::string newStr(newBook);
+  const std::string oldCache = bookCachePath(oldStr);
+  if (oldCache.empty()) {
+    return false;  // Not a book file
+  }
+  moveBookCache(oldBook, newBook);
+  const bool recentChanged = RECENT_BOOKS.updatePath(oldStr, newStr, oldCache, bookCachePath(newStr), saveRecents);
+  if (APP_STATE.openEpubPath == oldStr) {
+    APP_STATE.openEpubPath = newStr;
+    if (!APP_STATE.saveToFile()) {
+      LOG_ERR("WEB", "Failed to save renamed open-book path");
+    }
+  }
+  return recentChanged;
+}
+
+// Walks the already-renamed folder (newRoot) iteratively and moves state for every book inside,
+// mapping each child back to its pre-rename path under oldRoot.
+void moveBookStateInFolder(const char* oldRoot, const char* newRoot) {
+  const std::string oldPrefix(oldRoot);
+  const std::string newPrefix(newRoot);
+  std::vector<std::string> pending;
+  pending.reserve(8);
+  pending.push_back(newPrefix);
+  bool recentsChanged = false;
+  // getName needs a full-length buffer; keep it off the stack.
+  std::string nameBuf(768, '\0');
+
+  while (!pending.empty()) {
+    const std::string dirPath = std::move(pending.back());
+    pending.pop_back();
+
+    HalFile dir = Storage.open(dirPath.c_str());
+    if (!dir || !dir.isDirectory()) {
+      LOG_ERR("WEB", "Cannot walk renamed folder: %s", dirPath.c_str());
+      continue;
+    }
+    HalFile entry = dir.openNextFile();
+    while (entry) {
+      nameBuf[0] = '\0';
+      entry.getName(&nameBuf[0], nameBuf.size());
+      const bool entryIsDir = entry.isDirectory();
+      entry.close();
+
+      const std::string name(nameBuf.c_str());
+      if (!name.empty()) {
+        const std::string childNew = dirPath + (dirPath.back() == '/' ? "" : "/") + name;
+        if (entryIsDir) {
+          pending.push_back(childNew);
+        } else {
+          recentsChanged |=
+              moveBookState((oldPrefix + childNew.substr(newPrefix.size())).c_str(), childNew.c_str(), false);
+        }
+      }
+      yield();
+      resetTaskWatchdogIfSubscribed();
+      entry = dir.openNextFile();
+    }
+    dir.close();
+  }
+  if (recentsChanged && !RECENT_BOOKS.saveToFile()) {
+    LOG_ERR("WEB", "Failed to save recent books after folder rename");
+  }
+}
+}  // namespace
+
 void CrossPointWebServer::handleRename() const {
   if (!server->hasArg("path") || !server->hasArg("name")) {
     server->send(400, "text/plain", "Missing path or new name");
@@ -1199,11 +1274,8 @@ void CrossPointWebServer::handleRename() const {
     server->send(500, "text/plain", "Failed to open file");
     return;
   }
-  if (file.isDirectory()) {
-    file.close();
-    server->send(400, "text/plain", "Only files can be renamed");
-    return;
-  }
+  const bool isDir = file.isDirectory();
+  file.close();
 
   String parentPath = itemPath.substring(0, itemPath.lastIndexOf('/'));
   if (parentPath.isEmpty()) {
@@ -1216,21 +1288,25 @@ void CrossPointWebServer::handleRename() const {
   newPath += newName;
 
   if (Storage.exists(newPath.c_str())) {
-    file.close();
     server->send(409, "text/plain", "Target already exists");
     return;
   }
 
-  clearBookCache(itemPath.c_str());
-  const bool success = file.rename(newPath.c_str());
-  file.close();
+  // Cache moves are path-only, so they run after the rename succeeds and a failed rename changes nothing.
+  const bool success = Storage.rename(itemPath.c_str(), newPath.c_str());
 
   if (success) {
-    LOG_DBG("WEB", "Renamed file: %s -> %s", itemPath.c_str(), newPath.c_str());
+    LOG_DBG("WEB", "Renamed %s: %s -> %s", isDir ? "folder" : "file", itemPath.c_str(), newPath.c_str());
+    if (isDir) {
+      moveBookStateInFolder(itemPath.c_str(), newPath.c_str());
+    } else {
+      moveBookState(itemPath.c_str(), newPath.c_str(), true);
+    }
+    if (isDir || isLibraryBookFile(itemPath) || isLibraryBookFile(newPath)) library::markLibraryIndexDirty();
     server->send(200, "text/plain", "Renamed successfully");
   } else {
-    LOG_ERR("WEB", "Failed to rename file: %s -> %s", itemPath.c_str(), newPath.c_str());
-    server->send(500, "text/plain", "Failed to rename file");
+    LOG_ERR("WEB", "Failed to rename: %s -> %s", itemPath.c_str(), newPath.c_str());
+    server->send(500, "text/plain", isDir ? "Failed to rename folder" : "Failed to rename file");
   }
 }
 
@@ -1320,6 +1396,7 @@ void CrossPointWebServer::handleMove() const {
 
   if (success) {
     LOG_DBG("WEB", "Moved file: %s -> %s", itemPath.c_str(), newPath.c_str());
+    if (isLibraryBookFile(itemPath) || isLibraryBookFile(newPath)) library::markLibraryIndexDirty();
     server->send(200, "text/plain", "Moved successfully");
   } else {
     LOG_ERR("WEB", "Failed to move file: %s -> %s", itemPath.c_str(), newPath.c_str());
@@ -1412,7 +1489,8 @@ void CrossPointWebServer::handleDelete() const {
     // Decide whether it's a directory or file by opening it
     bool success = false;
     HalFile f = Storage.open(itemPath.c_str());
-    if (f && f.isDirectory()) {
+    const bool wasDir = f && f.isDirectory();
+    if (wasDir) {
       // For folders, ensure empty before removing
       HalFile entry = f.openNextFile();
       if (entry) {
@@ -1434,6 +1512,8 @@ void CrossPointWebServer::handleDelete() const {
     if (!success) {
       failedItems += itemPath + " (deletion failed); ";
       allSuccess = false;
+    } else if (wasDir || isLibraryBookFile(itemPath)) {
+      library::markLibraryIndexDirty();
     }
   }
 

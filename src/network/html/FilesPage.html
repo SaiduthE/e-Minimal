@@ -848,6 +848,7 @@
     if (entry.isDirectory) {
       return [
         ['Open', function() { window.location.href = folderUrl(entry.path); }],
+        ['Rename', function() { openRenameModal(entry.name, entry.path, true); }],
         ['Delete', function() { openDeleteModalForItems([entry]); }, true]
       ];
     }
@@ -4882,17 +4883,17 @@ function retryAllFailedUploads() {
   }
 
   // Rename functions
-  function openRenameModal(name, path) {
+  function openRenameModal(name, path, isDirectory) {
     $('renameItemName').textContent = name;
     $('renameItemPath').value = path;
     $('renameNewName').value = name;
     $('confirmRenameBtn').disabled = false;
     clearFieldError('renameNewName', 'renameError');
     ui.openModal(document.getElementById('renameModal'));
-    // The name without its extension is picked, ready to type over.
+    // A file's name without its extension is picked, ready to type over; a folder is picked whole.
     setTimeout(() => {
       const input = $('renameNewName');
-      const dot = name.lastIndexOf('.');
+      const dot = isDirectory ? -1 : name.lastIndexOf('.');
       input.focus();
       input.setSelectionRange(0, dot > 0 ? dot : name.length);
     }, 0);
