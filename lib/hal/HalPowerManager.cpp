@@ -75,6 +75,7 @@ namespace {
 // re-arm what is left of it.
 RTC_DATA_ATTR time_t timerWakeAt = 0;
 RTC_DATA_ATTR bool badgeShown = false;
+RTC_DATA_ATTR bool badgeEnabled = true;
 RTC_DATA_ATTR bool chargeTickWasArmed = false;
 RTC_DATA_ATTR uint8_t usbBounces = 0;
 RTC_DATA_ATTR bool wakeRequested = false;
@@ -83,6 +84,7 @@ constexpr uint32_t HANDOVER_WAKE_MS = 10;
 
 bool HalPowerManager::badgeOnGlass() { return badgeShown; }
 void HalPowerManager::setBadgeOnGlass(const bool shown) { badgeShown = shown; }
+void HalPowerManager::setChargeBadgeEnabled(const bool enabled) { badgeEnabled = enabled; }
 void HalPowerManager::requestWake() { wakeRequested = true; }
 bool HalPowerManager::takeWakeRequest() {
   const bool requested = wakeRequested;
@@ -110,7 +112,7 @@ void HalPowerManager::startDeepSleep(HalGPIO& gpio, const uint32_t timerWakeMs) 
   timerWakeAt = timerWakeMs > 0 ? time(nullptr) + static_cast<time_t>((timerWakeMs + 999) / 1000) : 0;
   uint32_t armMs = timerWakeMs;
   chargeTickWasArmed = false;
-  if (BoardConfig::isEMinimal78() && BoardConfig::ACTIVE.usbDetect >= 0 &&
+  if (badgeEnabled && BoardConfig::isEMinimal78() && BoardConfig::ACTIVE.usbDetect >= 0 &&
       rtc_gpio_is_valid_gpio(static_cast<gpio_num_t>(BoardConfig::ACTIVE.usbDetect))) {
     // Wake when the USB-detect line differs from what the glass shows: on the
     // cable going out with the badge up, in without it. Level-triggered, so a

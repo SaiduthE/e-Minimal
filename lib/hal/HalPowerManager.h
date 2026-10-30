@@ -57,6 +57,10 @@ class HalPowerManager {
   static bool badgeOnGlass();
   static void setBadgeOnGlass(bool shown);
   static bool chargeTickArmed();  // the timer armed was the badge's, not the caller's
+  // Off: a sleep neither wakes on the USB-detect line nor arms the tick, so a
+  // cable in or out leaves the sleep screen alone. Kept through deep sleep; the
+  // caller sets it from its settings before each sleep.
+  static void setChargeBadgeEnabled(bool enabled);
   // A USB-detect wake that found no change. After MAX_USB_BOUNCES in a row the
   // line is taken for noise (a divider sitting at the input threshold) and
   // sleeps stop waking on it until a user wake clears the count.

@@ -252,6 +252,23 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     DASHBOARD_ORIENTATION_COUNT
   };
 
+  // e-Minimal's charging badge over the sleep screen (util/ChargeBadge.cpp).
+  enum CHARGE_BADGE_POSITION {
+    BADGE_CENTRE = 0,
+    BADGE_TOP_LEFT = 1,
+    BADGE_TOP_RIGHT = 2,
+    BADGE_BOTTOM_LEFT = 3,
+    BADGE_BOTTOM_RIGHT = 4,
+    CHARGE_BADGE_POSITION_COUNT
+  };
+  enum CHARGE_BADGE_SIZE { BADGE_LARGE = 0, BADGE_MEDIUM = 1, BADGE_SMALL = 2, CHARGE_BADGE_SIZE_COUNT };
+  enum CHARGE_BADGE_STYLE {
+    BADGE_BOLT_AND_PERCENT = 0,
+    BADGE_BOLT_ONLY = 1,
+    BADGE_PERCENT_ONLY = 2,
+    CHARGE_BADGE_STYLE_COUNT
+  };
+
   // Sleep screen settings
   uint8_t sleepScreen = DARK;
   // Night mode: inverted output polarity, applied to every activity per
@@ -429,6 +446,12 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   // Quick Resume: keep current content visible with moon icon instead of showing a static sleep screen.
   uint8_t quickResumeSleepScreen = QUICK_RESUME_NEVER;
   uint8_t dashboardOrientation = DASHBOARD_LANDSCAPE_CW;
+  // Charging badge (e-Minimal): shown on the sleep screen while on the charger.
+  uint8_t chargeBadgeEnabled = 1;
+  uint8_t chargeBadgeInverted = 0;  // 1 = white on black
+  uint8_t chargeBadgePosition = BADGE_CENTRE;
+  uint8_t chargeBadgeSize = BADGE_LARGE;
+  uint8_t chargeBadgeStyle = BADGE_BOLT_AND_PERCENT;
 
   static constexpr uint8_t MIN_SLEEP_TIMEOUT_MINUTES = 1;
   static constexpr uint8_t SLEEP_TIMEOUT_NEVER_MINUTES = 31;
