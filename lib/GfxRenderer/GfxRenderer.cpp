@@ -1823,6 +1823,18 @@ void GfxRenderer::panelRectToScreen(const int px, const int py, const int pw, co
   *height = std::max(y0, y1) - *y + 1;
 }
 
+void GfxRenderer::screenRectToPanel(const int x, const int y, const int width, const int height, int* px, int* py,
+                                    int* pw, int* ph) const {
+  // rotateCoordinates() on two opposite corners.
+  int x0, y0, x1, y1;
+  rotateCoordinates(orientation, x, y, &x0, &y0, panelWidth, panelHeight);
+  rotateCoordinates(orientation, x + width - 1, y + height - 1, &x1, &y1, panelWidth, panelHeight);
+  *px = std::min(x0, x1);
+  *py = std::min(y0, y1);
+  *pw = std::max(x0, x1) - *px + 1;
+  *ph = std::max(y0, y1) - *py + 1;
+}
+
 void GfxRenderer::invertScreen() const {
   for (uint32_t i = 0; i < frameBufferSize; i++) {
     frameBuffer[i] = ~frameBuffer[i];

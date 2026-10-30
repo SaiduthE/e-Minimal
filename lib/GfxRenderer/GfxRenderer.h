@@ -304,6 +304,9 @@ class GfxRenderer {
   // The screen rectangle that lands on a panel-memory rectangle in the current
   // orientation: the inverse of the mapping displayWindow() applies.
   void panelRectToScreen(int px, int py, int pw, int ph, int* x, int* y, int* width, int* height) const;
+  // The panel-memory rectangle under a screen rectangle in the current
+  // orientation: the inverse of panelRectToScreen().
+  void screenRectToPanel(int x, int y, int width, int height, int* px, int* py, int* pw, int* ph) const;
   void invertScreen() const;
   void clearScreen(uint8_t color = 0xFF) const;
   void getOrientedViewableTRBL(int* outTop, int* outRight, int* outBottom, int* outLeft) const;
