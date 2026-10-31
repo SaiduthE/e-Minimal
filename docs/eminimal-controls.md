@@ -60,10 +60,15 @@ Up/Down turn pages (direction: Page Turn Buttons); hold either to skip a
 chapter, when enabled in Settings (Long-press behaviour). With Orient Front
 Buttons on, a rotated page keeps "up" on screen as Up (see Key map above).
 Select opens the reader menu (forced to List style
-here — Toolbar needs touch). Hold Select drops/clears a bookmark, when
-enabled in Settings (Long-press menu function) — both are OFF by default
-(`longPressButtonBehavior = OFF`, `longPressMenuFunction = LP_MENU_DISABLED`
-in `CrossPointSettings.h`). Back short
+here — Toolbar needs touch). Hold Select (about 0.4 s) runs
+Settings > Controls > Hold Select Action while Hold Select Menu is On, which is
+the default; Off makes a held Select do nothing in the reader. Hold Select
+Action defaults to Ask, which opens a popup with Highlight, Dictionary and
+Bookmark; the other values act directly. Both rows are five-button only. A
+settings.json without `holdSelectAction` takes it from the upstream
+`longPressMenuFunction` once (Bookmark and Dictionary carry over, Disabled turns
+Hold Select Menu off) and is resaved.
+Chapter skip by hold (Long-press behaviour) is OFF by default. Back short
 goes Home; held past `GO_BACK_OR_HOME_MS` it opens the file browser instead
 (or the reverse, if `backShortToFileBrowser` is set).
 
@@ -84,10 +89,52 @@ large step: Go to % steps by 10, Time to Sleep by 5 (`SettingsActivity.cpp:492`)
 Hints read "Press Up/Down: 1" / "Hold Up/Down: <large step>"; the Up slot
 shows "+", Down shows "-".
 
-## Dictionary word select
-A tap of Up/Down steps one word at a time. Holding either (≥500 ms) jumps a
-line instead, repeating every 350 ms; the release ending a line-jump hold
-does not also step a word. Select looks up the word; Back returns to the reader.
+## Word picker (dictionary and highlights)
+The picker works in two stages over the words on the current page.
+- **Pick line.** Up/Down move between text rows (hints: Pick line, Prev line,
+  Next line). The picker opens on a row near the middle of the page. Select
+  enters the row; Back leaves the picker.
+- **Pick word.** Opens on the row's longest word. Up/Down move along the row;
+  Select picks the word; Back returns to pick line.
+
+Dictionary lookups skip words with fewer than three letters or digits. The
+highlight picker stops on every word. Picking a word in the dictionary opens
+the lookup (Look Up on the hint bar); in highlights it sets the start or end.
+
+## Manage Dictionaries
+Settings > Reader > Manage Dictionaries replaces the Dictionary picker on this
+board. One row per dictionary (folder name; "In use" marks the default, and the
+hidden `/.dictionaries` root is shown), then an **Add Dictionary** row. Up/Down
+move; Select makes the dictionary the default; hold Select (about 0.7 s) opens
+Use as default, Rename, Delete and Add More. Rename asks through the usual text
+entry (31 characters at most; refused when empty, invalid or already taken) and
+keeps the folder in its root; Delete asks first and clears the default if it was
+that one. **Add Dictionary** and Add More open the Dictionaries web page the same
+way File Transfer does (Join a Network or Create Hotspot, then a QR code); leaving
+after the radio was on restarts the device into Settings. With no dictionaries
+the screen says so and Select (Add) opens the same page.
+
+## Definition screen
+Up/Down turn the definition's pages. Select returns to the reader. Back returns
+to word selection.
+
+## Highlights
+Hold Select opens the picker to make a highlight (Hold Select Action =
+Highlight, or Ask > Highlight). It runs in two steps on the page on screen:
+- **Start here.** Pick the first word.
+- **End here.** Pick the last word. A preview band covers the words from the
+  start word to the cursor, in reading order.
+
+Select on the end word saves the highlight. Back on the end step returns to the
+start step; Back on the start step cancels. Picking the same word twice makes a
+one-word highlight. If the start word is already highlighted, a popup offers
+Remove highlight, or Highlight to start another one there. A highlight stays on
+its page, since both ends are picked there. Highlighted words sit on a
+light-grey band behind the text.
+
+The reader menu's Highlights list shows each highlight's snippet with its
+chapter title. Select jumps to the highlight; hold Select (about 0.7 s) deletes
+it.
 
 ## Wi-Fi list
 The network list gains a trailing "Scan again" row (Select rescans), since

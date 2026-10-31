@@ -90,6 +90,13 @@ if (parsedSize != fileSize) {
 
 ## `section.bin`
 
+### Version 49
+
+Version 49 adds per-word visible-text offsets to every serialized `TextBlock`
+(see the `TextBlock` pattern below) so highlights can map a word on a loaded
+page back to the bookmark offset coordinate. Costs 4 bytes per line plus 3
+bytes per word. Sections from version 48 are rebuilt.
+
 ### Version 48
 
 Version 48 keeps the version 47 serialized layout unchanged. It was bumped
@@ -194,6 +201,10 @@ superscript, and subscript. The format also includes:
   NUL-terminated text blob, replacing v28's length-prefixed word strings. The
   on-disk order mirrors the in-RAM arena so the firmware reads a whole block
   payload with a single allocation and a single SD read
+- per-word visible-text offsets (v49): a `u32 visibleBase` per TextBlock plus a
+  `u16` delta and a `u8` source-codepoint length per word, so a loaded page can
+  map a word back to the bookmark/highlight offset coordinate. The length
+  excludes hyphens inserted by hyphenation and counts stripped soft hyphens
 
 ImHex pattern:
 
@@ -202,7 +213,7 @@ import std.mem;
 import std.string;
 import std.core;
 
-#define EXPECTED_VERSION 48
+#define EXPECTED_VERSION 49
 #define MAX_STRING_LENGTH 65535
 #define FOOTNOTE_NUMBER_LEN 32
 #define FOOTNOTE_HREF_LEN 256
@@ -266,19 +277,24 @@ struct TextBlock {
     u16 wordCount;
     u8 hasFocus;
     u16 textBytes [[comment("Total size of text[], including one NUL per word")]];
+    u32 visibleBase [[comment("Smallest visible-text offset on the line (v49)")]];
 
     if (wordCount > 0) {
         u16 textOff[wordCount] [[comment("Byte offset of word i's text within text[]")]];
         s16 wordXPos[wordCount];
+        u16 wordVisDelta[wordCount] [[comment("Word start = visibleBase + delta, clamped at 65535 (v49)")]];
         if (hasFocus != 0) {
             u16 wordFocusSuffixX[wordCount] [[comment("Suffix x offset from word start")]];
         }
         WordStyle wordStyle[wordCount];
+        u8 wordSrcLen[wordCount] [[comment("Source codepoints the word covers, clamped at 255; 0 = unknown (v49)")]];
         if (hasFocus != 0) {
             u8 wordFocusBoundary[wordCount] [[comment("UTF-8 byte boundary between bold prefix and suffix")]];
         }
         char text[textBytes] [[comment("All words back to back, each NUL-terminated")]];
     }
+
+    String rubyText[wordCount] [[comment("Ruby annotation per word, empty when none")]];
 
     BlockStyle blockStyle;
 };
@@ -508,3 +524,88 @@ make a real book disappear.
 
 `selfSize` is the expected file size. Comparing it against the real one is a free
 truncation guard: a build cut short by a power failure cannot pass.
+
+## Highlights — `/.crosspoint/highlights/<book key>.hl`
+
+Written by `HighlightStore` (`src/util/HighlightStore.cpp`). One file per book,
+kept sorted by spine index, then by start offset. It lives beside the book
+cache, not inside `/.crosspoint/epub_<hash>/`.
+
+### Book key
+
+The key is the one the bookmark file uses (`BookmarkUtil::getBookmarkPath`):
+the book path without its leading `/`, with `/` and `\` replaced by `_`, and the
+final extension removed. `/Books/Dune.epub` gives `/.crosspoint/highlights/Books_Dune.hl`.
+
+### Layout
+
+All multi-byte fields are little endian.
+
+| Offset | Size | Field |
+|---|---|---|
+| 0 | 2 | Magic `H` `L` |
+| 2 | 1 | Version, `1` |
+| 3 | 2 | `count`, u16 |
+| 5 | 74 × `count` | Records |
+
+Each record is 74 bytes:
+
+| Offset in record | Size | Field |
+|---|---|---|
+| 0 | 2 | `spine`, u16 spine index |
+| 2 | 4 | `start`, u32 visible-text offset |
+| 6 | 4 | `end`, u32 visible-text offset (exclusive) |
+| 10 | 64 | `snippet`, NUL-terminated UTF-8 |
+
+`start` and `end` are zero-based visible-text codepoint offsets within the spine
+item, the same coordinates as bookmarks and the per-word offsets in `section.bin`
+(version 49). The snippet holds the highlighted words joined by spaces, cut at a
+UTF-8 boundary to at most 63 bytes.
+
+ImHex pattern:
+
+```c++
+import std.core;
+
+#define EXPECTED_VERSION 1
+#define MAX_HIGHLIGHTS 256
+
+struct HighlightRecord {
+    u16 spine;
+    u32 start;
+    u32 end;
+    char snippet[64] [[comment("NUL-terminated UTF-8 snippet")]];
+};
+
+struct HighlightsFile {
+    char magic[2];
+    if (magic[0] != 'H' || magic[1] != 'L') {
+        std::error("Bad magic: expected 'HL'");
+    }
+    u8 version;
+    if (version != EXPECTED_VERSION) {
+        std::error(std::format("Unsupported version: {} (expected {})", version, EXPECTED_VERSION));
+    }
+    u16 count;
+    if (count > MAX_HIGHLIGHTS) {
+        std::warning(std::format("Count {} exceeds the cap of {}; the reader reads {}", count, MAX_HIGHLIGHTS, MAX_HIGHLIGHTS));
+    }
+    HighlightRecord records[count];
+};
+
+HighlightsFile highlights @ 0x00;
+```
+
+### Reading and writing
+
+- A missing file, or a header with the wrong magic or version, loads as an empty
+  list. The next save replaces the file.
+- The reader reads at most 256 records. Records with `end <= start` are dropped
+  on load.
+- Each add or remove rewrites the whole file: the records go to `<name>.hl.tmp`,
+  the existing `.hl` is removed, and the temp file is renamed to `.hl`. A failed
+  write removes the temp file and leaves the in-memory list unchanged. If power
+  is lost between the remove and the rename, the next load finds no `.hl` but a
+  `.hl.tmp` and renames it into place first.
+- Renaming or moving a book (file browser or web) moves its `.hl` with it.
+- The cap is 256 highlights per book; adding beyond it is refused.

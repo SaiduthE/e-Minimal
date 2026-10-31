@@ -21,6 +21,7 @@ the IP address shown on the device screen.
 | `GET` | `/dashboards` | Dashboards page: layouts and their editor, orientation, widget settings, to-do list |
 | `GET` | `/pictures` | Pictures page: photos shrunk and greyed on the phone, then uploaded into the Image widget's folder |
 | `GET` | `/fonts` | SD-card font manager page |
+| `GET` | `/dictionaries` | Dictionary manager page: unpack a StarDict zip/tar.gz in the browser, upload, pick, delete |
 | `GET` | `/js/jszip.min.js` | JavaScript asset used by the file manager |
 
 ## Device Status
@@ -477,6 +478,44 @@ Successful response:
 ```json
 {"ok":true}
 ```
+
+## Dictionary Management API
+
+Dictionaries live in `/dictionaries/<name>/` (or the hidden `/.dictionaries/<name>/`).
+The page unpacks archives in the browser and installs a dictionary with
+`POST /mkdir` (`name=dictionaries&path=/`, then `name=<name>&path=/dictionaries`)
+and one `POST /upload?path=/dictionaries/<name>` per file (`.dict`/`.dict.dz`
+first, `.idx` last so a half-copied folder is never listed). The device does no
+decompression. `/upload` refuses an existing file name, fine for a new folder,
+and also clears the book cache for that path (a no-op for non-books).
+
+### `GET /api/dictionaries`
+
+```json
+{
+  "selected": "webster",
+  "maxName": 31,
+  "dictionaries": [
+    {"name": "webster", "root": "/dictionaries", "selected": true, "hasSyn": false, "compressed": true}
+  ]
+}
+```
+
+`selected` is `SETTINGS.dictionaryName` (may be empty or stale). `compressed`
+means `.dict.dz`.
+
+### `POST /api/dictionaries/select`
+
+Form parameter `name`: the folder name, or empty to turn lookups off. The name
+must resolve to a usable dictionary and fit 31 characters. Saves the setting.
+Answers `{"ok":true}` or `400 {"error":...}`.
+
+### `POST /api/dictionaries/delete`
+
+Form parameter `name`: folder name (no separators, no leading dot). Recursively
+deletes the folder from whichever root holds it, and clears the selection if it
+was the selected one. Answers `{"ok":true}`, `400` for a bad name, `500` on
+failure.
 
 ## OPDS Server API
 
