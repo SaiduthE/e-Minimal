@@ -1056,6 +1056,43 @@ void GfxRenderer::fillRectDither(const int x, const int y, const int width, cons
   }
 }
 
+void GfxRenderer::fillRectGray4(const int x, const int y, const int width, const int height,
+                                const uint8_t level) const {
+  if (!gray4Active_ || level > 0xF || width <= 0 || height <= 0) return;
+  if (fontCacheManager_ && fontCacheManager_->isScanning()) return;
+
+  const int lx0 = std::max({0, x, clipLeft_});
+  const int ly0 = std::max({0, y, clipTop_});
+  const int lx1 = std::min({getScreenWidth(), x + width, clipRight_});
+  const int ly1 = std::min({getScreenHeight(), y + height, clipBottom_});
+  if (lx0 >= lx1 || ly0 >= ly1) return;
+
+  int paX, paY, pbX, pbY;
+  rotateCoordinates(orientation, lx0, ly0, &paX, &paY, panelWidth, panelHeight);
+  rotateCoordinates(orientation, lx1 - 1, ly1 - 1, &pbX, &pbY, panelWidth, panelHeight);
+  const int phyX0 = std::min(paX, pbX);
+  const int end = std::max(paX, pbX) + 1;  // exclusive
+  const int phyY0 = std::min(paY, pbY);
+  const int phyY1 = std::max(paY, pbY);
+
+  const uint8_t both = static_cast<uint8_t>(level * 0x11);
+  const uint32_t stride4 = getGray4Stride();
+  const int fullEnd = end & ~1;
+  for (int py = phyY0; py <= phyY1; ++py) {
+    uint8_t* row = gray4Buf_ + static_cast<uint32_t>(py) * stride4;
+    int px = phyX0;
+    if (px & 1) {
+      row[px >> 1] = static_cast<uint8_t>((row[px >> 1] & 0xF0) | level);
+      ++px;
+    }
+    if (fullEnd > px) {
+      memset(row + (px >> 1), both, static_cast<size_t>(fullEnd - px) >> 1);
+      px = fullEnd;
+    }
+    if (px < end) row[px >> 1] = static_cast<uint8_t>((row[px >> 1] & 0x0F) | (level << 4));
+  }
+}
+
 template <Color C>
 void GfxRenderer::fillRectImpl(const int x, const int y, const int width, const int height) const {
   if constexpr (C == Color::Clear) return;

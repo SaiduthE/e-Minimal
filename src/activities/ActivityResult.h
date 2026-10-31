@@ -67,9 +67,20 @@ struct FilePathResult {
   std::string path;
 };
 
+// Outcome of HighlightSelectActivity: a new range to save, or the index of a highlight to remove.
+struct HighlightResult {
+  uint16_t spine = 0;
+  uint32_t start = 0;
+  uint32_t end = 0;
+  char snippet[64] = {};
+  bool remove = false;
+  int removeIndex = -1;
+};
+
 using ResultVariant =
     std::variant<std::monostate, WifiResult, KeyboardResult, MenuResult, ChapterResult, PercentResult, IntervalResult,
-                 PageResult, ProgressChangeResult, NetworkModeResult, FootnoteResult, FilePathResult>;
+                 PageResult, ProgressChangeResult, NetworkModeResult, FootnoteResult, FilePathResult,
+                 HighlightResult>;
 
 struct ActivityResult {
   bool isCancelled = false;

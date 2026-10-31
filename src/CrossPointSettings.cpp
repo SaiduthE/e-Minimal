@@ -287,6 +287,25 @@ bool CrossPointSettings::fromJson(JsonVariantConst doc) {
       needsResave = true;
     }
   }
+  // Five-button boards dropped the Long-Press Menu row for Hold Select, so
+  // longPressMenuFunction is no longer loaded there: read the old value from the
+  // JSON once and carry it over. Other values keep the Hold Select defaults.
+  if (five_button::active() && doc["holdSelectAction"].isNull() && doc["longPressMenuFunction"].is<uint8_t>()) {
+    switch (doc["longPressMenuFunction"].as<uint8_t>()) {
+      case LP_MENU_BOOKMARK:
+        s.holdSelectAction = HOLD_BOOKMARK;
+        break;
+      case LP_MENU_DICTIONARY:
+        s.holdSelectAction = HOLD_DICTIONARY;
+        break;
+      case LP_MENU_DISABLED:
+        s.holdSelectMenu = 0;
+        break;
+      default:
+        break;
+    }
+    needsResave = true;
+  }
 
   // SD card font family name — not in SettingsList, load manually
   const char* sfn = doc["sdFontFamilyName"] | "";

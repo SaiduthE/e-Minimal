@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "BookmarkUtil.h"
+#include "HighlightStore.h"
 
 bool isBookCacheDirectoryName(const char* name) {
   if (!name) {
@@ -96,6 +97,7 @@ void moveBookCache(const char* oldPath, const char* newPath) {
   const std::string oldBook(oldPath);
   const std::string newBook(newPath);
   moveBookmarks(oldBook, newBook);
+  if (FsHelpers::hasEpubExtension(oldBook)) HighlightStore::moveForBook(oldBook, newBook);
 
   const std::string oldCache = bookCachePath(oldBook);
   const std::string newCache = bookCachePath(newBook);

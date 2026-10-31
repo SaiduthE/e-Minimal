@@ -53,7 +53,8 @@ namespace {
 //      and <ul>/<ol> containers contribute their own margins/padding to child insets.
 // v47: Word and character spacing in the header (cache validation); cached BlockStyle stores only character spacing.
 // v48: Pictures (>= 300 px each way) without CSS sizing scale up to fit the page.
-constexpr uint8_t SECTION_FILE_VERSION = 48;
+// v49: TextBlock stores per-word visible-text offsets (base + u16 deltas + source lengths) for highlights.
+constexpr uint8_t SECTION_FILE_VERSION = 49;
 // Written into the version field while a build is in progress; patched to
 // SECTION_FILE_VERSION only when the build is finalized. An abandoned /
 // crash-interrupted .bin therefore carries version 0, which loadSectionFile rejects

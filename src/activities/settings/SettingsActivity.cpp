@@ -25,6 +25,7 @@
 #include "KOReaderSettingsActivity.h"
 #include "KeyboardLayoutsActivity.h"
 #include "LanguageSelectActivity.h"
+#include "ManageDictionariesActivity.h"
 #include "MappedInputManager.h"
 #include "OpdsServerListActivity.h"
 #include "OtaUpdateActivity.h"
@@ -41,6 +42,7 @@
 #include "components/UIThemeTokens.h"
 #include "components/UiAppHelpers.h"
 #include "fontIds.h"
+#include "util/FiveButtonInput.h"
 #include "util/UiOrientation.h"
 
 namespace fui = freeink::ui;
@@ -93,9 +95,10 @@ void SettingsActivity::rebuildSettingsLists() {
   sdFontSystem.refreshIfDirty();
 
   // Rescan /dictionaries on every rebuild: cheap (one directory listing) and
-  // picks up dictionaries copied to the SD card since the last visit.
+  // picks up dictionaries copied to the SD card since the last visit. Five-button
+  // boards get a Manage Dictionaries row instead of the picker, so skip the scan.
   std::vector<DictionaryEntry> dictionaries;
-  DictionaryRegistry::discover(dictionaries);
+  if (!five_button::active()) DictionaryRegistry::discover(dictionaries);
 
   for (const auto& setting : getSettingsList(&sdFontSystem.registry(), &dictionaries)) {
     if (setting.category == StrId::STR_NONE_OPT || home_button::isSetting(setting.valuePtr)) continue;
@@ -191,6 +194,10 @@ void SettingsActivity::rebuildSettingsLists() {
                         SettingInfo::Action(StrId::STR_TEXT_SETTINGS, SettingAction::TextSettings));
   readerSettings.insert(readerSettings.begin() + 1,
                         SettingInfo::Action(StrId::STR_MANAGE_FONTS, SettingAction::DownloadFonts));
+  if (five_button::active()) {
+    // Shown even with no dictionaries installed: that screen is also how to add them.
+    readerSettings.push_back(SettingInfo::Action(StrId::STR_MANAGE_DICTIONARIES, SettingAction::ManageDictionaries));
+  }
   readerSettings.push_back(SettingInfo::Action(StrId::STR_CUSTOMISE_STATUS_BAR, SettingAction::CustomiseStatusBar));
 
   // Update currentSettings pointer and count for the active category
@@ -431,6 +438,13 @@ void SettingsActivity::toggleCurrentSetting() {
           startActivityForResult(std::move(activity), [this](const ActivityResult&) { requestUpdate(); });
         } else {
           LOG_ERR("SETTINGS", "OOM: ChargeBadgeSettingsActivity");
+        }
+        return;
+      case SettingAction::ManageDictionaries:
+        if (auto activity = makeUniqueNoThrow<ManageDictionariesActivity>(renderer, mappedInput)) {
+          startActivityForResult(std::move(activity), [this](const ActivityResult&) { requestUpdate(); });
+        } else {
+          LOG_ERR("SETTINGS", "OOM: ManageDictionariesActivity");
         }
         return;
       case SettingAction::RemapFrontButtons:

@@ -15,6 +15,7 @@
 #include <esp_system.h>
 
 #include <algorithm>
+#include <cstring>
 #include <functional>
 #include <iterator>
 #include <limits>
@@ -23,12 +24,15 @@
 #include "BookmarkEntry.h"
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
+#include "DictionaryChooserActivity.h"
 #include "DictionaryWordSelectActivity.h"
 #include "EpubReaderBookmarksActivity.h"
 #include "EpubReaderChapterSelectionActivity.h"
+#include "EpubReaderHighlightsActivity.h"
 #include "EpubReaderFootnotesActivity.h"
 #include "EpubReaderPercentSelectionActivity.h"
 #include "EpubReaderUtils.h"
+#include "HighlightSelectActivity.h"
 #include "KOReaderCredentialStore.h"
 #include "KOReaderSyncActivity.h"
 #include "MappedInputManager.h"
@@ -36,6 +40,7 @@
 #include "QrDisplayActivity.h"
 #include "ReaderActivity.h"
 #include "ReaderFontSizes.h"
+#include "ReaderHoldMenuActivity.h"
 #include "ReaderToolbarUi.h"
 #include "ReaderUtils.h"
 #include "RecentBooksStore.h"
@@ -45,6 +50,7 @@
 #include "fontIds.h"
 #include "util/BookmarkUtil.h"
 #include "util/ButtonNavigator.h"
+#include "util/FiveButtonInput.h"
 #include "util/ScreenshotUtil.h"
 
 namespace {
@@ -133,6 +139,7 @@ void moveFinishedBookToReadFolder(const std::string& srcPath, const std::string&
     LOG_ERR("ERS", "Failed to move finished book to '/Read' folder");
     return;
   }
+  HighlightStore::moveForBook(srcPath, dstPath);
 
   const std::string newCachePath = "/.crosspoint/epub_" + std::to_string(std::hash<std::string>{}(dstPath));
   if (!oldCachePath.empty() && Storage.exists(oldCachePath.c_str())) {
@@ -239,6 +246,7 @@ bool EpubReaderActivity::loadBook() {
   }
 
   loadCachedBookmarks();
+  highlights.load(epub->getPath());
   return true;
 }
 
@@ -311,10 +319,29 @@ void EpubReaderActivity::showBuildPopup(GfxRenderer& renderer, int& pagesUntilFu
 }
 
 void EpubReaderActivity::openDictionaryWordSelect() {
-  if (SETTINGS.dictionaryName[0] == '\0') {
+  // Empty or stale name: auto-pick the only dictionary, or let the user choose.
+  std::vector<DictionaryEntry> found;
+  bool nameChanged = false;
+  const auto state = DictionaryRegistry::ensureSelection(SETTINGS.dictionaryName, sizeof(SETTINGS.dictionaryName),
+                                                         found, &nameChanged);
+  if (nameChanged) SETTINGS.saveToFile();
+  if (state == DictionaryRegistry::SelectionState::NoneFound) {
+    dictionaryMessageText = tr(STR_NO_DICTIONARIES);
     showDictionaryMessage = true;
     dictionaryMessageTime = millis();
     requestUpdate();
+    return;
+  }
+  if (state == DictionaryRegistry::SelectionState::NeedChoice) {
+    startActivityForResult(std::make_unique<DictionaryChooserActivity>(renderer, mappedInput, std::move(found)),
+                           [this](const ActivityResult&) {
+                             // Back leaves the name empty: stay in the reader.
+                             if (SETTINGS.dictionaryName[0] != '\0') {
+                               openDictionaryWordSelect();
+                             } else {
+                               requestUpdate();
+                             }
+                           });
     return;
   }
   if (!section) return;
@@ -431,6 +458,11 @@ void EpubReaderActivity::loop() {
     requestUpdate();
   }
 
+  if (showHighlightMessage && (millis() - highlightMessageTime) >= ReaderUtils::BOOKMARK_MESSAGE_DURATION_MS) {
+    showHighlightMessage = false;
+    requestUpdate();
+  }
+
   // The toolbar reader menu owns all input while shown, ahead of the automatic page turn
   // below: the More panel's rate popup switches automatic turning on and leaves the panel
   // open, so the timer must neither flip the page under it nor eat the panel's next
@@ -504,7 +536,9 @@ void EpubReaderActivity::loop() {
   const bool confirmLongPressed = !endOfBookMenuOpen && confirmHoldMs != 0 &&
                                   mappedInput.wasLongPressed(MappedInputManager::Button::Confirm, confirmHoldMs);
   const bool confirmReleased = mappedInput.wasReleased(MappedInputManager::Button::Confirm);
-  if (confirmLongPressed) {
+  if (confirmLongPressed && five_button::active()) {
+    if (runHoldAction(SETTINGS.holdSelectAction)) return;
+  } else if (confirmLongPressed) {
     switch (SETTINGS.longPressMenuFunction) {
       case CrossPointSettings::LP_MENU_BOOKMARK:
         addBookmark();
@@ -910,10 +944,16 @@ void EpubReaderActivity::onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction 
       addBookmark();
       break;
     }
+    case EpubReaderMenuActivity::MenuAction::HIGHLIGHTS: {
+      startActivityForResult(std::make_unique<EpubReaderHighlightsActivity>(renderer, mappedInput, epub, highlights),
+                             progressChangeResultHandler);
+      break;
+    }
   }
 }
 
 unsigned long EpubReaderActivity::confirmLongPressThreshold() const {
+  if (five_button::active()) return SETTINGS.holdSelectMenu ? ReaderUtils::BOOKMARK_HOLD_MS : 0;
   switch (SETTINGS.longPressMenuFunction) {
     case CrossPointSettings::LP_MENU_BOOKMARK:
     case CrossPointSettings::LP_MENU_DICTIONARY:
@@ -925,6 +965,90 @@ unsigned long EpubReaderActivity::confirmLongPressThreshold() const {
     default:
       return 0;
   }
+}
+
+// Returns true when the action opened a screen, so loop() stops for this tick.
+bool EpubReaderActivity::runHoldAction(const uint8_t action) {
+  switch (action) {
+    case CrossPointSettings::HOLD_ASK:
+      openHoldMenu();
+      return true;
+    case CrossPointSettings::HOLD_DICTIONARY:
+      openDictionaryWordSelect();
+      return true;
+    case CrossPointSettings::HOLD_HIGHLIGHT:
+      openHighlightSelect();
+      return true;
+    case CrossPointSettings::HOLD_BOOKMARK:
+    default:
+      addBookmark();
+      showBookmarkMessage = true;
+      bookmarkMessageTime = millis();
+      requestUpdate();
+      return false;
+  }
+}
+
+void EpubReaderActivity::openHighlightSelect() {
+  if (!section) return;
+  auto page = section->loadPage(section->currentPage);
+  if (!page) return;
+
+  int orientedMarginTop, orientedMarginRight, orientedMarginBottom, orientedMarginLeft;
+  renderer.getOrientedViewableTRBL(&orientedMarginTop, &orientedMarginRight, &orientedMarginBottom,
+                                   &orientedMarginLeft);
+  orientedMarginTop += SETTINGS.screenMargin;
+  orientedMarginLeft += SETTINGS.screenMargin;
+
+  startActivityForResult(
+      std::make_unique<HighlightSelectActivity>(renderer, mappedInput, std::move(page), orientedMarginLeft,
+                                                orientedMarginTop, static_cast<uint16_t>(currentSpineIndex),
+                                                highlights),
+      [this](const ActivityResult& result) {
+        if (!result.isCancelled) {
+          if (const auto* picked = std::get_if<HighlightResult>(&result.data)) applyHighlightResult(*picked);
+        }
+        requestUpdate();
+      });
+}
+
+// Stores or removes the picked highlight and arms the toast.
+void EpubReaderActivity::applyHighlightResult(const HighlightResult& result) {
+  bool ok;
+  if (result.remove) {
+    ok = result.removeIndex >= 0 && highlights.remove(static_cast<size_t>(result.removeIndex));
+    highlightMessageText = ok ? tr(STR_HIGHLIGHT_REMOVED) : tr(STR_HIGHLIGHT_FAILED);
+  } else {
+    HighlightStore::Highlight entry;
+    entry.spine = result.spine;
+    entry.start = result.start;
+    entry.end = result.end;
+    memcpy(entry.snippet, result.snippet, sizeof(entry.snippet));
+    ok = highlights.add(entry);
+    highlightMessageText = ok ? tr(STR_HIGHLIGHT_SAVED) : tr(STR_HIGHLIGHT_FAILED);
+  }
+  if (!ok) LOG_ERR("ERS", "Highlight update failed");
+  showHighlightMessage = true;
+  highlightMessageTime = millis();
+}
+
+void EpubReaderActivity::openHoldMenu() {
+  // Row order of ReaderHoldMenuActivity; its MenuResult::action is the row index.
+  static constexpr uint8_t ROW_ACTIONS[] = {CrossPointSettings::HOLD_HIGHLIGHT, CrossPointSettings::HOLD_DICTIONARY,
+                                            CrossPointSettings::HOLD_BOOKMARK};
+  startActivityForResult(std::make_unique<ReaderHoldMenuActivity>(renderer, mappedInput, !pageShownGray4),
+                         [this](const ActivityResult& result) {
+                           if (result.isCancelled) {
+                             requestUpdate();
+                             return;
+                           }
+                           const int row = std::get<MenuResult>(result.data).action;
+                           if (row < 0 || row >= static_cast<int>(std::size(ROW_ACTIONS))) {
+                             requestUpdate();
+                             return;
+                           }
+                           runHoldAction(ROW_ACTIONS[row]);
+                         });
 }
 
 bool EpubReaderActivity::launchKOReaderSync() {
@@ -1112,6 +1236,7 @@ unsigned long EpubReaderActivity::idleWakeInMs() const {
   if (automaticPageTurnActive) due(lastPageTurnTime, pageTurnDuration);
   if (showBookmarkMessage) due(bookmarkMessageTime, ReaderUtils::BOOKMARK_MESSAGE_DURATION_MS);
   if (showDictionaryMessage) due(dictionaryMessageTime, ReaderUtils::BOOKMARK_MESSAGE_DURATION_MS);
+  if (showHighlightMessage) due(highlightMessageTime, ReaderUtils::BOOKMARK_MESSAGE_DURATION_MS);
   return wake;
 }
 
@@ -1446,14 +1571,18 @@ void EpubReaderActivity::renderBook() {
   }
 
   if (showDictionaryMessage) {
-    GUI.drawPopup(renderer, tr(STR_DICT_NO_DICT_SET));
+    GUI.drawPopup(renderer, dictionaryMessageText ? dictionaryMessageText : tr(STR_DICT_NO_DICT_SET));
+  }
+
+  if (showHighlightMessage && highlightMessageText) {
+    GUI.drawPopup(renderer, highlightMessageText);
   }
 
   // Toolbar menu: overlay the toolbar / panel on top of the freshly rendered page.
   if (overlay != Overlay::None && usesToolbarMenu()) {
     // The page just re-rendered under the overlay: refresh the snapshot that
     // backs panel->toolbar restores (any previous copy is stale).
-    overlayPageStored = renderer.storeBwBuffer();
+    overlayPageStored = !pageShownGray4 && renderer.storeBwBuffer();
     renderOverlay();
     // An open option picker rides on top of the freshly drawn panel.
     if (overlayPopup.isActive()) overlayPopup.render(renderer);
@@ -1554,6 +1683,13 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
   forcedRefreshPending = false;
   const bool cleanImageBasePending = manualRefreshPending || pagesUntilFullRefresh <= 1;
   const bool needsTextGrayscale = SETTINGS.textAntiAliasing;
+  pageShownGray4 = false;
+  // Highlight bands are true grey on the 16-level target. A highlight alone
+  // never pulls a page onto it (that would force a GC16 flash on the next BW
+  // turn with AA off): the BW pass dithers the band instead.
+  size_t highlightCount = 0;
+  const HighlightStore::Highlight* highlightRanges = highlights.spineRange(currentSpineIndex, highlightCount);
+  const bool pageHasHighlight = HighlightStore::pageHasHighlight(*page, highlightRanges, highlightCount);
   const bool needsAnyGrayscale = needsTextGrayscale || pageHasImages;
   const bool absoluteImageGrayscale = pageHasImages && !gpio.deviceIsX3() &&
                                       display.getController() == HalDisplay::Controller::UC8279 &&
@@ -1602,8 +1738,11 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
   if (needsAnyGrayscale && !absoluteImageGrayscale && renderer.supportsGray4() &&
       renderer.beginGray4Target(needsTextGrayscale)) {
     const auto tStart = millis();
+    pageShownGray4 = pageHasHighlight;
     // Text AA follows the setting; images always land grey (as the plane
-    // passes drew them even with AA off).
+    // passes drew them even with AA off). Highlight bands go under the text.
+    HighlightStore::paintPage(renderer, *page, fontId, orientedMarginLeft, orientedMarginTop, highlightRanges,
+                              pageHasHighlight ? highlightCount : 0);
     page->render(renderer, fontId, orientedMarginLeft, orientedMarginTop);
     // The status bar never went through the gray planes: solid ink, as the
     // B/W pass drew it.
@@ -1651,6 +1790,8 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
     return;
   }
 
+  HighlightStore::paintPage(renderer, *page, fontId, orientedMarginLeft, orientedMarginTop, highlightRanges,
+                            pageHasHighlight ? highlightCount : 0);
   page->render(renderer, fontId, orientedMarginLeft, orientedMarginTop);
   renderStatusBar();
   const auto tBwRender = millis();
@@ -2070,7 +2211,14 @@ void EpubReaderActivity::openOverlay(Overlay target) {
     if (previous == Overlay::None) {
       // Snapshot the clean page so stepping back from a panel to the toolbar
       // (and closing, where supported) can restore it without a re-render.
-      overlayPageStored = renderer.storeBwBuffer();
+      // A page with gray4 highlight bands is never snapshotted: restoring the
+      // 1bpp frame would turn the bands black.
+      overlayPageStored = !pageShownGray4 && renderer.storeBwBuffer();
+    } else if (pageShownGray4) {
+      // No clean snapshot to wipe the previous chrome: repaint the page, then
+      // the overlay on top (renderBook draws it).
+      requestUpdate();
+      return;
     } else if (overlayPageStored) {
       // Overlay -> overlay: wipe the previous chrome (toolbar header, sheet,
       // progress row) back to the clean page so none of it shows around or

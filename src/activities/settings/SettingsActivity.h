@@ -31,6 +31,7 @@ enum class SettingAction {
   About,
   SleepScreen,
   ChargeBadge,
+  ManageDictionaries,
 };
 
 struct SettingInfo {

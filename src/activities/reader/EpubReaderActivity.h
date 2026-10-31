@@ -17,6 +17,7 @@
 #include "ReaderActivity.h"
 #include "ReaderToolbarUi.h"
 #include "components/OptionPopup.h"
+#include "util/HighlightStore.h"
 
 class EpubReaderActivity final : public ReaderActivity {
   std::shared_ptr<Epub> epub;
@@ -43,6 +44,7 @@ class EpubReaderActivity final : public ReaderActivity {
   bool showBookmarkMessage = false;
   bool showDictionaryMessage = false;
   unsigned long dictionaryMessageTime = 0UL;
+  const char* dictionaryMessageText = nullptr;  // popup text; null means STR_DICT_NO_DICT_SET
   bool currentPageBookmarked = false;
   int idlePrewarmSpine = -1;
   int idlePrewarmPage = -1;
@@ -51,6 +53,11 @@ class EpubReaderActivity final : public ReaderActivity {
   std::vector<BookmarkEntry> cachedBookmarks;
   bool recentsEntryRemoved = false;
   unsigned long bookmarkMessageTime = 0UL;
+  // Text highlights of this book (loaded with the bookmarks) and their toast.
+  HighlightStore highlights;
+  bool showHighlightMessage = false;
+  unsigned long highlightMessageTime = 0UL;
+  const char* highlightMessageText = nullptr;
   bool pendingReadFolderMove = false;
 
   // Toolbar reader menu (SETTINGS.readerMenuStyle == READER_MENU_TOOLBAR): drawn
@@ -81,6 +88,11 @@ class EpubReaderActivity final : public ReaderActivity {
   // overlay, letting panel->toolbar steps restore the page without a full
   // re-render. Discarded on close / whenever the page under the overlay changes.
   bool overlayPageStored = false;
+  // The current page carries highlight bands drawn through the gray4 path: the
+  // 1bpp framebuffer shows them as black, so it must never be snapshotted or
+  // restored (overlay close/step-back repaints the page instead), and the
+  // Hold Select popup may not draw over it.
+  bool pageShownGray4 = false;
   // True while a deferred overlay chrome refresh (pushOverlayRefresh) may still
   // be running on the panel. settleOverlayRefresh() must run before the
   // framebuffer is touched or another differential refresh is pushed.
@@ -162,6 +174,11 @@ class EpubReaderActivity final : public ReaderActivity {
   void openDictionaryWordSelect();
   bool launchKOReaderSync();
   unsigned long confirmLongPressThreshold() const;
+  // Five-button Hold Select: runs a HOLD_* action. True when it opened a screen.
+  bool runHoldAction(uint8_t action);
+  void openHoldMenu();
+  void openHighlightSelect();
+  void applyHighlightResult(const HighlightResult& result);
   void toggleAutoPageTurn(uint8_t selectedPageTurnOption);
   void loadCachedBookmarks();
   void addBookmark();

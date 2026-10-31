@@ -23,6 +23,10 @@ class DictionaryDefinitionActivity final : public Activity {
         definition(std::move(definition)),
         htmlDefinition(htmlDefinition) {}
 
+  // MenuResult::action set by Confirm: the caller closes its word selection
+  // too and returns to the reader. Back returns no result.
+  static constexpr int RESULT_DONE = 1;
+
   void onEnter() override;
   void onExit() override;
   void loop() override;

@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Dictionaries – e-Minimal</title>
+    <link rel="stylesheet" href="/css/app.css" />
+    <script src="/js/app.js" defer></script>
+    <script src="/js/jszip.min.js" defer></script>
+    <style>
+      body[data-page="dictionaries"] #pickedInfo:empty { display: none; }
+      body[data-page="dictionaries"] #uploadProgress { margin-top: 16px; }
+      body[data-page="dictionaries"] #uploadProgress > p { margin: 8px 0 0; }
+      body[data-page="dictionaries"] #dropZone { border: 2px dashed var(--ink-2); border-radius: 4px; padding: 24px 16px; text-align: center; }
+      body[data-page="dictionaries"] #dropZone.over { border-style: solid; }
+      body[data-page="dictionaries"] #prepared[hidden] { display: none; }
+      body[data-page="dictionaries"] #prepared { margin-top: 16px; }
+    </style>
+  </head>
+  <body data-page="dictionaries" data-title="Dictionaries">
+    <main>
+      <section class="card">
+        <h2>Installed dictionaries</h2>
+        <div class="list" id="dicts"><p class="empty">Loading dictionaries…</p></div>
+      </section>
+
+      <section class="card">
+        <h2>Add a dictionary</h2>
+        <div id="dropZone">
+          <p>Drop a StarDict dictionary here</p>
+          <input type="file" id="dictFiles" multiple accept=".zip,.tar,.tgz,.gz,.idx,.dict,.dz,.syn,.ifo" />
+          <span class="field-hint">A .zip or .tar.gz, or the loose files (.idx, .dict or .dict.dz, optional .syn and .ifo).</span>
+        </div>
+        <span id="pickedInfo" class="field-hint" role="status" aria-live="polite"></span>
+
+        <form id="prepared" hidden>
+          <div class="field">
+            <label for="folderName">Folder name</label>
+            <input type="text" id="folderName" maxlength="31" autocomplete="off" required />
+            <span class="field-hint" id="nameHint"></span>
+          </div>
+          <button type="submit" class="btn btn-primary" id="installBtn">Install dictionary</button>
+        </form>
+
+        <div id="uploadProgress" hidden>
+          <div class="progress" aria-hidden="true"><span id="uploadBar" style="width:0%"></span></div>
+          <p id="status" class="small muted" role="status" aria-live="polite"></p>
+        </div>
+      </section>
+
+      <section class="card" id="sources">
+        <h2>Where to get dictionaries</h2>
+        <p class="small muted">Download the StarDict version, then add it above. On the eMinimal hotspot your
+          phone has no internet: download first on your usual network.</p>
+        <ul>
+          <li><a href="https://www.reader-dict.com" target="_blank" rel="noopener">reader.dict</a>:
+            Wiktionary dictionaries for many languages (one language explained in itself, e.g. English–English).</li>
+          <li><a href="https://download.wikdict.com/dictionaries/stardict/" target="_blank" rel="noopener">WikDict</a>:
+            free two-language dictionaries from Wiktionary (e.g. German–English).</li>
+          <li><a href="https://github.com/Vuizur/Wiktionary-Dictionaries" target="_blank" rel="noopener">Vuizur/Wiktionary-Dictionaries</a>:
+            Wiktionary from many languages into English, including English–English.</li>
+        </ul>
+        <details>
+          <summary>More sources</summary>
+          <ul>
+            <li><a href="https://xxyzz.github.io/wiktionary_stardict/" target="_blank" rel="noopener">wiktionary_stardict</a>:
+              Wiktionary, updated monthly.</li>
+            <li><a href="https://tuxor1337.frama.io/firedict/dictionaries.html" target="_blank" rel="noopener">FireDict list</a>:
+              freely available StarDict dictionaries.</li>
+            <li><a href="https://www.dictinfo.com/" target="_blank" rel="noopener">DictInfo</a>:
+              older Wiktionary-based dictionaries.</li>
+            <li><a href="https://fictionary.gumroad.com/" target="_blank" rel="noopener">Fictionaries</a>:
+              dictionaries for speculative fiction books and series.</li>
+            <li><a href="https://github.com/MilkMp/CIA-World-Factbooks-Archive-1990-2025" target="_blank" rel="noopener">World Factbooks Archive</a>:
+              36 years of the CIA World Factbook.</li>
+            <li><a href="https://github.com/Uri-Tauber/StarDict-Hebrew" target="_blank" rel="noopener">StarDict-Hebrew</a>:
+              Hebrew–English.</li>
+          </ul>
+          <p class="small muted">List from the
+            <a href="https://github.com/koreader/koreader/wiki/Dictionary-support" target="_blank" rel="noopener">KOReader wiki</a>.</p>
+        </details>
+      </section>
+    </main>
+
+  <script>
+    var MAX_NAME = 31;
+    var installed = [];      // names from /api/dictionaries
+    var prepared = null;     // {stem, files: [{name, blob}]}
+    var busy = false;
+    var currentSelected = '';
+
+    function formatSize(bytes) {
+      if (bytes >= 1048576) return (bytes / 1048576).toFixed(1) + ' MB';
+      if (bytes >= 1024) return (bytes / 1024).toFixed(0) + ' KB';
+      return bytes + ' B';
+    }
+
+    function el(id) { return document.getElementById(id); }
+
+    // ---- Installed list -------------------------------------------------
+
+    async function postForm(url, params) {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: new URLSearchParams(params).toString()
+      });
+      return res;
+    }
+
+    async function loadDicts() {
+      const box = el('dicts');
+      try {
+        const res = await fetch('/api/dictionaries');
+        const data = await res.json();
+        currentSelected = data.selected || '';
+        installed = (data.dictionaries || []).map(d => d.name);
+        box.replaceChildren();
+        if (!data.dictionaries || data.dictionaries.length === 0) {
+          const p = document.createElement('p');
+          p.className = 'empty';
+          p.textContent = 'No dictionaries on the card yet. Add one below to look up words while reading.';
+          box.appendChild(p);
+          updateNameHint();
+          return;
+        }
+        for (const d of data.dictionaries) {
+          const row = document.createElement('div');
+          row.className = 'row';
+
+          const info = document.createElement('div');
+          info.className = 'row-main';
+          info.textContent = d.name + (d.selected ? ' (in use)' : '');
+          const meta = document.createElement('span');
+          meta.className = 'row-meta';
+          meta.textContent = d.root + '/' + d.name + (d.compressed ? ' · compressed' : '') + (d.hasSyn ? ' · synonyms' : '');
+          info.appendChild(meta);
+
+          const actions = document.createElement('div');
+          actions.className = 'actions';
+
+          const use = document.createElement('button');
+          use.className = 'btn btn-sm';
+          use.textContent = d.selected ? 'Stop using' : 'Use';
+          use.setAttribute('aria-label', (d.selected ? 'Stop using ' : 'Use ') + d.name);
+          const name = d.name;
+          use.addEventListener('click', () => selectDict(d.selected ? '' : name));
+          actions.appendChild(use);
+
+          const del = document.createElement('button');
+          del.className = 'btn btn-danger btn-sm';
+          del.textContent = 'Delete';
+          del.setAttribute('aria-label', 'Delete ' + d.name);
+          del.addEventListener('click', () => deleteDict(name));
+          actions.appendChild(del);
+
+          row.appendChild(info);
+          row.appendChild(actions);
+          box.appendChild(row);
+        }
+      } catch (e) {
+        box.replaceChildren();
+        const p = document.createElement('p');
+        p.className = 'empty';
+        p.textContent = 'Could not load the dictionary list. Reload the page to try again.';
+        box.appendChild(p);
+      }
+      updateNameHint();
+    }
+
+    async function selectDict(name) {
+      try {
+        const res = await postForm('/api/dictionaries/select', {name: name});
+        if (res.ok) {
+          ui.toast(name ? 'Now using "' + name + '".' : 'Dictionary lookups turned off.', 'ok');
+        } else {
+          ui.toast('Could not change the dictionary.', 'danger');
+        }
+      } catch (err) {
+        ui.toast('Error: ' + err.message, 'danger');
+      }
+      await loadDicts();
+    }
+
+    async function deleteDict(name) {
+      if (!(await ui.confirm('Delete ' + name + '?', {ok: 'Delete dictionary', danger: true}))) return;
+      ui.toast('Deleting ' + name + '...');
+      try {
+        const res = await postForm('/api/dictionaries/delete', {name: name});
+        if (res.ok) {
+          ui.toast('Deleted "' + name + '".', 'ok');
+        } else {
+          ui.toast('Failed to delete "' + name + '".', 'danger');
+        }
+      } catch (err) {
+        ui.toast('Delete error: ' + err.message, 'danger');
+      }
+      await loadDicts();
+    }
+
+    // ---- Reading archives ----------------------------------------------
+
+    function baseName(path) {
+      const parts = path.split(/[\\/]/);
+      return parts[parts.length - 1];
+    }
+
+    function ignorable(path) {
+      return /(^|[\\/])__MACOSX([\\/]|$)/.test(path) || baseName(path).startsWith('._') ||
+        baseName(path) === '.DS_Store' || path.endsWith('/');
+    }
+
+    async function gunzip(blob) {
+      if (typeof DecompressionStream === 'undefined') {
+        throw new Error('This browser cannot unpack .gz files. Unpack on your computer, or use a newer browser.');
+      }
+      const stream = blob.stream().pipeThrough(new DecompressionStream('gzip'));
+      return await new Response(stream).blob();
+    }
+
+    async function readZip(file) {
+      if (typeof JSZip === 'undefined') throw new Error('The zip reader did not load. Reload the page.');
+      const zip = await JSZip.loadAsync(file);
+      const out = [];
+      for (const path of Object.keys(zip.files)) {
+        const entry = zip.files[path];
+        if (entry.dir || ignorable(path)) continue;
+        out.push({name: baseName(path), blob: await entry.async('blob')});
+      }
+      return out;
+    }
+
+    function tarString(bytes, start, len) {
+      let end = start;
+      while (end < start + len && bytes[end] !== 0) end++;
+      return new TextDecoder().decode(bytes.subarray(start, end));
+    }
+
+    function tarNumber(bytes, start, len) {
+      if (bytes[start] & 0x80) {  // base-256 for very large sizes
+        let n = bytes[start] & 0x7f;
+        for (let i = start + 1; i < start + len; i++) n = n * 256 + bytes[i];
+        return n;
+      }
+      const s = tarString(bytes, start, len).trim();
+      return s ? parseInt(s, 8) : 0;
+    }
+
+    // Minimal ustar reader over a byte stream: regular files only, with GNU
+    // long names ('L') and pax 'path' records understood.
+    async function readTar(stream) {
+      const reader = stream.getReader();
+      const chunks = [];
+      let avail = 0;
+      let ended = false;
+
+      async function fill(n) {
+        while (avail < n && !ended) {
+          const r = await reader.read();
+          if (r.done) { ended = true; break; }
+          chunks.push(r.value);
+          avail += r.value.length;
+        }
+        return avail >= n;
+      }
+      function take(n) {
+        const parts = [];
+        let rem = n;
+        while (rem > 0) {
+          const c = chunks[0];
+          if (c.length <= rem) { parts.push(c); rem -= c.length; chunks.shift(); }
+          else { parts.push(c.subarray(0, rem)); chunks[0] = c.subarray(rem); rem = 0; }
+        }
+        avail -= n;
+        return parts;
+      }
+      async function takeData(size, keep) {
+        const parts = [];
+        let rem = size;
+        while (rem > 0) {
+          if (!(await fill(1))) throw new Error('The archive is cut short.');
+          const n = Math.min(avail, rem);
+          const got = take(n);
+          if (keep) for (const g of got) parts.push(g);
+          rem -= n;
+        }
+        return parts;
+      }
+
+      const out = [];
+      let longName = null;
+      let paxPath = null;
+      while (await fill(512)) {
+        const header = new Uint8Array(512);
+        let off = 0;
+        for (const p of take(512)) { header.set(p, off); off += p.length; }
+        if (header.every(b => b === 0)) break;
+
+        let name = tarString(header, 0, 100);
+        const size = tarNumber(header, 124, 12);
+        const type = String.fromCharCode(header[156] || 48);
+        if (tarString(header, 257, 5) === 'ustar') {
+          const prefix = tarString(header, 345, 155);
+          if (prefix) name = prefix + '/' + name;
+        }
+        const padded = Math.ceil(size / 512) * 512;
+
+        if (type === 'L' || type === 'x') {
+          const parts = await takeData(size, true);
+          await takeData(padded - size, false);
+          const text = new TextDecoder().decode(await new Blob(parts).arrayBuffer());
+          if (type === 'L') {
+            longName = text.replace(/\0+$/, '');
+          } else {
+            const m = /\d+ path=([^\n]*)\n/.exec(text);
+            if (m) paxPath = m[1];
+          }
+          continue;
+        }
+        if (longName !== null) { name = longName; longName = null; }
+        if (paxPath !== null) { name = paxPath; paxPath = null; }
+
+        if (type === '0' || type === '\0') {
+          const keep = !ignorable(name);
+          const parts = await takeData(size, keep);
+          await takeData(padded - size, false);
+          if (keep) out.push({name: baseName(name), blob: new Blob(parts)});
+        } else {
+          await takeData(padded, false);  // directories, links, globals: skip
+        }
+      }
+      return out;
+    }
+
+    async function readTarGz(file) {
+      if (typeof DecompressionStream === 'undefined') {
+        throw new Error('This browser cannot unpack .tar.gz files. Use a .zip instead.');
+      }
+      return await readTar(file.stream().pipeThrough(new DecompressionStream('gzip')));
+    }
+
+    // ---- Preparing an install ------------------------------------------
+
+    function extOf(name) {
+      const l = name.toLowerCase();
+      if (l.endsWith('.dict.dz')) return '.dict.dz';
+      if (l.endsWith('.idx.gz')) return '.idx.gz';
+      if (l.endsWith('.syn.gz')) return '.syn.gz';
+      const i = l.lastIndexOf('.');
+      return i < 0 ? '' : l.slice(i);
+    }
+    function stemOf(name) { return name.slice(0, name.length - extOf(name).length); }
+
+    async function gatherFiles(fileList) {
+      const picked = Array.from(fileList);
+      if (picked.length === 1) {
+        const f = picked[0];
+        const l = f.name.toLowerCase();
+        if (/\.(tar\.bz2|tbz2?|tar\.xz|txz|tar\.zst|7z|rar|bz2|xz)$/.test(l)) {
+          throw new Error('Repack as .zip or .tar.gz');
+        }
+        if (l.endsWith('.zip')) return await readZip(f);
+        if (l.endsWith('.tar.gz') || l.endsWith('.tgz')) return await readTarGz(f);
+        if (l.endsWith('.tar')) return await readTar(f.stream());
+      }
+      return picked.filter(f => !ignorable(f.name)).map(f => ({name: f.name, blob: f}));
+    }
+
+    async function prepare(fileList) {
+      const info = el('pickedInfo');
+      prepared = null;
+      el('prepared').hidden = true;
+      if (!fileList || fileList.length === 0) return;
+      info.textContent = 'Reading files…';
+      try {
+        const all = await gatherFiles(fileList);
+
+        // Unpack .idx.gz / .syn.gz; keep only the StarDict parts.
+        const files = [];
+        for (const f of all) {
+          let ext = extOf(f.name);
+          let name = f.name;
+          let blob = f.blob;
+          if (ext === '.idx.gz' || ext === '.syn.gz') {
+            info.textContent = 'Unpacking ' + f.name + '…';
+            blob = await gunzip(blob);
+            name = stemOf(f.name) + ext.slice(0, -3);
+            ext = ext.slice(0, -3);
+          }
+          if (ext === '.idx' || ext === '.dict' || ext === '.dict.dz' || ext === '.syn' || ext === '.ifo') {
+            files.push({name: name, blob: blob});
+          }
+        }
+
+        const stems = [...new Set(files.filter(f => extOf(f.name) === '.idx').map(f => stemOf(f.name)))];
+        if (stems.length === 0) throw new Error('No .idx file found. This does not look like a StarDict dictionary.');
+        if (stems.length > 1) throw new Error('More than one dictionary found (' + stems.join(', ') + '). Add them one at a time.');
+        const stem = stems[0];
+        const mine = files.filter(f => stemOf(f.name) === stem);
+        const dict = mine.find(f => extOf(f.name) === '.dict.dz') || mine.find(f => extOf(f.name) === '.dict');
+        if (!dict) throw new Error('No ' + stem + '.dict or ' + stem + '.dict.dz next to the .idx.');
+
+        const ifo = mine.find(f => extOf(f.name) === '.ifo');
+        let bookname = '';
+        if (ifo) {
+          const text = await ifo.blob.text();
+          const bits = /^idxoffsetbits\s*=\s*(\d+)/m.exec(text);
+          if (bits && bits[1] === '64') {
+            throw new Error('This dictionary uses 64-bit index offsets (idxoffsetbits=64), which the reader does not support.');
+          }
+          const bn = /^bookname\s*=\s*(.+)$/m.exec(text);
+          if (bn) bookname = bn[1].trim();
+        }
+
+        // Upload order: data first, index last, so a half-copied folder never
+        // shows up as a usable dictionary.
+        const order = {'.dict': 0, '.dict.dz': 0, '.syn': 1, '.ifo': 2, '.idx': 3};
+        const keep = [];
+        const seen = new Set();
+        for (const f of mine) {
+          if (seen.has(f.name)) continue;
+          if ((extOf(f.name) === '.dict' || extOf(f.name) === '.dict.dz') && f !== dict) continue;
+          seen.add(f.name);
+          keep.push(f);
+        }
+        keep.sort((a, b) => order[extOf(a.name)] - order[extOf(b.name)]);
+
+        prepared = {stem: stem, files: keep};
+        const total = keep.reduce((s, f) => s + f.blob.size, 0);
+        info.textContent = 'Found "' + (bookname || stem) + '": ' + keep.length + ' files, ' + formatSize(total) + '.';
+        el('folderName').value = sanitizeName(bookname || stem);
+        el('prepared').hidden = false;
+        updateNameHint();
+      } catch (err) {
+        info.textContent = '';
+        ui.toast(err.message, 'danger');
+        info.textContent = err.message;
+      }
+    }
+
+    function sanitizeName(raw) {
+      return raw.replace(/[^A-Za-z0-9 _-]/g, '_').replace(/^[ .]+/, '').trim().slice(0, MAX_NAME);
+    }
+
+    function nameExists(name) {
+      const l = name.toLowerCase();
+      return installed.some(n => n.toLowerCase() === l);
+    }
+
+    function updateNameHint() {
+      const hint = el('nameHint');
+      const btn = el('installBtn');
+      const name = el('folderName').value;
+      if (!name.trim()) {
+        hint.textContent = 'Letters, digits, spaces, _ and -, up to ' + MAX_NAME + ' characters.';
+        btn.disabled = true;
+      } else if (nameExists(name)) {
+        hint.textContent = 'A dictionary named "' + name + '" is already installed. Pick another name, or delete it first.';
+        btn.disabled = true;
+      } else {
+        hint.textContent = 'Letters, digits, spaces, _ and -, up to ' + MAX_NAME + ' characters.';
+        btn.disabled = busy;
+      }
+    }
+
+    // ---- Uploading -----------------------------------------------------
+
+    function postFile(path, file, onProgress) {
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/upload?path=' + encodeURIComponent(path));
+        xhr.upload.onprogress = e => { if (e.lengthComputable) onProgress(e.loaded); };
+        xhr.onload = () => xhr.status === 200 ? resolve() : reject(new Error(xhr.responseText || ('HTTP ' + xhr.status)));
+        xhr.onerror = () => reject(new Error('Connection lost'));
+        const fd = new FormData();
+        fd.append('file', file.blob, file.name);
+        xhr.send(fd);
+      });
+    }
+
+    async function install() {
+      const name = sanitizeName(el('folderName').value);
+      if (!prepared || !name) return;
+      if (nameExists(name)) { updateNameHint(); return; }
+
+      busy = true;
+      el('installBtn').disabled = true;
+      el('uploadProgress').hidden = false;
+      const bar = el('uploadBar');
+      const status = el('status');
+      bar.style.width = '0%';
+
+      const total = prepared.files.reduce((s, f) => s + f.blob.size, 0) || 1;
+      let done = 0;
+      let created = false;
+      try {
+        // /dictionaries may not exist yet; "already exists" is fine.
+        await postForm('/mkdir', {name: 'dictionaries', path: '/'});
+        const mk = await postForm('/mkdir', {name: name, path: '/dictionaries'});
+        if (!mk.ok) throw new Error(await mk.text());
+        created = true;
+
+        for (const f of prepared.files) {
+          status.textContent = 'Uploading ' + f.name + ' (' + formatSize(f.blob.size) + ')…';
+          await postFile('/dictionaries/' + name, f, loaded => {
+            bar.style.width = Math.round((done + loaded) / total * 100) + '%';
+          });
+          done += f.blob.size;
+          bar.style.width = Math.round(done / total * 100) + '%';
+        }
+
+        status.textContent = 'Installed "' + name + '".';
+        ui.toast(status.textContent, 'ok');
+        prepared = null;
+        el('prepared').hidden = true;
+        el('pickedInfo').textContent = '';
+        el('dictFiles').value = '';
+        await loadDicts();
+        if (!currentSelected) await selectDict(name);
+      } catch (err) {
+        status.textContent = 'Upload failed: ' + err.message;
+        ui.toast(status.textContent, 'danger');
+        if (created) {
+          try { await postForm('/api/dictionaries/delete', {name: name, root: '/dictionaries'}); } catch (e) { /* best effort */ }
+        }
+        await loadDicts();
+      } finally {
+        busy = false;
+        updateNameHint();
+      }
+    }
+
+    // ---- Wiring --------------------------------------------------------
+
+    el('dictFiles').addEventListener('change', function() { prepare(this.files); });
+    el('folderName').addEventListener('input', function() {
+      const clean = sanitizeName(this.value);
+      if (clean !== this.value.slice(0, MAX_NAME)) this.value = clean;
+      updateNameHint();
+    });
+    el('prepared').addEventListener('submit', function(e) { e.preventDefault(); install(); });
+
+    const zone = el('dropZone');
+    ['dragenter', 'dragover'].forEach(t => zone.addEventListener(t, e => { e.preventDefault(); zone.classList.add('over'); }));
+    ['dragleave', 'drop'].forEach(t => zone.addEventListener(t, e => { e.preventDefault(); zone.classList.remove('over'); }));
+    zone.addEventListener('drop', e => { if (e.dataTransfer && e.dataTransfer.files.length) prepare(e.dataTransfer.files); });
+
+    loadDicts();
+  </script>
+  </body>
+</html>

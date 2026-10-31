@@ -394,6 +394,13 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
                           "longPressButtonBehavior", StrId::STR_CAT_CONTROLS),
         SettingInfo::Enum(StrId::STR_LONG_PRESS_MENU, &CrossPointSettings::longPressMenuFunction,
                           buildLongPressMenuValues(), "longPressMenuFunction", StrId::STR_CAT_CONTROLS),
+        // Five-button boards only; erased below everywhere else, which replaces the Long-Press Menu row.
+        SettingInfo::Toggle(StrId::STR_HOLD_SELECT_MENU, &CrossPointSettings::holdSelectMenu, "holdSelectMenu",
+                            StrId::STR_CAT_CONTROLS),
+        SettingInfo::Enum(StrId::STR_HOLD_SELECT_ACTION, &CrossPointSettings::holdSelectAction,
+                          {StrId::STR_HOLD_ASK, StrId::STR_DICTIONARY, StrId::STR_HIGHLIGHT,
+                           StrId::STR_BOOKMARK_OPTION},
+                          "holdSelectAction", StrId::STR_CAT_CONTROLS),
         // Erased below unless the board is an X4 Pro.
         SettingInfo::Toggle(StrId::STR_DBL_CLICK_PWR_LIGHT, &CrossPointSettings::doubleClickPwrLight,
                             "doubleClickPwrLight", StrId::STR_CAT_CONTROLS),
@@ -557,8 +564,12 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
     // always uses the device keyboard.
     if (five_button::active()) {
       eraseEntry(StrId::STR_READER_MENU_STYLE);
+      // Hold Select replaces the Long-Press Menu row on five-button boards.
+      eraseEntry(StrId::STR_LONG_PRESS_MENU);
     } else {
       eraseEntry(StrId::STR_TEXT_ENTRY);
+      eraseEntry(StrId::STR_HOLD_SELECT_MENU);
+      eraseEntry(StrId::STR_HOLD_SELECT_ACTION);
     }
 #if FREEINK_DEVICE_EMINIMAL
     // e-Minimal ships its own theme only; fromJson() pins uiTheme to it.
@@ -625,7 +636,9 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
       *it = buildFontSizeSetting(registry);
     }
   }
-  if (dictionaries && !dictionaries->empty()) {
+  // Five-button boards manage dictionaries on their own screen instead (an
+  // ACTION row added by SettingsActivity).
+  if (dictionaries && !dictionaries->empty() && !five_button::active()) {
     // Insert at the end of the Reader category (just before the first Controls entry).
     auto it =
         std::find_if(v.begin(), v.end(), [](const SettingInfo& s) { return s.category == StrId::STR_CAT_CONTROLS; });

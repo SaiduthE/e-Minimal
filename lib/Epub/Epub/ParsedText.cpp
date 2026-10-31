@@ -1356,12 +1356,32 @@ void ParsedText::extractLine(const size_t breakIndex, const int pageWidth, const
   lineWords.reserve(lineWordCount);
   std::vector<EpdFontFamily::Style> lineWordStyles;
   lineWordStyles.reserve(lineWordCount);
+  // Per-word visible offset and source-codepoint length, in logical order (see TextBlock.h).
+  std::vector<uint32_t> lineOffsets;
+  lineOffsets.reserve(lineWordCount);
+  std::vector<uint8_t> lineSrcLens;
+  lineSrcLens.reserve(lineWordCount);
 
   for (size_t i = 0; i < lineWordCount; ++i) {
     // Copy out of the arena: TextBlock construction and bidi reorder below
     // want owning strings. Bounded by one line; the arena bytes are released
     // by the consumed-prefix pass in layoutAndExtractLines.
     std::string word{wordAt(lastBreakAt + i)};  // brace-init: `word(` is an Arduino macro
+    // Source length: soft hyphens count (they are source codepoints), NFC composition is not undone.
+    const size_t wordIdx = lastBreakAt + i;
+    const uint32_t startOffset = visibleOffsetAt(wordIdx);
+    size_t srcLen = countCodepoints(word);
+    // A hyphenation prefix carries an inserted '-' that is not in the source: the next word's
+    // offset then lands exactly one codepoint before the nominal end. Whitespace gaps give a
+    // larger next offset, so this only ever shortens the span.
+    if (wordIdx + 1 < wordVisibleOffsetDeltas.size()) {
+      const uint32_t nextOffset = visibleOffsetAt(wordIdx + 1);
+      if (nextOffset > startOffset && nextOffset - startOffset < srcLen) {
+        srcLen = nextOffset - startOffset;
+      }
+    }
+    lineOffsets.push_back(startOffset);
+    lineSrcLens.push_back(static_cast<uint8_t>(std::min<size_t>(srcLen, UINT8_MAX)));
     if (containsSoftHyphen(word)) {
       stripSoftHyphensInPlace(word);
     }
@@ -1556,6 +1576,17 @@ void ParsedText::extractLine(const size_t breakIndex, const int pageWidth, const
 
     lineWords.swap(reorderedWordsScratch);
     lineWordStyles.swap(reorderedStylesScratch);
+    // Offsets follow the words into visual order.
+    std::vector<uint32_t> visualOffsets;
+    std::vector<uint8_t> visualSrcLens;
+    visualOffsets.reserve(lineWordCount);
+    visualSrcLens.reserve(lineWordCount);
+    for (const uint16_t src : visualOrderScratch) {
+      visualOffsets.push_back(lineOffsets[src]);
+      visualSrcLens.push_back(lineSrcLens[src]);
+    }
+    lineOffsets.swap(visualOffsets);
+    lineSrcLens.swap(visualSrcLens);
   } else {
     // Standard LTR/RTL positioning loop when no visual reordering is needed
     if (blockStyle.isRtl) {
@@ -1698,7 +1729,7 @@ void ParsedText::extractLine(const size_t breakIndex, const int pageWidth, const
     // TextBlock flattens the vectors into its arena; they stay owned here and die at return.
     auto block = makeUniqueNoThrow<TextBlock>(lineWords, lineXPos, lineWordStyles, std::vector<uint8_t>{},
                                               std::vector<uint16_t>{}, blockStyle, std::move(lineRubyTexts),
-                                              std::move(lineLinks));
+                                              std::move(lineLinks), lineOffsets, lineSrcLens);
     if (!block || !block->valid()) {
       LOG_ERR("PTX", "Dropping line: TextBlock or arena allocation failed");
       // Latch through the same flag as addWord() OOM: the caller releases the
@@ -1726,7 +1757,7 @@ void ParsedText::extractLine(const size_t breakIndex, const int pageWidth, const
   }
 
   auto block = makeUniqueNoThrow<TextBlock>(lineWords, lineXPos, lineWordStyles, outBoundaries, outSuffixX, blockStyle,
-                                            std::move(lineRubyTexts), std::move(lineLinks));
+                                            std::move(lineRubyTexts), std::move(lineLinks), lineOffsets, lineSrcLens);
   if (!block || !block->valid()) {
     LOG_ERR("PTX", "Dropping line: TextBlock or arena allocation failed");
     droppedWords = true;  // see the non-focus branch above

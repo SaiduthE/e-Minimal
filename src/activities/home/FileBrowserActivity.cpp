@@ -21,6 +21,7 @@
 #include "fontIds.h"
 #include "util/BookCacheUtils.h"
 #include "util/BookmarkUtil.h"
+#include "util/HighlightStore.h"
 
 namespace fui = freeink::ui;
 
@@ -482,15 +483,24 @@ void FileBrowserActivity::renameSelectedFile(const std::string& oldPath, const s
   const bool isEpub = FsHelpers::hasEpubExtension(oldPath);
   const std::string oldBookmarkPath = isEpub ? BookmarkUtil::getBookmarkPath(oldPath) : "";
   const std::string newBookmarkPath = isEpub ? BookmarkUtil::getBookmarkPath(newPath) : "";
+  const std::string oldHighlightPath = isEpub ? HighlightStore::pathForBook(oldPath) : "";
+  const std::string newHighlightPath = isEpub ? HighlightStore::pathForBook(newPath) : "";
   bool cacheMoved = false;
   bool bookmarksMoved = false;
+  bool highlightsMoved = false;
   if (!moveStatePath(oldCachePath, newCachePath, cacheMoved)) return;
   if (!moveStatePath(oldBookmarkPath, newBookmarkPath, bookmarksMoved)) {
     rollBackStatePath(oldCachePath, newCachePath, cacheMoved);
     return;
   }
+  if (!moveStatePath(oldHighlightPath, newHighlightPath, highlightsMoved)) {
+    rollBackStatePath(oldBookmarkPath, newBookmarkPath, bookmarksMoved);
+    rollBackStatePath(oldCachePath, newCachePath, cacheMoved);
+    return;
+  }
   if (!Storage.rename(oldPath.c_str(), newPath.c_str())) {
     LOG_ERR("FileBrowser", "Failed to rename file: %s -> %s", oldPath.c_str(), newPath.c_str());
+    rollBackStatePath(oldHighlightPath, newHighlightPath, highlightsMoved);
     rollBackStatePath(oldBookmarkPath, newBookmarkPath, bookmarksMoved);
     rollBackStatePath(oldCachePath, newCachePath, cacheMoved);
     return;
