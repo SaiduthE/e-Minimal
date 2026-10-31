@@ -42,6 +42,7 @@ DashboardPortalActivity::~DashboardPortalActivity() = default;
 
 std::string DashboardPortalActivity::pagePath(const Section section, const uint8_t layoutId) {
   const char* fragment = "";
+  if (section == Section::Dictionaries) return "/dictionaries";
   switch (section) {
     case Section::Layouts:
       fragment = "#layouts";
@@ -67,10 +68,15 @@ std::string DashboardPortalActivity::pagePath(const Section section, const uint8
       fragment = "#date";
       break;
     case Section::Overview:
+    case Section::Dictionaries:
     default:
       break;
   }
   return std::string("/dashboards") + fragment;
+}
+
+const char* DashboardPortalActivity::title() const {
+  return section == Section::Dictionaries ? tr(STR_DICTIONARY) : tr(STR_APP_DASHBOARD);
 }
 
 bool DashboardPortalActivity::skipLoopDelay() { return webServer && webServer->isRunning(); }
@@ -108,7 +114,7 @@ void DashboardPortalActivity::openChoice() {
   const NetworkMode initial =
       APP_STATE.dashboardPortalMode == PORTAL_MODE_HOTSPOT ? NetworkMode::CREATE_HOTSPOT : NetworkMode::JOIN_NETWORK;
   auto choice = makeUniqueNoThrow<NetworkModeSelectionActivity>(
-      renderer, mappedInput, NetworkModeSelectionActivity::Choices::JoinOrHotspot, tr(STR_APP_DASHBOARD), initial);
+      renderer, mappedInput, NetworkModeSelectionActivity::Choices::JoinOrHotspot, title(), initial);
   if (!choice) {
     LOG_ERR("DPORTAL", "OOM: network choice screen");
     fail("Network choice");
@@ -259,7 +265,11 @@ void DashboardPortalActivity::onExit() {
     WiFi.disconnect(false);
     delay(30);
   }
-  silentRestart();
+  if (section == Section::Dictionaries) {
+    silentRestartToSettings();
+  } else {
+    silentRestart();
+  }
 }
 
 void DashboardPortalActivity::loop() {
@@ -308,7 +318,7 @@ void DashboardPortalActivity::render(RenderLock&&) {
   const auto& metrics = theme.getMetrics();
   const Rect screen = theme.getScreenSafeArea(renderer, true, false);
   GUI.drawHeader(renderer, Rect{screen.x, screen.y + metrics.topPadding, screen.width, metrics.headerHeight},
-                 tr(STR_APP_DASHBOARD));
+                 title());
 
   const int top = screen.y + metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing * 2;
   const Rect bounds{screen.x, top, screen.width, screen.y + screen.height - top};
@@ -316,7 +326,7 @@ void DashboardPortalActivity::render(RenderLock&&) {
   switch (phase) {
     case Phase::Running: {
       PhoneJoinPanel::Content content;
-      content.headline = tr(STR_DASH_PORTAL_HINT);
+      content.headline = section == Section::Dictionaries ? tr(STR_DICT_PORTAL_HINT) : tr(STR_DASH_PORTAL_HINT);
       content.pageUrl = pageUrl;
       content.pageAlt = pageAlt.c_str();
       char status[128];
@@ -332,8 +342,10 @@ void DashboardPortalActivity::render(RenderLock&&) {
       break;
     }
     case Phase::Error:
-      UITheme::drawCenteredWrappedText(renderer, bounds, UI_12_FONT_ID, tr(STR_DASH_PORTAL_ERROR), 3, true,
-                                       EpdFontFamily::BOLD);
+      UITheme::drawCenteredWrappedText(
+          renderer, bounds, UI_12_FONT_ID,
+          section == Section::Dictionaries ? tr(STR_DICT_PORTAL_ERROR) : tr(STR_DASH_PORTAL_ERROR), 3, true,
+          EpdFontFamily::BOLD);
       break;
     case Phase::Starting:
     default:

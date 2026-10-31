@@ -192,6 +192,16 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     LONG_PRESS_MENU_FUNCTION_COUNT
   };
 
+  // Five-button boards: the action a held Select runs in the EPUB reader. HOLD_ASK
+  // opens the choice popup instead. Append-only.
+  enum HOLD_SELECT_ACTION {
+    HOLD_ASK = 0,
+    HOLD_DICTIONARY = 1,
+    HOLD_HIGHLIGHT = 2,
+    HOLD_BOOKMARK = 3,
+    HOLD_SELECT_ACTION_COUNT
+  };
+
   // Hide battery percentage
   enum HIDE_BATTERY_PERCENTAGE { HIDE_NEVER = 0, HIDE_READER = 1, HIDE_ALWAYS = 2, HIDE_BATTERY_PERCENTAGE_COUNT };
 
@@ -376,6 +386,10 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   // Long-press Confirm function in EPUB reader (cycles through LONG_PRESS_MENU_FUNCTION values).
   // Defaults to Disabled so shortcut-based bookmark toggling remains opt-in.
   uint8_t longPressMenuFunction = LP_MENU_DISABLED;
+  // Five-button boards only (replaces the Long-Press Menu row there). Off: a held
+  // Select does nothing in the reader.
+  uint8_t holdSelectMenu = 1;
+  uint8_t holdSelectAction = HOLD_ASK;
   // UI Theme
 #if FREEINK_DEVICE_EMINIMAL
   uint8_t uiTheme = EMINIMAL;

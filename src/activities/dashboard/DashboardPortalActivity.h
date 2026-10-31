@@ -15,21 +15,26 @@ class CrossPointWebServer;
 // screen; the phone must be on that network too) or Create Hotspot (the shared
 // one). Once the radio has been up, leaving restarts silently, like File
 // Transfer; boot routing returns to the Dashboard app.
+//
+// Section::Dictionaries reuses the flow for the Dictionaries page (opened from
+// Settings > Manage Dictionaries): it is not a Dashboard screen, and the
+// restart returns to Settings.
 class DashboardPortalActivity final : public Activity {
  public:
   // EditLayout takes the layout's id.
-  enum class Section : uint8_t { Overview, Layouts, NewLayout, EditLayout, Weather, Todo, Image, Date };
+  enum class Section : uint8_t { Overview, Layouts, NewLayout, EditLayout, Weather, Todo, Image, Date, Dictionaries };
 
   DashboardPortalActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, Section section = Section::Overview,
                           uint8_t layoutId = 0);
   ~DashboardPortalActivity() override;
 
   // "/dashboards" plus the section's fragment: "", "#layouts", "#layout-new",
-  // "#layout-<id>", "#weather", "#todo", "#image", "#date".
+  // "#layout-<id>", "#weather", "#todo", "#image", "#date"; "/dictionaries" for
+  // Section::Dictionaries.
   static std::string pagePath(Section section, uint8_t layoutId);
 
   void onEnter() override;
-  bool isDashboardActivity() const override { return true; }
+  bool isDashboardActivity() const override { return section != Section::Dictionaries; }
   void onExit() override;
   void loop() override;
   void render(RenderLock&&) override;
@@ -41,6 +46,7 @@ class DashboardPortalActivity final : public Activity {
   // Choosing: the choice or WiFi screen is on top; this one paints nothing.
   enum class Phase : uint8_t { Choosing, Starting, Running, Error };
 
+  const char* title() const;
   void openChoice();
   void onModeChosen(bool hotspot);
   void startHotspot();

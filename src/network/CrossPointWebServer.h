@@ -125,6 +125,12 @@ class CrossPointWebServer {
   void handleFontUploadData();
   void handleFontDelete();
 
+  // Dictionary management handlers
+  void handleDictionariesPage() const;
+  void handleDictionaryList() const;
+  void handleDictionarySelect();
+  void handleDictionaryDelete();
+
   // Font upload state
   struct FontUploadState {
     HalFile file;

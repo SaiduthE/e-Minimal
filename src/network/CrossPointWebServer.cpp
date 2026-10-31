@@ -35,6 +35,7 @@
 #include "html/ConvertPageHtml.generated.h"
 #include "html/DashboardsPageHtml.generated.h"
 #include "html/FilesPageHtml.generated.h"
+#include "html/DictionariesPageHtml.generated.h"
 #include "html/FontsPageHtml.generated.h"
 #include "html/HomePageHtml.generated.h"
 #include "html/PicturesPageHtml.generated.h"
@@ -47,6 +48,7 @@
 #include "html/js/pdf_minJs.generated.h"
 #include "html/js/pdf_worker_minJs.generated.h"
 #include "util/BookCacheUtils.h"
+#include "util/DictionaryRegistry.h"
 #include "util/TaskWatchdog.h"
 #include "util/UiOrientation.h"
 
@@ -475,6 +477,12 @@ void CrossPointWebServer::begin() {
   server->on("/api/fonts", HTTP_GET, [this] { handleFontList(); });
   server->on("/api/fonts/upload", HTTP_POST, [this] { handleFontUpload(); }, [this] { handleFontUploadData(); });
   server->on("/api/fonts/delete", HTTP_POST, [this] { handleFontDelete(); });
+
+  // Dictionary management endpoints
+  server->on("/dictionaries", HTTP_GET, [this] { handleDictionariesPage(); });
+  server->on("/api/dictionaries", HTTP_GET, [this] { handleDictionaryList(); });
+  server->on("/api/dictionaries/select", HTTP_POST, [this] { handleDictionarySelect(); });
+  server->on("/api/dictionaries/delete", HTTP_POST, [this] { handleDictionaryDelete(); });
 
   // OPDS server endpoints
   server->on("/api/opds", HTTP_GET, [this] { handleGetOpdsServers(); });
@@ -2538,4 +2546,84 @@ void CrossPointWebServer::handleFontDelete() {
     server->send(500, "application/json", "{\"error\":\"Delete failed\"}");
     LOG_ERR("WEB", "Failed to delete font family: %s", familyName);
   }
+}
+
+// --- Dictionary management handlers ---
+
+void CrossPointWebServer::handleDictionariesPage() const {
+  PhonePage::sendStatic(*server, DictionariesPageHtml, sizeof(DictionariesPageHtml), DictionariesPageHtmlETag,
+                        "text/html");
+  LOG_DBG("WEB", "Served dictionaries page");
+}
+
+void CrossPointWebServer::handleDictionaryList() const {
+  std::vector<DictionaryEntry> dicts;
+  DictionaryRegistry::discover(dicts);
+
+  JsonDocument doc;
+  doc["selected"] = static_cast<const char*>(SETTINGS.dictionaryName);
+  doc["maxName"] = sizeof(SETTINGS.dictionaryName) - 1;
+  JsonArray arr = doc["dictionaries"].to<JsonArray>();
+  for (const auto& d : dicts) {
+    JsonObject o = arr.add<JsonObject>();
+    o["name"] = d.name.c_str();
+    o["root"] = d.root;
+    o["selected"] = d.name == SETTINGS.dictionaryName;
+    o["hasSyn"] = d.hasSyn;
+    o["compressed"] = d.compressed;
+  }
+
+  String json;
+  serializeJson(doc, json);
+  server->send(200, "application/json", json);
+}
+
+void CrossPointWebServer::handleDictionarySelect() {
+  if (!server->hasArg("name")) {
+    sendJsonError(*server, 400, "Missing name");
+    return;
+  }
+  const String name = server->arg("name");
+  if (name.length() >= sizeof(SETTINGS.dictionaryName)) {
+    sendJsonError(*server, 400, "Name too long");
+    return;
+  }
+  if (name.length() > 0) {
+    std::string base;
+    if (!DictionaryRegistry::resolveBasePath(name.c_str(), base)) {
+      sendJsonError(*server, 400, "No such dictionary");
+      return;
+    }
+  }
+  strncpy(SETTINGS.dictionaryName, name.c_str(), sizeof(SETTINGS.dictionaryName) - 1);
+  SETTINGS.dictionaryName[sizeof(SETTINGS.dictionaryName) - 1] = '\0';
+  SETTINGS.saveToFile();
+  server->send(200, "application/json", "{\"ok\":true}");
+}
+
+void CrossPointWebServer::handleDictionaryDelete() {
+  const String name = server->arg("name");
+  if (!DictionaryRegistry::isValidFolderName(name.c_str())) {
+    sendJsonError(*server, 400, "Invalid name");
+    return;
+  }
+  // Optional: limit the delete to one root (the page's failed-upload cleanup
+  // must not touch a same-named dictionary in the other root).
+  const String root = server->arg("root");
+  if (root.length() > 0 && root != "/dictionaries" && root != "/.dictionaries") {
+    sendJsonError(*server, 400, "Invalid root");
+    return;
+  }
+  resetTaskWatchdogIfSubscribed();
+  if (!DictionaryRegistry::deleteDictionary(name.c_str(), root.length() > 0 ? root.c_str() : nullptr)) {
+    sendJsonError(*server, 500, "Delete failed");
+    return;
+  }
+  std::string remaining;
+  if (name == SETTINGS.dictionaryName && !DictionaryRegistry::resolveBasePath(name.c_str(), remaining)) {
+    SETTINGS.dictionaryName[0] = '\0';
+    SETTINGS.saveToFile();
+  }
+  LOG_DBG("WEB", "Deleted dictionary: %s", name.c_str());
+  server->send(200, "application/json", "{\"ok\":true}");
 }

@@ -23,10 +23,22 @@
 // unaligned multi-byte access):
 //   uint16_t textOff[wordCount]        byte offset of word i's text in text[]
 //   int16_t  xpos[wordCount]
+//   uint16_t visDelta[wordCount]       word i's visible offset minus visibleBase
 //   uint16_t focusSuffixX[wordCount]   present only when focusPresent
 //   uint8_t  styles[wordCount]
+//   uint8_t  srcLen[wordCount]         source codepoints the word covers
 //   uint8_t  focusBoundary[wordCount]  present only when focusPresent
 //   char     text[textBytes]           all words back to back, NUL-terminated
+//
+// Visible offsets (the coordinate bookmarks and highlights use, see
+// Section::getVisibleTextOffsetForPage): visibleBase is the smallest offset on
+// the line (the first word, except on bidi-reordered lines) and
+// word i starts at visibleBase + visDelta[i]. srcLen[i] is the word's length in
+// SOURCE codepoints, so wordVisibleEnd() excludes a hyphen inserted by
+// hyphenation and counts soft hyphens that were stripped from the stored text.
+// Deltas clamp at 65535 and srcLen at 255 (a line is far shorter). Blocks built
+// without source text (callers that pass no offsets) store base 0, deltas 0 and
+// srcLen 0, i.e. "unknown": wordVisibleEnd(i) == wordVisibleOffset(i).
 //
 // Each word is stored NUL-terminated so render() can hand `text + textOff[i]`
 // straight to C APIs (drawText) with no std::string materialization.
@@ -53,6 +65,7 @@ class TextBlock final : public Block {
   uint16_t textBytes = 0;  // total size of the text region, including NULs
   bool focusPresent = false;
   bool isValid = true;
+  uint32_t visibleBase = 0;  // smallest visible offset on the line; see layout comment
   // The ONLY allocation: makeUniqueNoThrow, so OOM yields an invalid block
   // instead of abort() (bare new is not nothrow with -fno-exceptions).
   std::unique_ptr<uint8_t[]> arena;
@@ -60,8 +73,10 @@ class TextBlock final : public Block {
   // 16-bit bases sit at even offsets, so direct dereference is alignment-safe.
   const uint16_t* textOffArr = nullptr;
   const int16_t* xposArr = nullptr;
+  const uint16_t* visDeltaArr = nullptr;
   const uint16_t* focusSuffixXArr = nullptr;  // null when !focusPresent
   const uint8_t* stylesArr = nullptr;
+  const uint8_t* srcLenArr = nullptr;
   const uint8_t* focusBoundaryArr = nullptr;  // null when !focusPresent
   const char* textArr = nullptr;
   std::vector<std::string> rubyTexts;
@@ -77,10 +92,13 @@ class TextBlock final : public Block {
   // Flatten-on-construct: copies the layout-time vectors into the arena; the
   // vectors die with the caller. On arena OOM the block is empty and valid()
   // is false -- callers must check and fail the line instead of using it.
+  // visibleOffsets/srcLens (optional, else empty = unknown) hold each word's absolute visible offset and
+  // source codepoint length; they are folded into visibleBase + 16-bit deltas in the arena.
   explicit TextBlock(const std::vector<std::string>& words, const std::vector<int16_t>& wordXpos,
                      const std::vector<EpdFontFamily::Style>& wordStyles, const std::vector<uint8_t>& focusBoundary,
                      const std::vector<uint16_t>& focusSuffixX, const BlockStyle& blockStyle = BlockStyle(),
-                     std::vector<std::string> rubyTexts = {}, std::vector<LinkSpan> linkSpans = {});
+                     std::vector<std::string> rubyTexts = {}, std::vector<LinkSpan> linkSpans = {},
+                     const std::vector<uint32_t>& visibleOffsets = {}, const std::vector<uint8_t>& srcLens = {});
   ~TextBlock() override = default;
   TextBlock(const TextBlock&) = delete;
   TextBlock& operator=(const TextBlock&) = delete;
@@ -97,6 +115,10 @@ class TextBlock final : public Block {
     return end - textOffArr[i] - 1;  // exclude the NUL
   }
   int16_t wordXpos(const uint16_t i) const { return xposArr[i]; }
+  // Visible-text offset of word i's first source codepoint (0 when unknown).
+  uint32_t wordVisibleOffset(const uint16_t i) const { return visibleBase + visDeltaArr[i]; }
+  // Offset just past word i in source codepoints; equals the start when unknown.
+  uint32_t wordVisibleEnd(const uint16_t i) const { return wordVisibleOffset(i) + srcLenArr[i]; }
   EpdFontFamily::Style wordStyle(const uint16_t i) const { return static_cast<EpdFontFamily::Style>(stylesArr[i]); }
   uint8_t focusBoundary(const uint16_t i) const { return focusPresent ? focusBoundaryArr[i] : 0; }
   uint16_t focusSuffixX(const uint16_t i) const { return focusPresent ? focusSuffixXArr[i] : 0; }

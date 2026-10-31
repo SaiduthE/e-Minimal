@@ -4,15 +4,17 @@
 #include <I18n.h>
 
 #include <memory>
-#include <vector>
 
+#include "PageTextPicker.h"
 #include "activities/Activity.h"
 #include "util/Dictionary.h"
 
-// Word selection over the current reader page: Left/Right step through words
-// in reading order, Up/Down jump rows, Confirm looks the word up and opens
-// DictionaryDefinitionActivity, Back returns to the reader. On touch devices a
-// touch-down moves the highlight and a tap on a word looks it up directly.
+// Word selection over the current reader page. Five-button board: a two-stage
+// tap picker (PageTextPicker) - pick a line, then a word in it; Confirm on the
+// word looks it up and opens DictionaryDefinitionActivity. Boards with
+// Left/Right keys or touch step through words in reading order (Up/Down jump
+// rows) and a tap on a word looks it up directly. Back leaves the picker (one
+// stage up on the five-button board), then returns to the reader.
 class DictionaryWordSelectActivity final : public Activity {
  public:
   explicit DictionaryWordSelectActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
@@ -23,49 +25,25 @@ class DictionaryWordSelectActivity final : public Activity {
         marginTop(marginTop) {}
 
   void onEnter() override;
+  void onExit() override;
   void loop() override;
   void render(RenderLock&&) override;
 
  private:
-  // Screen box of one selectable word. `text` points into the owned Page's
-  // TextBlock arena (NUL-terminated), valid for this activity's lifetime.
-  struct WordBox {
-    int16_t x;
-    int16_t y;
-    int16_t width;
-    uint16_t row;
-    const char* text;
-    EpdFontFamily::Style style;
-  };
-
   enum class Popup : uint8_t { None, Busy, NotFound, Error };
 
-  void extractWords();
-  int closestInRow(uint16_t row, int centerX) const;
-  int wordAt(int x, int y) const;
   void moveVertical(int direction);
   void performLookup();
-  bool drawHighlightWithSnapshot();
   void drawHints() const;
 
   std::unique_ptr<Page> page;
   const int marginLeft;
   const int marginTop;
   int fontId = 0;
-  int lineHeight = 0;
 
-  std::vector<WordBox> words;
-  int selected = 0;
-  uint16_t rowCount = 0;
+  PageTextPicker picker;
+  bool cursorMoved = false;  // set by our own cursor moves; gates the differential repaint
   unsigned long lastHorizontalMoveTime = 0;
-
-  // Five-button board (no front Left/Right): Up/Down double as word step (tap)
-  // and line jump (hold). lineHoldFired marks a hold that already jumped a
-  // line, so the matching release doesn't also step a word.
-  static constexpr unsigned long LINE_HOLD_START_MS = 500;
-  static constexpr unsigned long LINE_HOLD_REPEAT_MS = 350;
-  bool lineHoldFired = false;
-  unsigned long lastLineHoldTime = 0;
 
   Dictionary dict;
   bool dictOpenAttempted = false;
@@ -75,18 +53,4 @@ class DictionaryWordSelectActivity final : public Activity {
   Popup popup = Popup::None;
   StrId popupMsg = StrId::STR_DICT_NOT_FOUND;
   unsigned long popupTime = 0;
-
-  // Differential highlight repaint: the pixels under the current highlight
-  // box, so a cursor move restores them and repaints only the two affected
-  // boxes instead of re-running the full two-pass page render (which also
-  // reloads every SD-font glyph on the page). snapshotIdx is the word whose
-  // under-pixels are saved; -1 means the framebuffer no longer holds a clean
-  // page (popup drawn, sub-activity shown) and the next render must be full.
-  static constexpr size_t SNAPSHOT_CAPACITY = 4096;
-  std::unique_ptr<uint8_t[]> snapshot;
-  int16_t snapshotX = 0;
-  int16_t snapshotY = 0;
-  int16_t snapshotW = 0;
-  int16_t snapshotH = 0;
-  int snapshotIdx = -1;
 };

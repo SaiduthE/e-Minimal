@@ -33,6 +33,7 @@
       '<a href="/settings" data-page="settings">Settings</a>' +
       '<a href="/dashboards" data-page="dashboards">Dashboards</a>' +
       '<a href="/fonts" data-page="fonts">Fonts</a>' +
+      '<a href="/dictionaries" data-page="dictionaries">Dictionaries</a>' +
       '<div class="drawer-foot" id="drawerFoot"></div>' +
     '</nav>');
 
