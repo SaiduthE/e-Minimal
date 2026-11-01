@@ -266,7 +266,7 @@
 
           <div class="field">
             <label for="carouselFolder">Folder</label>
-            <input type="text" id="carouselFolder" maxlength="128" placeholder="/carousel" autocomplete="off" autocapitalize="off" spellcheck="false" />
+            <button type="button" class="fp-field" id="carouselFolder"></button>
             <span class="field-hint">A folder on the SD card that holds BMP, PNG or JPEG images.</span>
           </div>
           <div class="field">
@@ -1656,6 +1656,11 @@
     route();
     await countPictures();
   })();
+  // app.js is deferred, so window.ui exists only from DOMContentLoaded on. A folder applied earlier waits in the
+  // button's value attribute, which the picker reads.
+  document.addEventListener('DOMContentLoaded', function() {
+    ui.folderPicker($('carouselFolder'), { value: DEFAULT_FOLDER });
+  });
 </script>
   </body>
 </html>

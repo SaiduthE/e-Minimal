@@ -1332,7 +1332,7 @@
   let directionTouched = false;
 
   function init() {
-    // Turns #folder into a card-folder select; its .value keeps reading and writing the path.
+    // Turns #folder into the card-folder picker; its .value keeps reading and writing the path.
     ui.folderPicker($('folder'), { value: '/Manga' });
     restoreSettings();
     $('customSize').hidden = $('device').value !== 'custom';
