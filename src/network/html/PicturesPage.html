@@ -922,9 +922,6 @@
     $(id).addEventListener('input', toneChanged);
     $(id).addEventListener('change', saveTone);
   });
-  // The picker follows the Image widget's folder until the user picks another one.
-  let destTouched = false;
-  const destPicker = ui.folderPicker($('picDest'), { value: DEFAULT_FOLDER, onChange: function() { destTouched = true; } });
   $('picConvert').addEventListener('click', convertPictures);
   $('picUpload').addEventListener('click', uploadPictures);
   $('picSave').addEventListener('click', savePictures);
@@ -950,7 +947,8 @@
 
   // Sequential, not concurrent: the reader's web server handles one
   // connection at a time.
-  (async function() {
+  // app.js is deferred, so window.ui exists only from DOMContentLoaded on.
+  document.addEventListener('DOMContentLoaded', async function() {
     try {
       const d = await fetchDashboards();
       pics.folder = (d.carousel && d.carousel.folder) || DEFAULT_FOLDER;
@@ -958,11 +956,12 @@
       console.error(e);
       pics.folderError = true;
     }
-    if (pics.folder && !destTouched) destPicker.set(pics.folder);
+    // Starts at the Image widget's folder; the user can pick another one.
+    ui.folderPicker($('picDest'), { value: pics.folder || DEFAULT_FOLDER });
     showFolder();
     showPictureActions();
     await loadFolder();
-  })();
+  });
 </script>
   </body>
 </html>

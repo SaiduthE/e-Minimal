@@ -5301,7 +5301,8 @@ function retryAllFailedUploads() {
     else showNotification('Moved ' + count + ' to ' + dest + '.' + skipped, 'success');
   }
 
-  hydrate();
+  // app.js is deferred, so window.ui exists only from DOMContentLoaded on.
+  document.addEventListener('DOMContentLoaded', hydrate);
 </script>
 </body>
 </html>
