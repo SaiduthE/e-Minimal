@@ -1,4 +1,34 @@
 /* e-Minimal web UI shell — see docs/web-ui.md */
+
+/* Session. The reader hands out a cookie (ems) after the access code; a 401 anywhere means the session is gone, and
+   reloading lands on the login page (every page route answers it while signed out). The WebSocket cannot carry
+   the cookie into its START line by itself, so pages read the token with emsToken(). */
+(function () {
+  'use strict';
+  window.emsToken = function () {
+    var m = /(?:^|;\s*)ems=([0-9a-fA-F]+)/.exec(document.cookie);
+    return m ? m[1] : '';
+  };
+  var reloading = false;
+  function signedOut() {
+    if (reloading) return;
+    reloading = true;
+    location.reload();
+  }
+  var nativeFetch = window.fetch;
+  window.fetch = function () {
+    return nativeFetch.apply(this, arguments).then(function (r) {
+      if (r.status === 401) signedOut();
+      return r;
+    });
+  };
+  var nativeSend = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.send = function () {
+    this.addEventListener('load', function () { if (this.status === 401) signedOut(); });
+    return nativeSend.apply(this, arguments);
+  };
+})();
+
 (function () {
   'use strict';
   var d = document, body = d.body;
@@ -477,34 +507,404 @@
     return { title: title, num: num };
   }
 
-  /* Open Library search (called from the browser, so the phone needs internet).
-     Resolves to [{title, author, year, genre}]. Rejects with a readable message. */
-  function searchOpenLibrary(query) {
+  /* Online lookups run in the browser, so the phone needs internet. A candidate is
+     {title, author, year, genre, series, seriesIndex, src}. Rejects with a readable message. */
+  var NO_NET = 'No internet on this connection. Fetching details needs a phone or computer that is online (not only on the reader’s hotspot).';
+  function fetchJson(url, name) {
     var ctl = new AbortController();
     var timer = setTimeout(function () { ctl.abort(); }, 8000);
+    return fetch(url, { signal: ctl.signal }).then(function (r) {
+      if (!r.ok) throw new Error(name + ' answered ' + r.status + '.');
+      return r.json();
+    }, function () {
+      throw new Error(NO_NET);
+    }).then(function (r) { clearTimeout(timer); return r; }, function (e) { clearTimeout(timer); throw e; });
+  }
+
+  function searchOpenLibrary(query) {
     var url = 'https://openlibrary.org/search.json?q=' + encodeURIComponent(query) +
       '&fields=title,author_name,first_publish_year,subject,key&limit=8';
-    return fetch(url, { signal: ctl.signal }).then(function (r) {
-      if (!r.ok) throw new Error('Open Library answered ' + r.status + '.');
-      return r.json();
-    }).then(function (j) {
+    return fetchJson(url, 'Open Library').then(function (j) {
       return (j.docs || []).map(function (x) {
         return {
           title: x.title || '',
           author: (x.author_name && x.author_name[0]) || '',
           year: x.first_publish_year || '',
-          genre: (x.subject && x.subject[0]) || ''
+          genre: (x.subject && x.subject[0]) || '',
+          src: 'Open Library'
         };
       });
-    }, function (e) {
-      if (e && e.message && /^Open Library/.test(e.message)) throw e;
-      throw new Error('No internet on this connection. Fetching details needs a phone or computer that is online (not only on the reader’s hotspot).');
-    }).then(function (r) { clearTimeout(timer); return r; }, function (e) { clearTimeout(timer); throw e; });
+    });
+  }
+
+  function searchGoogleBooks(query) {
+    var url = 'https://www.googleapis.com/books/v1/volumes?q=' + encodeURIComponent(query) +
+      '&maxResults=5&printType=books';
+    return fetchJson(url, 'Google Books').then(function (j) {
+      return (j.items || []).map(function (it) {
+        var v = it.volumeInfo || {}, si = it.seriesInfo || v.seriesInfo || {};
+        return {
+          title: v.title || '',
+          author: (v.authors && v.authors[0]) || '',
+          year: String(v.publishedDate || '').slice(0, 4),
+          genre: (v.categories && v.categories[0]) || '',
+          series: si.shortSeriesBookTitle || '',
+          seriesIndex: si.bookDisplayNumber ? String(si.bookDisplayNumber) : '',
+          src: 'Google Books'
+        };
+      });
+    });
+  }
+
+  function titleTokens(s) {
+    return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-z0-9]+/g, ' ').trim().split(' ')
+      .filter(function (t) { return t && t !== 'the' && t !== 'a' && t !== 'an'; });
+  }
+  function authorKeys(s) {
+    return titleTokens(s).filter(function (t) { return t.length > 2; });
+  }
+  /* 0..1: shared title words over the longer title, nudged by whether the author agrees. */
+  function scoreCandidate(c, title, author) {
+    var a = titleTokens(title), b = titleTokens(c.title);
+    if (!a.length || !b.length) return 0;
+    var inter = 0;
+    a.forEach(function (t) { if (b.indexOf(t) >= 0) inter++; });
+    var score = inter / Math.max(a.length, b.length);
+    var want = authorKeys(author);
+    if (want.length) {
+      var have = authorKeys(c.author);
+      score += want.some(function (t) { return have.indexOf(t) >= 0; }) ? 0.1 : -0.2;
+    }
+    return Math.max(0, Math.min(1, score));
+  }
+
+  /* Both sources, merged, best first. Fails only when every source fails. */
+  function fetchBookCandidates(title, author) {
+    var q = (String(title || '') + ' ' + String(author || '')).trim();
+    var jobs = [searchOpenLibrary(q), searchGoogleBooks(q)].map(function (p) {
+      return p.then(function (v) { return { v: v }; }, function (e) { return { e: e }; });
+    });
+    return Promise.all(jobs).then(function (rs) {
+      var ok = rs.filter(function (r) { return r.v; });
+      if (!ok.length) throw rs[0].e;
+      var byKey = {}, out = [];
+      ok.forEach(function (r) {
+        r.v.forEach(function (c) {
+          if (!c.title) return;
+          var key = titleTokens(c.title).join(' ') + '|' + (authorKeys(c.author).pop() || '');
+          var seen = byKey[key];
+          if (seen) {
+            ['author', 'year', 'genre', 'series', 'seriesIndex'].forEach(function (k) { if (!seen[k] && c[k]) seen[k] = c[k]; });
+            seen.both = true;
+            seen.src += ' + ' + c.src;
+            return;
+          }
+          c.score = scoreCandidate(c, title, author);
+          byKey[key] = c;
+          out.push(c);
+        });
+      });
+      out.forEach(function (c, i) { c.rank = c.score + (c.both ? 0.02 : 0) - i * 0.0001; });
+      out.sort(function (x, y) { return y.rank - x.rank; });
+      return out;
+    });
+  }
+
+  /* Candidate buttons in box; onPick(candidate) runs on a tap. */
+  function renderBookCandidates(box, cands, onPick) {
+    box.textContent = '';
+    cands.forEach(function (c) {
+      var pick = mk('button', null, c.title);
+      pick.type = 'button';
+      pick.appendChild(mk('small', null, [c.author, c.year, c.genre, c.src].filter(Boolean).join(' · ')));
+      pick.addEventListener('click', function () { onPick(c); });
+      box.appendChild(pick);
+    });
+  }
+
+  /* Book details table for a batch of files (Files upload, Convert "Send to reader").
+     Rows are plain objects: {fileName, title, author, series, seriesIndex, genre, status, titleChanged}. */
+  var SERIES_NUM = /^([1-5]?\d{1,2}|600)(\.\d{1,2})?$/;  // the reader keeps 0-600
+  var MATCHED = 0.85, WEAK = 0.4, FETCH_GAP = 400;
+  var FIELDS = [['title', 'Title', 127], ['series', 'Series', 95], ['seriesIndex', '#', 11], ['author', 'Author', 95], ['genre', 'Genre', 63]];
+  var STATUS_TEXT = { busy: 'searching…', matched: 'matched', check: 'check', none: 'not found', filled: 'filled', error: 'no result' };
+
+  function bookDetailsTable(root, opts) {
+    opts = opts || {};
+    var rows = [], locked = false, running = false, stopFetch = false;
+    var coll = { on: false, touched: false, name: '' };
+
+    root.classList.add('bdt');
+    root.textContent = '';
+    root.hidden = true;
+    var head = mk('div', 'bdt-top');
+    var h = mk('h3', null, 'Book details ');
+    var count = mk('span', 'small muted');
+    h.appendChild(count);
+    var allBtn = mk('button', 'btn btn-sm', 'Fetch details for all');
+    allBtn.type = 'button';
+    head.append(h, allBtn);
+    var hint = mk('p', 'small muted', opts.hint || 'Optional. Titles come from the file names; EPUBs keep their own title unless you edit it.');
+    var cw = mk('div', 'bdt-collection');
+    var cl = mk('label'), cb = d.createElement('input');
+    cb.type = 'checkbox';
+    cl.append(cb, d.createTextNode(' Import as collection'));
+    var cn = d.createElement('input');
+    cn.type = 'text';
+    cn.placeholder = 'Series name';
+    cn.autocomplete = 'off';
+    cn.maxLength = 95;
+    cn.setAttribute('aria-label', 'Series name');
+    cw.append(cl, cn);
+    var list = mk('div', 'bdt-rows');
+    var note = mk('p', 'field-hint bdt-note');
+    note.setAttribute('role', 'status');
+    root.append(head, hint, cw, list, note);
+
+    function isEpub(r) { return /\.epub$/i.test(r.fileName); }
+    function setInput(r, key, v) { r[key] = v; if (r.inputs) r.inputs[key].value = v; }
+
+    function setStatus(r, kind) {
+      r.status = kind;
+      var chip = r.chip;
+      if (!chip) return;
+      chip.hidden = !kind;
+      chip.textContent = STATUS_TEXT[kind] || '';
+      chip.className = 'chip bdt-chip' + (kind === 'matched' || kind === 'filled' ? ' chip-ok' : kind === 'error' ? ' chip-danger' : '');
+    }
+
+    function expand(r, open) {
+      r.open = open;
+      if (r.node) {
+        r.node.classList.toggle('open', open);
+        r.moreBtn.textContent = open ? 'Less' : 'More';
+        r.moreBtn.setAttribute('aria-expanded', String(open));
+      }
+    }
+
+    function applyCollection() {
+      if (!coll.on || !coll.name) return;
+      rows.forEach(function (r) { setInput(r, 'series', coll.name); });
+    }
+    function numberRows() {
+      rows.forEach(function (r) {
+        setInput(r, 'seriesIndex', coll.on ? (r.parsed || String(r.order)) : r.parsed);
+        if (!coll.on) setInput(r, 'series', '');
+        else if (coll.name) setInput(r, 'series', coll.name);
+      });
+    }
+    cb.addEventListener('change', function () { coll.on = cb.checked; numberRows(); });
+    cn.addEventListener('input', function () { coll.touched = true; coll.name = cn.value; applyCollection(); });
+
+    function fill(r, c, auto, weak) {
+      if (c.title && !(auto && (r.touched.title || (weak && isEpub(r))))) { setInput(r, 'title', c.title); r.titleChanged = true; }
+      if (c.author && !(auto && r.touched.author)) setInput(r, 'author', c.author);
+      if (c.genre && !(auto && r.touched.genre)) setInput(r, 'genre', c.genre);
+      // Series from these sources is unreliable: only a Google Books series fills an empty cell.
+      if (c.series && !r.series.trim()) {
+        setInput(r, 'series', c.series);
+        if (c.seriesIndex && SERIES_NUM.test(c.seriesIndex)) setInput(r, 'seriesIndex', c.seriesIndex);
+      }
+    }
+
+    function search(r) {
+      var title = r.title.trim();
+      if (!title) return Promise.reject(new Error('Enter a title first.'));
+      setStatus(r, 'busy');
+      return fetchBookCandidates(title, r.author.trim()).then(function (cands) {
+        r.cands = cands.slice(0, 5);
+        return r.cands;
+      }, function (e) { setStatus(r, 'error'); throw e; });
+    }
+    function verdict(r) {
+      var best = r.cands[0], s = best ? best.score : 0;
+      return s >= MATCHED ? 'matched' : s >= WEAK ? 'check' : 'none';
+    }
+
+    function fetchOne(r) {
+      if (r.fetching) return;
+      if (r.candsEl.childNodes.length) { r.candsEl.textContent = ''; return; }
+      r.fetching = true;
+      r.fetchBtn.disabled = true;
+      note.classList.remove('is-error');
+      search(r).then(function (cands) {
+        setStatus(r, verdict(r));
+        if (!cands.length) {
+          r.candsEl.appendChild(mk('p', 'small muted', 'No matches found online.'));
+        } else {
+          renderBookCandidates(r.candsEl, cands, function (c) {
+            fill(r, c, false, false);
+            r.candsEl.textContent = '';
+            setStatus(r, 'filled');
+            expand(r, true);
+          });
+        }
+      }, function (e) {
+        note.textContent = e.message;
+        note.classList.add('is-error');
+      }).then(function () { r.fetching = false; r.fetchBtn.disabled = locked; });
+    }
+
+    function sleep(ms) { return new Promise(function (res) { setTimeout(res, ms); }); }
+    function fetchAll() {
+      if (running) { stopFetch = true; return; }
+      var todo = rows.filter(function (r) { return r.title.trim() && r.status !== 'matched' && r.status !== 'filled'; });
+      if (!todo.length) return;
+      running = true;
+      stopFetch = false;
+      allBtn.textContent = 'Stop';
+      note.classList.remove('is-error');
+      var tally = { matched: 0, check: 0, none: 0 }, failed = '';
+      function finish() {
+        running = false;
+        allBtn.textContent = 'Fetch details for all';
+        todo.forEach(function (r) { if (r.status === 'busy') setStatus(r, ''); });
+        var parts = [tally.matched + ' matched', tally.check + ' to check', tally.none + ' not found'];
+        note.textContent = failed ? failed : (stopFetch ? 'Stopped. ' : '') + parts.join(', ') + '. Check the details before sending.';
+        note.classList.toggle('is-error', !!failed);
+      }
+      function next(i) {
+        if (i >= todo.length || stopFetch || failed) return finish();
+        var r = todo[i];
+        note.textContent = 'Fetching ' + (i + 1) + ' of ' + todo.length + '…';
+        r.candsEl.textContent = '';
+        search(r).then(function () {
+          var kind = verdict(r);
+          if (kind !== 'none') { fill(r, r.cands[0], true, kind === 'check'); if (kind === 'check') expand(r, true); }
+          setStatus(r, kind);
+          tally[kind]++;
+        }, function (e) { failed = e.message; }).then(function () {
+          return i + 1 < todo.length && !failed && !stopFetch ? sleep(FETCH_GAP) : null;
+        }).then(function () { next(i + 1); });
+      }
+      next(0);
+    }
+    allBtn.addEventListener('click', fetchAll);
+
+    function input(r, key, label, max) {
+      var el = d.createElement('input');
+      el.type = 'text';
+      el.placeholder = label;
+      el.autocomplete = 'off';
+      el.maxLength = max;
+      el.value = r[key];
+      if (key === 'seriesIndex') el.inputMode = 'decimal';
+      el.setAttribute('aria-label', label + ' for ' + r.fileName);
+      el.addEventListener('input', function () {
+        r[key] = el.value;
+        r.touched[key] = true;
+        if (key === 'title') r.titleChanged = true;
+        if (opts.onChange) opts.onChange();
+      });
+      r.inputs[key] = el;
+      el.className = 'bdt-f-' + key;
+      return el;
+    }
+
+    function build(r) {
+      r.inputs = {};
+      var node = r.node = mk('div', 'bdt-row');
+      var line = mk('div', 'bdt-line');
+      line.appendChild(mk('span', 'bdt-file', r.fileName));
+      r.chip = mk('span', 'chip bdt-chip');
+      line.appendChild(r.chip);
+      r.fetchBtn = mk('button', 'btn btn-sm', 'Fetch');
+      r.fetchBtn.type = 'button';
+      r.fetchBtn.addEventListener('click', function () { fetchOne(r); });
+      r.moreBtn = mk('button', 'btn btn-sm btn-ghost', 'More');
+      r.moreBtn.type = 'button';
+      r.moreBtn.addEventListener('click', function () { expand(r, !r.open); });
+      line.append(r.fetchBtn, r.moreBtn);
+      var f = mk('div', 'bdt-fields');
+      FIELDS.forEach(function (k) { f.appendChild(input(r, k[0], k[1], k[2])); });
+      r.candsEl = mk('div', 'meta-cands bdt-cands');
+      node.append(line, f, r.candsEl);
+      setStatus(r, r.status);
+      expand(r, r.open);
+      r.fetchBtn.disabled = r.moreBtn.disabled = locked;
+      Object.keys(r.inputs).forEach(function (k) { r.inputs[k].disabled = locked; });
+      return node;
+    }
+
+    function setFiles(files) {
+      var old = rows.slice();
+      rows = [];
+      Array.prototype.forEach.call(files || [], function (f) {
+        var name = f.name;
+        var i = old.findIndex(function (o) { return o.fileName === name; });
+        var r = i >= 0 ? old.splice(i, 1)[0] : null;
+        if (!r) {
+          var clean = cleanBookName(name);
+          r = { fileName: name, parsed: clean.num, title: f.title != null ? f.title : clean.title, author: '', series: '',
+                seriesIndex: clean.num, genre: '', status: '', titleChanged: false, touched: {}, open: false, cands: [] };
+          if (coll.on) r.series = coll.name;
+        }
+        r.order = rows.length + 1;
+        rows.push(r);
+      });
+      list.textContent = '';
+      var frag = d.createDocumentFragment();
+      rows.forEach(function (r) { frag.appendChild(build(r)); });
+      list.appendChild(frag);
+      root.hidden = !rows.length;
+      count.textContent = rows.length === 1 ? '1 book' : rows.length + ' books';
+      allBtn.hidden = !rows.length;
+      if (!rows.length) { coll.touched = false; note.textContent = ''; }
+    }
+
+    function copy(r) {
+      return { fileName: r.fileName, title: r.title, author: r.author, series: r.series, seriesIndex: r.seriesIndex,
+               genre: r.genre, status: r.status, titleChanged: r.titleChanged };
+    }
+
+    return {
+      setFiles: setFiles,
+      count: function () { return rows.length; },
+      getRow: function (i) { return rows[i] ? copy(rows[i]) : null; },
+      rows: function () { return rows.map(copy); },
+      lock: function (on) {
+        locked = !!on;
+        if (locked) stopFetch = true;
+        root.querySelectorAll('input,button').forEach(function (el) { el.disabled = locked; });
+      },
+      // The collection's series name follows this (the destination folder) until the user types one.
+      setDefaultName: function (name) {
+        if (coll.touched) return;
+        coll.name = cn.value = name || '';
+        applyCollection();
+      }
+    };
+  }
+
+  /* POSTs the details worth storing for the book now at `path`; resolves true when saved or nothing to save.
+     A book that carries its own title (EPUB) keeps it unless the title was edited or fetched; any other
+     book's own title is its file name, so a cleaned title counts as a change. */
+  function saveBookDetails(path, row, ownTitleKnown) {
+    var out = {}, title = String(row.title || '').trim();
+    var stem = path.slice(path.lastIndexOf('/') + 1).replace(/\.[^.]+$/, '');
+    if (title && (ownTitleKnown ? row.titleChanged : title !== stem)) out.title = title;
+    ['author', 'genre'].forEach(function (k) { var v = String(row[k] || '').trim(); if (v) out[k] = v; });
+    var series = String(row.series || '').trim();
+    if (series) {
+      out.series = series;
+      var num = String(row.seriesIndex || '').trim();
+      if (SERIES_NUM.test(num)) out.seriesIndex = num;
+    }
+    if (!Object.keys(out).length) return Promise.resolve(true);
+    out.path = path;
+    return fetch('/api/book-meta', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(out)
+    }).then(function (r) { return r.ok; }, function () { return false; });
   }
 
   window.ui = {
     toast: toast, confirm: confirm, openModal: openModal, closeModal: closeModal,
     folderPicker: folderPicker, ensureFolder: ensureFolder, joinPath: joinPath,
-    cleanBookName: cleanBookName, searchOpenLibrary: searchOpenLibrary
+    cleanBookName: cleanBookName, searchOpenLibrary: searchOpenLibrary,
+    fetchBookCandidates: fetchBookCandidates, renderBookCandidates: renderBookCandidates,
+    bookDetailsTable: bookDetailsTable, saveBookDetails: saveBookDetails, seriesNumber: SERIES_NUM
   };
 })();

@@ -172,7 +172,9 @@ class EpubReaderActivity final : public ReaderActivity {
   std::string moreRowValue(int row) const;
   void activateMoreRow(int row);
   void openDictionaryWordSelect();
+#if !FREEINK_NO_KOSYNC
   bool launchKOReaderSync();
+#endif
   unsigned long confirmLongPressThreshold() const;
   // Five-button Hold Select: runs a HOLD_* action. True when it opened a screen.
   bool runHoldAction(uint8_t action);

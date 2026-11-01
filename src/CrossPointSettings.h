@@ -466,6 +466,15 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   uint8_t chargeBadgePosition = BADGE_CENTRE;
   uint8_t chargeBadgeSize = BADGE_LARGE;
   uint8_t chargeBadgeStyle = BADGE_BOLT_AND_PERCENT;
+  // Security (Global Settings > Security). Device-only: never exposed or writable through the web settings API.
+  uint8_t webAccessCode = 1;          // sign-in code on the phone page (0 = Off, 1 = On)
+  uint8_t webAccessLevel = 0;         // 0 Full, 1 Upload only, 2 Read only
+  uint8_t webFirmwareInstall = 0;     // accept a firmware image pushed over Wi-Fi
+  uint8_t webDav = 0;                 // serve WebDAV during File Transfer
+  uint8_t networkAnnounce = 1;        // mDNS name and UDP discovery on the network
+  uint8_t hotspotPasswordMode = 0;    // 0 keep the saved passphrase, 1 new one each session
+  uint8_t fileTransferIdleStop = 2;   // index into Off/5/15/30 min of idle before File Transfer stops
+  uint8_t backgroundOpenWifi = 0;     // 1 = background jobs may join open (no password) networks
 
   static constexpr uint8_t MIN_SLEEP_TIMEOUT_MINUTES = 1;
   static constexpr uint8_t SLEEP_TIMEOUT_NEVER_MINUTES = 31;

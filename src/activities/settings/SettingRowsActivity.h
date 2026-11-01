@@ -16,7 +16,7 @@
 class SettingRowsActivity : public UiListActivity {
  public:
   using Field = uint8_t CrossPointSettings::*;
-  static constexpr int MAX_ROWS = 6;
+  static constexpr int MAX_ROWS = 10;
 
   void onEnter() override;
   void onExit() override;
@@ -24,15 +24,18 @@ class SettingRowsActivity : public UiListActivity {
 
  protected:
   SettingRowsActivity(const char* name, GfxRenderer& renderer, MappedInputManager& mappedInput, StrId title,
-                      const Field* fields, int fieldCount);
+                      const Field* fields, int fieldCount, StrId actionLabel = StrId::STR_NONE_OPT);
 
   // Called after a row's value changed, before it is saved.
   virtual void onSettingChanged(Field field) { (void)field; }
+  // Select on the trailing action row (only present when actionLabel was given).
+  virtual void onActionRow() {}
 
  private:
   const StrId title;
   const Field* const fields;
   const int fieldCount;
+  const StrId actionLabel;
 
   OptionPopup optionPopup;
   // Filled in onEnter() from getSettingsList(), released in onExit().
@@ -40,7 +43,8 @@ class SettingRowsActivity : public UiListActivity {
   std::string rowValues[MAX_ROWS];
   freeink::ui::ListItem rowItems[MAX_ROWS]{};
 
-  int listCount() const override { return static_cast<int>(infos.size()); }
+  int listCount() const override { return static_cast<int>(infos.size()) + (hasActionRow() ? 1 : 0); }
+  bool hasActionRow() const { return actionLabel != StrId::STR_NONE_OPT; }
   const char* headerTitle() const override { return I18N.get(title); }
   void buildScreen(UiScreen& screen) override;
   void activateIndex(int index) override;

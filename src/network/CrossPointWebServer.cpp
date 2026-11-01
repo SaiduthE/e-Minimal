@@ -11,8 +11,8 @@
 #include <Logging.h>
 #include <Memory.h>
 #include <WiFi.h>
-#include <esp_efuse.h>
-#include <esp_efuse_table.h>
+#include <esp_ota_ops.h>
+#include <mbedtls/base64.h>
 
 #include <algorithm>
 #include <cctype>
@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <new>
 #include <string>
 #include <vector>
 
@@ -29,11 +30,13 @@
 #include "FontInstaller.h"
 #include "OpdsServerStore.h"
 #include "PhonePage.h"
+#include "PhonePortal.h"
 #include "RecentBooksStore.h"
 #include "SdCardFontSystem.h"
 #include "SettingsList.h"
 #include "TodoStore.h"
 #include "WebDAVHandler.h"
+#include "WebPathGuard.h"
 #include "WifiCredentialStore.h"
 #include "html/ConvertPageHtml.generated.h"
 #include "html/DashboardsPageHtml.generated.h"
@@ -41,6 +44,7 @@
 #include "html/DictionariesPageHtml.generated.h"
 #include "html/FontsPageHtml.generated.h"
 #include "html/HomePageHtml.generated.h"
+#include "html/LoginPageHtml.generated.h"
 #include "html/PicturesPageHtml.generated.h"
 #include "html/SettingsPageHtml.generated.h"
 #include "html/css/appCss.generated.h"
@@ -56,10 +60,6 @@
 #include "util/UiOrientation.h"
 
 namespace {
-// Folders/files to hide from the web interface file browser
-// Note: Items starting with "." are automatically hidden
-constexpr const char* HIDDEN_ITEMS[] = {"System Volume Information", "XTCache"};
-
 // Formats the library index tracks (LibraryIndex isBookName): an upload of any
 // of these must mark the index dirty so the next Library entry rebuilds it.
 bool isLibraryBookFile(const String& filename) {
@@ -105,17 +105,46 @@ String normalizeWebPath(const String& inputPath) {
   return result;
 }
 
-bool isProtectedItemName(const String& name) {
-  if (name.startsWith(".")) {
-    return true;
-  }
-  for (const auto* item : HIDDEN_ITEMS) {
-    if (name.equals(item)) {
-      return true;
+// Any segment hidden: dot-names, system folders, 8.3 aliases (web_path::isProtected).
+bool isProtectedPath(const String& path) { return web_path::isProtected(path.c_str()); }
+
+constexpr size_t MAX_JSON_BODY = 64 * 1024;
+constexpr uint32_t WS_IDLE_MS = 30000;  // a WebSocket upload slot is freed after this long without a frame
+constexpr uint8_t MAX_CODE_TRIES = 5;   // wrong codes before the lockout
+constexpr uint32_t LOCKOUT_MS = 60000;
+constexpr size_t TOKEN_LENGTH = 32;
+constexpr size_t CODE_LENGTH = 6;
+
+// Compares without exiting early at the first differing byte.
+bool constantTimeEquals(const char* a, const size_t aLen, const char* b, const size_t bLen) {
+  if (aLen != bLen) return false;
+  uint8_t diff = 0;
+  for (size_t i = 0; i < aLen; i++) diff |= static_cast<uint8_t>(a[i] ^ b[i]);
+  return diff == 0;
+}
+
+// Percent-encodes a query component for the redirect that drops `?t=`.
+void appendUrlEncoded(String& out, const String& in) {
+  static constexpr char HEX_DIGITS[] = "0123456789ABCDEF";
+  for (size_t i = 0; i < in.length(); i++) {
+    const auto c = static_cast<uint8_t>(in[i]);
+    if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
+      out += static_cast<char>(c);
+    } else {
+      out += '%';
+      out += HEX_DIGITS[c >> 4];
+      out += HEX_DIGITS[c & 15];
     }
   }
-  return false;
 }
+
+// "http://host:port" (an Origin) or "host:port" (a Host) to the bare "host:port" part.
+String authorityOf(const String& value) {
+  const int scheme = value.indexOf("://");
+  return scheme >= 0 ? value.substring(scheme + 3) : value;
+}
+
+bool isProtectedItemName(const String& name) { return web_path::isProtectedSegment(name.c_str(), name.length()); }
 
 // Directory walk behind GET /api/folders. One shared path buffer: each level appends its entry name after
 // baseLen and truncates on return, so recursion holds only a HalFile and two ints per level. Bytes 0-1 of
@@ -148,11 +177,8 @@ void walkFolders(FolderWalk& w, const size_t baseLen, const int depth) {
       path[nameAt] = '/';
       entry.getName(path + nameAt + 1, FOLDER_PATH_MAX - nameAt - 1);
       const char* name = path + nameAt + 1;
-      bool skip = name[0] == '\0' || (!SETTINGS.showHiddenFiles && name[0] == '.') ||
+      bool skip = name[0] == '\0' || web_path::isProtectedSegment(name, strlen(name)) ||
                   strpbrk(name, "\"\\") != nullptr;
-      for (const auto* item : HIDDEN_ITEMS) {
-        if (strcmp(name, item) == 0) skip = true;
-      }
       for (const char* c = name; !skip && *c; c++) {
         if (static_cast<unsigned char>(*c) < 0x20) skip = true;
       }
@@ -434,6 +460,276 @@ CrossPointWebServer::CrossPointWebServer() {}
 
 CrossPointWebServer::~CrossPointWebServer() { stop(); }
 
+// ---- Access control ----
+
+void CrossPointWebServer::setSecurity(const WebSecurityOptions& options, const char* token, const char* code) {
+  security = options;
+  if (security.accessLevel > 2) security.accessLevel = 2;
+  snprintf(sessionToken, sizeof(sessionToken), "%s", token ? token : "");
+  snprintf(typedCode, sizeof(typedCode), "%s", code ? code : "");
+  failedCodes = 0;
+  lockedUntil = 0;
+}
+
+// Host or Origin authority ("192.168.1.5", "eminimal.local:80"): the device's own addresses and mDNS name only.
+// Anything else is a DNS-rebinding page or a request meant for another host.
+bool CrossPointWebServer::hostAccepted(const String& authority) const {
+  String host = authorityOf(authority);
+  host.toLowerCase();
+  if (host.isEmpty() || host.startsWith("[")) return false;
+  const int colon = host.lastIndexOf(':');
+  if (colon >= 0) host.remove(colon);
+  if (host.isEmpty()) return false;
+
+  const IPAddress none(0, 0, 0, 0);
+  const IPAddress sta = WiFi.localIP();
+  if (sta != none && host == sta.toString()) return true;
+  const IPAddress ap = WiFi.softAPIP();
+  if (ap != none && host == ap.toString()) return true;
+
+  char name[48];
+  snprintf(name, sizeof(name), "%s.local", PhonePortal::SHARED_HOSTNAME);
+  if (host.equalsIgnoreCase(name)) return true;
+  const char* hostname = WiFi.getHostname();
+  if (hostname && hostname[0]) {
+    snprintf(name, sizeof(name), "%s.local", hostname);
+    if (host.equalsIgnoreCase(name)) return true;
+  }
+  return false;
+}
+
+bool CrossPointWebServer::tokenMatches(const char* candidate, const size_t length) const {
+  return strlen(sessionToken) == TOKEN_LENGTH && constantTimeEquals(candidate, length, sessionToken, TOKEN_LENGTH);
+}
+
+bool CrossPointWebServer::tokenFromCookie() const {
+  const String cookies = server->header("Cookie");
+  const int total = cookies.length();
+  int from = 0;
+  while (from < total) {
+    while (from < total && cookies[from] == ' ') from++;
+    int end = cookies.indexOf(';', from);
+    if (end < 0) end = total;
+    if (end - from > 4 && cookies.startsWith("ems=", from)) {
+      return tokenMatches(cookies.c_str() + from + 4, static_cast<size_t>(end - from - 4));
+    }
+    from = end + 1;
+  }
+  return false;
+}
+
+bool CrossPointWebServer::locked() {
+  if (lockedUntil != 0 && static_cast<int32_t>(millis() - lockedUntil) >= 0) {
+    lockedUntil = 0;
+  }
+  return lockedUntil != 0;
+}
+
+// Checks a typed code; five wrong ones in a row lock every code attempt out for a minute.
+bool CrossPointWebServer::tryCode(const char* candidate) {
+  if (locked()) return false;
+  if (strlen(typedCode) == CODE_LENGTH && constantTimeEquals(candidate, strlen(candidate), typedCode, CODE_LENGTH)) {
+    failedCodes = 0;
+    return true;
+  }
+  if (++failedCodes >= MAX_CODE_TRIES) {
+    failedCodes = 0;
+    lockedUntil = millis() + LOCKOUT_MS;
+    if (lockedUntil == 0) lockedUntil = 1;
+    LOG_INF("WEB", "Too many wrong codes, locked for %u s", static_cast<unsigned>(LOCKOUT_MS / 1000));
+  }
+  return false;
+}
+
+// WebDAV clients cannot hold a cookie: HTTP Basic with the access code as the password (any user name).
+bool CrossPointWebServer::basicAuthOk() {
+  const String header = server->header("Authorization");
+  if (!header.startsWith("Basic ")) return false;
+  unsigned char decoded[96];
+  size_t decodedLen = 0;
+  const char* b64 = header.c_str() + 6;
+  if (mbedtls_base64_decode(decoded, sizeof(decoded) - 1, &decodedLen, reinterpret_cast<const unsigned char*>(b64),
+                            strlen(b64)) != 0) {
+    return false;
+  }
+  decoded[decodedLen] = '\0';
+  const char* colon = strchr(reinterpret_cast<const char*>(decoded), ':');
+  return colon && tryCode(colon + 1);
+}
+
+CrossPointWebServer::Verdict CrossPointWebServer::check(const WebAccess needed, const RouteKind kind,
+                                                        const bool capBody) {
+  if (!hostAccepted(server->hostHeader())) return Verdict::BadHost;
+
+  const HTTPMethod method = server->method();
+  const bool reads = method == HTTP_GET || method == HTTP_HEAD || method == HTTP_OPTIONS || method == HTTP_PROPFIND;
+  if (!reads) {
+    // A browser names the page that sent a write; it must be one of ours.
+    const String origin = server->header("Origin");
+    if (!origin.isEmpty() && (origin == "null" || !hostAccepted(origin))) return Verdict::BadOrigin;
+    if (capBody && server->clientContentLength() > static_cast<int>(MAX_JSON_BODY)) return Verdict::TooLarge;
+  }
+
+  bool authed = !security.requireCode || kind == RouteKind::Login;
+  bool viaQuery = false;
+  if (!authed) {
+    if (tokenFromCookie()) {
+      authed = true;
+    } else if (kind == RouteKind::Dav && basicAuthOk()) {
+      authed = true;
+    } else if (server->hasArg("t")) {
+      const String t = server->arg("t");
+      if (tokenMatches(t.c_str(), t.length())) {
+        authed = true;
+        viaQuery = true;
+      }
+    }
+  }
+  if (!authed) return Verdict::NeedLogin;
+  lastActivity = millis();
+  if (viaQuery && kind == RouteKind::Page && method == HTTP_GET) return Verdict::SetCookie;
+
+  // Full = Modify (2), Upload only = Upload (1), Read only = Read (0)
+  if (static_cast<uint8_t>(needed) > 2 - security.accessLevel) return Verdict::Forbidden;
+  return Verdict::Ok;
+}
+
+void CrossPointWebServer::sendLoginPage() {
+  server->sendHeader("Content-Encoding", "gzip");
+  server->sendHeader("Cache-Control", "no-store");
+  server->send_P(401, "text/html", LoginPageHtml, sizeof(LoginPageHtml));
+}
+
+void CrossPointWebServer::sendDenied(const Verdict verdict, const RouteKind kind) {
+  switch (verdict) {
+    case Verdict::BadHost: {
+      // On the hotspot the DNS catch-all lands every typed address here: send the browser to the real one.
+      if (apMode && server->method() == HTTP_GET && !server->uri().startsWith("/api/")) {
+        const String target = String("http://") + WiFi.softAPIP().toString() + "/";
+        server->sendHeader("Location", target, true);
+        server->send(302, "text/plain", "");
+      } else {
+        server->send(421, "text/plain", "Misdirected request");
+      }
+      break;
+    }
+    case Verdict::BadOrigin:
+      sendJsonError(*server, 403, "Cross-site request refused");
+      break;
+    case Verdict::TooLarge:
+      sendJsonError(*server, 413, "Request body too large");
+      break;
+    case Verdict::NeedLogin:
+      if (kind == RouteKind::Page) {
+        sendLoginPage();
+      } else if (kind == RouteKind::Dav) {
+        server->sendHeader("WWW-Authenticate", "Basic realm=\"e-Minimal\"");
+        server->send(401, "text/plain", "Access code required");
+      } else {
+        sendJsonError(*server, 401, "Login required");
+      }
+      break;
+    case Verdict::SetCookie: {
+      // ?t=<token> from the QR: keep the token in a cookie and drop it from the address bar.
+      String location = server->uri();
+      char separator = '?';
+      for (int i = 0; i < server->args(); i++) {
+        if (server->argName(i) == "t") continue;
+        location += separator;
+        separator = '&';
+        appendUrlEncoded(location, server->argName(i));
+        location += '=';
+        appendUrlEncoded(location, server->arg(i));
+      }
+      server->sendHeader("Set-Cookie", String("ems=") + sessionToken + "; Path=/; SameSite=Strict");
+      server->sendHeader("Cache-Control", "no-store");
+      server->sendHeader("Location", location, true);
+      server->send(302, "text/plain", "");
+      break;
+    }
+    case Verdict::Forbidden:
+      sendJsonError(*server, 403, "Not allowed at this access level");
+      break;
+    case Verdict::Ok:
+      break;
+  }
+}
+
+// True when the request may go ahead; otherwise it has been answered.
+bool CrossPointWebServer::guard(const WebAccess needed, const RouteKind kind, const bool capBody) {
+  const Verdict verdict = check(needed, kind, capBody);
+  if (verdict == Verdict::Ok) {
+    server->sendHeader("X-Frame-Options", "DENY");
+    server->sendHeader("X-Content-Type-Options", "nosniff");
+    server->sendHeader("Referrer-Policy", "no-referrer");
+    return true;
+  }
+  sendDenied(verdict, kind);
+  return false;
+}
+
+void CrossPointWebServer::route(const char* uri, const HTTPMethod method, const WebAccess level, const RouteKind kind,
+                                const std::function<void()>& fn) {
+  server->on(uri, method, [this, level, kind, fn] {
+    if (guard(level, kind, true)) fn();
+  });
+}
+
+// Multipart POST: the data callback runs while the body is parsed, so it re-checks the session before it writes.
+void CrossPointWebServer::routeUpload(const char* uri, const WebAccess level, const std::function<void()>& done,
+                                      const std::function<void()>& data) {
+  server->on(
+      uri, HTTP_POST,
+      [this, level, done] {
+        if (guard(level, RouteKind::Api, false)) done();
+      },
+      [this, level, data] {
+        if (check(level, RouteKind::Api, false) == Verdict::Ok) data();
+      });
+}
+
+bool CrossPointWebServer::davGate(void* ctx, const WebAccess needed, const bool respond) {
+  auto* self = static_cast<CrossPointWebServer*>(ctx);
+  if (!self->server) return false;
+  if (!respond) return self->check(needed, RouteKind::Dav, false) == Verdict::Ok;
+  return self->guard(needed, RouteKind::Dav, false);
+}
+
+// WebSocket handshake: same Host and Origin rules as HTTP (a page on another site cannot open the socket).
+bool CrossPointWebServer::wsHandshakeHeader(const String& name, const String& value) const {
+  if (name.equalsIgnoreCase("Host")) return hostAccepted(value);
+  if (name.equalsIgnoreCase("Origin")) return value != "null" && hostAccepted(value);
+  return true;
+}
+
+void CrossPointWebServer::handleLogin() {
+  if (!security.requireCode) {
+    server->send(200, "application/json", "{\"ok\":true}");
+    return;
+  }
+  if (locked()) {
+    char json[64];
+    snprintf(json, sizeof(json), "{\"error\":\"Too many tries\",\"retryAfter\":%u}",
+             static_cast<unsigned>((lockedUntil - millis()) / 1000 + 1));
+    server->send(429, "application/json", json);
+    return;
+  }
+  const String code = server->arg("code");
+  if (code.length() == CODE_LENGTH && tryCode(code.c_str())) {
+    server->sendHeader("Set-Cookie", String("ems=") + sessionToken + "; Path=/; SameSite=Strict");
+    server->sendHeader("Cache-Control", "no-store");
+    server->send(200, "application/json", "{\"ok\":true}");
+    return;
+  }
+  if (code.length() != CODE_LENGTH) tryCode("");  // a malformed code counts as a miss too
+  if (locked()) {
+    server->send(429, "application/json", "{\"error\":\"Too many tries\",\"retryAfter\":60}");
+  } else {
+    sendJsonError(*server, 401, "Wrong code");
+  }
+}
+
+
 void CrossPointWebServer::begin() {
   if (running) {
     LOG_DBG("WEB", "Web server already running");
@@ -476,23 +772,27 @@ void CrossPointWebServer::begin() {
     return;
   }
 
-  // Add Access-Control-Allow-* headers to every response so web-based clients
-  // and PWAs on other origins can use the HTTP API. Preflight OPTIONS requests
-  // are answered in handleNotFound().
-  server->enableCORS(true);
+  // No CORS headers: every page fetches same-origin, and a foreign origin must not read or write the API.
+  lastActivity = millis();
+  failedCodes = 0;
+  lockedUntil = 0;
 
-  // Setup routes
+  // Routes. Each names the least access it needs (WebAccess) and how an unauthenticated request is answered:
+  //   Page -> the login page, Api -> 401 JSON. Access levels: Full = Modify, Upload only = Upload, Read only = Read.
   LOG_DBG("WEB", "Setting up routes...");
-  server->on("/", HTTP_GET, [this] { handleRoot(); });
-  server->on("/files", HTTP_GET, [this] { handleFileList(); });
-  server->on("/js/jszip.min.js", HTTP_GET, [this] { handleJszip(); });
+  route("/", HTTP_GET, WebAccess::Read, RouteKind::Page, [this] { handleRoot(); });
+  route("/files", HTTP_GET, WebAccess::Read, RouteKind::Page, [this] { handleFileList(); });
+  route("/js/jszip.min.js", HTTP_GET, WebAccess::Read, RouteKind::Api, [this] { handleJszip(); });
   // The look every page shares, served once and cached by ETag.
-  server->on("/css/app.css", HTTP_GET, [this] { handleAppCss(); });
-  server->on("/js/app.js", HTTP_GET, [this] { handleAppJs(); });
+  route("/css/app.css", HTTP_GET, WebAccess::Read, RouteKind::Api, [this] { handleAppCss(); });
+  route("/js/app.js", HTTP_GET, WebAccess::Read, RouteKind::Api, [this] { handleAppJs(); });
 
-  server->on("/api/status", HTTP_GET, [this] { handleStatus(); });
-  server->on("/api/files", HTTP_GET, [this] { handleFileListData(); });
-  server->on("/api/folders", HTTP_GET, [this] {
+  // The one route open without a session: the login page's code check (host and origin are still checked).
+  route("/api/login", HTTP_POST, WebAccess::Read, RouteKind::Login, [this] { handleLogin(); });
+
+  route("/api/status", HTTP_GET, WebAccess::Read, RouteKind::Api, [this] { handleStatus(); });
+  route("/api/files", HTTP_GET, WebAccess::Read, RouteKind::Api, [this] { handleFileListData(); });
+  route("/api/folders", HTTP_GET, WebAccess::Read, RouteKind::Api, [this] {
     // Streamed {"folders":["/","/Books",...],"truncated":false}; the walk state is ~200 bytes of stack.
     FolderWalk walk = {server.get(), 0, false, {',', '"'}};
     server->setContentLength(CONTENT_LENGTH_UNKNOWN);
@@ -502,94 +802,116 @@ void CrossPointWebServer::begin() {
     server->sendContent(walk.truncated ? "],\"truncated\":true}" : "],\"truncated\":false}");
     server->sendContent("");
   });
-  server->on("/download", HTTP_GET, [this] { handleDownload(); });
+  route("/download", HTTP_GET, WebAccess::Read, RouteKind::Page, [this] { handleDownload(); });
 
   // Upload endpoint with special handling for multipart form data
-  server->on("/upload", HTTP_POST, [this] { handleUploadPost(upload); }, [this] { handleUpload(upload); });
+  routeUpload("/upload", WebAccess::Upload, [this] { handleUploadPost(upload); }, [this] { handleUpload(upload); });
 
-  // Create folder endpoint
-  server->on("/mkdir", HTTP_POST, [this] { handleCreateFolder(); });
-
-  // Rename file endpoint
-  server->on("/rename", HTTP_POST, [this] { handleRename(); });
-
-  // Move file endpoint
-  server->on("/move", HTTP_POST, [this] { handleMove(); });
-
-  // Delete file/folder endpoint
-  server->on("/delete", HTTP_POST, [this] { handleDelete(); });
+  route("/mkdir", HTTP_POST, WebAccess::Upload, RouteKind::Api, [this] { handleCreateFolder(); });
+  route("/rename", HTTP_POST, WebAccess::Modify, RouteKind::Api, [this] { handleRename(); });
+  route("/move", HTTP_POST, WebAccess::Modify, RouteKind::Api, [this] { handleMove(); });
+  route("/delete", HTTP_POST, WebAccess::Modify, RouteKind::Api, [this] { handleDelete(); });
 
   // Per-book metadata overrides (title/author/series/#/genre)
-  server->on("/api/book-meta", HTTP_GET, [this] { handleGetBookMeta(); });
-  server->on("/api/book-meta", HTTP_POST, [this] { handlePostBookMeta(); });
+  route("/api/book-meta", HTTP_GET, WebAccess::Read, RouteKind::Api, [this] { handleGetBookMeta(); });
+  route("/api/book-meta", HTTP_POST, WebAccess::Modify, RouteKind::Api, [this] { handlePostBookMeta(); });
 
   // Settings endpoints
-  server->on("/settings", HTTP_GET, [this] { handleSettingsPage(); });
-  server->on("/api/settings", HTTP_GET, [this] { handleGetSettings(); });
-  server->on("/api/settings", HTTP_POST, [this] { handlePostSettings(); });
+  route("/settings", HTTP_GET, WebAccess::Read, RouteKind::Page, [this] { handleSettingsPage(); });
+  route("/api/settings", HTTP_GET, WebAccess::Read, RouteKind::Api, [this] { handleGetSettings(); });
+  route("/api/settings", HTTP_POST, WebAccess::Modify, RouteKind::Api, [this] { handlePostSettings(); });
 
   // Convert: manga, comics and books made ready on the phone, streamed to
   // the card over the WebSocket upload. pdf.js (~380 KB gzipped) is only
   // fetched when a PDF is added.
-  server->on("/convert", HTTP_GET, [this] {
+  route("/convert", HTTP_GET, WebAccess::Read, RouteKind::Page, [this] {
     PhonePage::sendStatic(*server, ConvertPageHtml, sizeof(ConvertPageHtml), ConvertPageHtmlETag, "text/html");
   });
-  server->on("/js/bindery-core.js", HTTP_GET, [this] {
+  route("/js/bindery-core.js", HTTP_GET, WebAccess::Read, RouteKind::Api, [this] {
     PhonePage::sendStatic(*server, bindery_coreJs, bindery_coreJsCompressedSize, bindery_coreJsETag,
                           "application/javascript");
   });
-  server->on("/js/bindery-app.js", HTTP_GET, [this] {
+  route("/js/bindery-app.js", HTTP_GET, WebAccess::Read, RouteKind::Api, [this] {
     PhonePage::sendStatic(*server, bindery_appJs, bindery_appJsCompressedSize, bindery_appJsETag,
                           "application/javascript");
   });
-  server->on("/js/pdf.min.js", HTTP_GET, [this] {
+  route("/js/pdf.min.js", HTTP_GET, WebAccess::Read, RouteKind::Api, [this] {
     PhonePage::sendStatic(*server, pdf_minJs, pdf_minJsCompressedSize, pdf_minJsETag, "application/javascript");
   });
-  server->on("/js/pdf.worker.min.js", HTTP_GET, [this] {
+  route("/js/pdf.worker.min.js", HTTP_GET, WebAccess::Read, RouteKind::Api, [this] {
     PhonePage::sendStatic(*server, pdf_worker_minJs, pdf_worker_minJsCompressedSize, pdf_worker_minJsETag,
                           "application/javascript");
   });
 
+  // Firmware push from a PC (tools/ota_push.py); the reader asks for confirmation before installing.
+  // Off unless the reader allows it (Security settings); full access only.
+  server->on(
+      "/api/firmware", HTTP_POST,
+      [this] {
+        if (!guard(WebAccess::Modify, RouteKind::Api)) return;
+        if (!security.allowFirmware) {
+          sendJsonError(*server, 403, "Firmware install over Wi-Fi is off on the reader");
+          return;
+        }
+        handleFirmwareUploadDone();
+      },
+      [this] {
+        if (security.allowFirmware && check(WebAccess::Modify, RouteKind::Api, false) == Verdict::Ok) {
+          handleFirmwareUploadData();
+        }
+      });
+
   // Font management endpoints
-  server->on("/fonts", HTTP_GET, [this] { handleFontsPage(); });
-  server->on("/api/fonts", HTTP_GET, [this] { handleFontList(); });
-  server->on("/api/fonts/upload", HTTP_POST, [this] { handleFontUpload(); }, [this] { handleFontUploadData(); });
-  server->on("/api/fonts/delete", HTTP_POST, [this] { handleFontDelete(); });
+  route("/fonts", HTTP_GET, WebAccess::Read, RouteKind::Page, [this] { handleFontsPage(); });
+  route("/api/fonts", HTTP_GET, WebAccess::Read, RouteKind::Api, [this] { handleFontList(); });
+  routeUpload("/api/fonts/upload", WebAccess::Upload, [this] { handleFontUpload(); },
+              [this] { handleFontUploadData(); });
+  route("/api/fonts/delete", HTTP_POST, WebAccess::Modify, RouteKind::Api, [this] { handleFontDelete(); });
 
   // Dictionary management endpoints
-  server->on("/dictionaries", HTTP_GET, [this] { handleDictionariesPage(); });
-  server->on("/api/dictionaries", HTTP_GET, [this] { handleDictionaryList(); });
-  server->on("/api/dictionaries/select", HTTP_POST, [this] { handleDictionarySelect(); });
-  server->on("/api/dictionaries/delete", HTTP_POST, [this] { handleDictionaryDelete(); });
+  route("/dictionaries", HTTP_GET, WebAccess::Read, RouteKind::Page, [this] { handleDictionariesPage(); });
+  route("/api/dictionaries", HTTP_GET, WebAccess::Read, RouteKind::Api, [this] { handleDictionaryList(); });
+  route("/api/dictionaries/select", HTTP_POST, WebAccess::Modify, RouteKind::Api, [this] { handleDictionarySelect(); });
+  route("/api/dictionaries/delete", HTTP_POST, WebAccess::Modify, RouteKind::Api, [this] { handleDictionaryDelete(); });
 
-  // OPDS server endpoints
-  server->on("/api/opds", HTTP_GET, [this] { handleGetOpdsServers(); });
-  server->on("/api/opds", HTTP_POST, [this] { handlePostOpdsServer(); });
-  server->on("/api/opds/delete", HTTP_POST, [this] { handleDeleteOpdsServer(); });
+  // OPDS server endpoints (names, URLs and user names are account data: full access only, reads included)
+  route("/api/opds", HTTP_GET, WebAccess::Modify, RouteKind::Api, [this] { handleGetOpdsServers(); });
+  route("/api/opds", HTTP_POST, WebAccess::Modify, RouteKind::Api, [this] { handlePostOpdsServer(); });
+  route("/api/opds/delete", HTTP_POST, WebAccess::Modify, RouteKind::Api, [this] { handleDeleteOpdsServer(); });
 
-  // Wi-Fi credential endpoints
-  server->on("/api/wifi", HTTP_GET, [this] { handleGetWifiNetworks(); });
-  server->on("/api/wifi", HTTP_POST, [this] { handlePostWifiNetwork(); });
-  server->on("/api/wifi/delete", HTTP_POST, [this] { handleDeleteWifiNetwork(); });
+  // Wi-Fi credential endpoints (saved network names reveal where the reader has been: full access only)
+  route("/api/wifi", HTTP_GET, WebAccess::Modify, RouteKind::Api, [this] { handleGetWifiNetworks(); });
+  route("/api/wifi", HTTP_POST, WebAccess::Modify, RouteKind::Api, [this] { handlePostWifiNetwork(); });
+  route("/api/wifi/delete", HTTP_POST, WebAccess::Modify, RouteKind::Api, [this] { handleDeleteWifiNetwork(); });
 
   // Dashboard endpoints: layouts, widget settings, the to-do list, pictures for the Image tile
-  server->on("/dashboards", HTTP_GET, [this] { handleDashboardsPage(); });
-  server->on("/pictures", HTTP_GET, [this] { handlePicturesPage(); });
-  server->on("/api/dashboards", HTTP_GET, [this] { handleGetDashboards(); });
-  server->on("/api/dashboards", HTTP_POST, [this] { handlePostDashboards(); });
-  server->on("/api/todo", HTTP_GET, [this] { handleGetTodo(); });
-  server->on("/api/todo", HTTP_POST, [this] { handlePostTodo(); });
+  route("/dashboards", HTTP_GET, WebAccess::Read, RouteKind::Page, [this] { handleDashboardsPage(); });
+  route("/pictures", HTTP_GET, WebAccess::Read, RouteKind::Page, [this] { handlePicturesPage(); });
+  route("/api/dashboards", HTTP_GET, WebAccess::Read, RouteKind::Api, [this] { handleGetDashboards(); });
+  route("/api/dashboards", HTTP_POST, WebAccess::Modify, RouteKind::Api, [this] { handlePostDashboards(); });
+  route("/api/todo", HTTP_GET, WebAccess::Read, RouteKind::Api, [this] { handleGetTodo(); });
+  route("/api/todo", HTTP_POST, WebAccess::Modify, RouteKind::Api, [this] { handlePostTodo(); });
 
   server->onNotFound([this] { handleNotFound(); });
   LOG_DBG("WEB", "[MEM] Free heap after route setup: %d bytes", ESP.getFreeHeap());
 
-  // Collect WebDAV headers and register handler
-  // If-None-Match is collected so the static-page handlers can answer conditional GETs with 304
-  const char* collectedHeaders[] = {"Depth",      "Destination", "Overwrite",    "If",
-                                    "Lock-Token", "Timeout",     "If-None-Match"};
-  server->collectHeaders(collectedHeaders, 7);
-  server->addHandler(new WebDAVHandler());  // Note: WebDAVHandler will be deleted by WebServer when server is stopped
-  LOG_DBG("WEB", "WebDAV handler initialized");
+  // Headers the handlers read: WebDAV's, If-None-Match (static pages answer conditional GETs with 304), and the
+  // session cookie, Origin and Basic credentials of the access checks. WebServer drops every other header.
+  const char* collectedHeaders[] = {"Depth",   "Destination", "Overwrite", "If",     "Lock-Token",
+                                    "Timeout", "If-None-Match", "Cookie",  "Origin", "Authorization"};
+  server->collectHeaders(collectedHeaders, 10);
+
+  // WebDAV answers any path, so it is only registered when the reader allows it (Security settings).
+  if (security.webdav) {
+    // The WebServer owns the handler and deletes it when the server is stopped.
+    auto* dav = new (std::nothrow) WebDAVHandler({this, &CrossPointWebServer::davGate});
+    if (dav) {
+      server->addHandler(dav);
+      LOG_DBG("WEB", "WebDAV handler initialized");
+    } else {
+      LOG_ERR("WEB", "No memory for the WebDAV handler");
+    }
+  }
 
   server->begin();
 
@@ -599,10 +921,12 @@ void CrossPointWebServer::begin() {
   wsInstance = const_cast<CrossPointWebServer*>(this);
   wsServer->begin();
   wsServer->onEvent(wsEventCallback);
+  wsServer->onValidateHttpHeader([this](const String& name, const String& value) { return wsHandshakeHeader(name, value); },
+                                 nullptr, 0);
   LOG_DBG("WEB", "WebSocket server started");
 
-  udpActive = udp.begin(LOCAL_UDP_PORT);
-  LOG_DBG("WEB", "Discovery UDP %s on port %d", udpActive ? "enabled" : "failed", LOCAL_UDP_PORT);
+  udpActive = security.discovery && udp.begin(LOCAL_UDP_PORT);
+  LOG_DBG("WEB", "Discovery UDP %s on port %d", udpActive ? "enabled" : "off", LOCAL_UDP_PORT);
 
   // Do not subscribe the serving task to the task watchdog. Arduino WebServer
   // permits five-second client and ACK waits, which can consume the entire
@@ -708,6 +1032,14 @@ void CrossPointWebServer::handleClient() {
   // Handle WebSocket events
   if (wsServer) {
     wsServer->loop();
+    // A stalled upload frees its slot (and the half-written file) so a dead phone cannot hold it forever.
+    if (wsUploadInProgress && millis() - wsLastFrame > WS_IDLE_MS) {
+      const uint8_t owner = wsUploadClientNum;
+      LOG_INF("WS", "Upload idle for %u s, released", static_cast<unsigned>(WS_IDLE_MS / 1000));
+      abortWsUpload("WS");
+      wsServer->sendTXT(owner, "ERROR:Upload timed out");
+      wsServer->disconnect(owner);
+    }
   }
 
   // Respond to discovery broadcasts
@@ -765,13 +1097,6 @@ void CrossPointWebServer::handleAppJs() const {
 }
 
 void CrossPointWebServer::handleNotFound() const {
-  // CORS preflight: routes are registered per-method, so OPTIONS requests land
-  // here. The Access-Control-Allow-* headers are added by enableCORS().
-  if (server->method() == HTTP_OPTIONS) {
-    server->send(204, "text/plain", "");
-    return;
-  }
-
   // in AP mode, redirect unmatched browser/captive-portal requests to "/" so the OS auto-opens the browser
   // API requests (/api/*) still return 404 so XHR errors surface correctly
   if (apMode && PhonePage::redirectCaptive(*server)) return;
@@ -798,26 +1123,7 @@ void CrossPointWebServer::handleStatus() const {
   doc["device"] = BoardConfig::ACTIVE.name;
 #endif
 
-  char snBuf[33] = {0};
-  bool valid = false;
-#if !CONFIG_IDF_TARGET_ESP32
-  // Classic ESP32's efuse table has no USER_DATA block (C3/S3 only)
-  if (esp_efuse_read_field_blob(ESP_EFUSE_USER_DATA, snBuf, 256) == ESP_OK) {
-    valid = snBuf[0] != '\0' && snBuf[0] != (char)0xFF;
-    for (int i = 0; i < 32 && snBuf[i] != '\0'; i++) {
-      if (!std::isprint(static_cast<unsigned char>(snBuf[i]))) {
-        valid = false;
-        break;
-      }
-    }
-  }
-#endif
-
-  if (valid) {
-    doc["serial"] = snBuf;
-  } else {
-    doc["serial"] = "Not found";
-  }
+  doc["access"] = security.accessLevel;
 
   String response;
   serializeJson(doc, response);
@@ -845,18 +1151,8 @@ void CrossPointWebServer::scanFiles(const char* path, const std::function<void(F
     file.getName(name, sizeof(name));
     auto fileName = String(name);
 
-    // Skip hidden items (starting with ".")
-    bool shouldHide = !SETTINGS.showHiddenFiles && fileName.startsWith(".");
-
-    // Check against explicitly hidden items list
-    if (!shouldHide) {
-      for (const auto* item : HIDDEN_ITEMS) {
-        if (fileName.equals(item)) {
-          shouldHide = true;
-          break;
-        }
-      }
-    }
+    // Dot-names and system folders are never listed (and never reachable), whatever the reader's hidden-files setting
+    const bool shouldHide = web_path::isProtectedSegment(name, strlen(name));
 
     if (!shouldHide) {
       FileInfo info;
@@ -893,6 +1189,10 @@ void CrossPointWebServer::handleFileListData() const {
   String currentPath = "/";
   if (server->hasArg("path")) {
     currentPath = normalizeWebPath(server->arg("path"));
+  }
+  if (isProtectedPath(currentPath)) {
+    server->send(403, "text/plain", "Cannot access system files");
+    return;
   }
 
   server->setContentLength(CONTENT_LENGTH_UNKNOWN);
@@ -942,16 +1242,9 @@ void CrossPointWebServer::handleDownload() const {
     return;
   }
 
-  const String itemName = itemPath.substring(itemPath.lastIndexOf('/') + 1);
-  if (itemName.startsWith(".")) {
+  if (isProtectedPath(itemPath)) {
     server->send(403, "text/plain", "Cannot access system files");
     return;
-  }
-  for (const auto* item : HIDDEN_ITEMS) {
-    if (itemName.equals(item)) {
-      server->send(403, "text/plain", "Cannot access protected items");
-      return;
-    }
   }
 
   if (!Storage.exists(itemPath.c_str())) {
@@ -1074,6 +1367,11 @@ void CrossPointWebServer::handleUpload(UploadState& state) const {
       state.path = normalizeWebPath(server->arg("path"));
     } else {
       state.path = "/";
+    }
+    if (isProtectedPath(state.path) || isProtectedItemName(state.fileName)) {
+      state.error = "Cannot upload to system folders";
+      LOG_DBG("WEB", "[UPLOAD] Rejected protected target: %s/%s", state.path.c_str(), state.fileName.c_str());
+      return;
     }
 
     LOG_DBG("WEB", "[UPLOAD] START: %s to path: %s", state.fileName.c_str(), state.path.c_str());
@@ -1222,6 +1520,10 @@ void CrossPointWebServer::handleCreateFolder() const {
   if (server->hasArg("path")) {
     parentPath = normalizeWebPath(server->arg("path"));
   }
+  if (isProtectedPath(parentPath)) {
+    server->send(403, "text/plain", "Cannot create items in system folders");
+    return;
+  }
 
   // Build full folder path
   String folderPath = parentPath;
@@ -1345,7 +1647,7 @@ void CrossPointWebServer::handleRename() const {
   }
 
   const String itemName = itemPath.substring(itemPath.lastIndexOf('/') + 1);
-  if (isProtectedItemName(itemName)) {
+  if (isProtectedPath(itemPath)) {
     server->send(403, "text/plain", "Cannot rename protected item");
     return;
   }
@@ -1421,16 +1723,13 @@ void CrossPointWebServer::handleMove() const {
   }
 
   const String itemName = itemPath.substring(itemPath.lastIndexOf('/') + 1);
-  if (isProtectedItemName(itemName)) {
+  if (isProtectedPath(itemPath)) {
     server->send(403, "text/plain", "Cannot move protected item");
     return;
   }
-  if (destPath != "/") {
-    const String destName = destPath.substring(destPath.lastIndexOf('/') + 1);
-    if (isProtectedItemName(destName)) {
-      server->send(403, "text/plain", "Cannot move into protected folder");
-      return;
-    }
+  if (isProtectedPath(destPath)) {
+    server->send(403, "text/plain", "Cannot move into protected folder");
+    return;
   }
 
   if (!Storage.exists(itemPath.c_str())) {
@@ -1548,26 +1847,9 @@ void CrossPointWebServer::handleDelete() const {
       continue;
     }
 
-    // Security check: prevent deletion of protected items
-    const String itemName = itemPath.substring(itemPath.lastIndexOf('/') + 1);
-
-    // Hidden/system files are protected
-    if (itemName.startsWith(".")) {
+    // Hidden/system files and anything inside a hidden/system folder are protected
+    if (isProtectedPath(itemPath)) {
       failedItems += itemPath + " (hidden/system file); ";
-      allSuccess = false;
-      continue;
-    }
-
-    // Check against explicitly protected items
-    bool isProtected = false;
-    for (const auto* item : HIDDEN_ITEMS) {
-      if (itemName.equals(item)) {
-        isProtected = true;
-        break;
-      }
-    }
-    if (isProtected) {
-      failedItems += itemPath + " (protected file); ";
       allSuccess = false;
       continue;
     }
@@ -1639,8 +1921,7 @@ String requireBookPath(WebServer& server, const String& raw) {
     sendJsonError(server, 400, "Not a book file", "path");
     return "";
   }
-  const String name = path.substring(path.lastIndexOf('/') + 1);
-  if (isProtectedItemName(name)) {
+  if (isProtectedPath(path)) {
     sendJsonError(server, 403, "Protected item", "path");
     return "";
   }
@@ -1767,7 +2048,7 @@ void CrossPointWebServer::handleGetSettings() const {
   JsonDocument doc;
 
   for (const auto& s : settings) {
-    if (!s.key) continue;  // Skip ACTION-only entries
+    if (!s.key || s.deviceOnly) continue;  // Skip ACTION-only entries and device-only security rows
 
     doc.clear();
     doc["key"] = s.key;
@@ -1865,7 +2146,7 @@ void CrossPointWebServer::handlePostSettings() {
   int applied = 0;
 
   for (const auto& s : settings) {
-    if (!s.key) continue;
+    if (!s.key || s.deviceOnly) continue;
     if (!doc[s.key].is<JsonVariant>()) continue;
 
     switch (s.type) {
@@ -2379,7 +2660,8 @@ void CrossPointWebServer::wsEventCallback(uint8_t num, WStype_t type, uint8_t* p
 
 // WebSocket event handler for fast binary uploads
 // Protocol:
-//   1. Client sends TEXT message: "START:<filename>:<size>:<path>"
+//   1. Client sends TEXT message: "START:<token>:<filename>:<size>:<path>" (token = the `ems` session token,
+//      empty when the reader does not ask for a code)
 //   2. Client sends BINARY messages with file data chunks
 //   3. Server sends TEXT "PROGRESS:<received>:<total>" after each chunk
 //   4. Server sends TEXT "DONE" or "ERROR:<message>" when complete
@@ -2403,9 +2685,26 @@ void CrossPointWebServer::onWebSocketEvent(uint8_t num, WStype_t type, uint8_t* 
     case WStype_TEXT: {
       // Parse control messages
       String msg = String((char*)payload);
-      LOG_DBG("WS", "Text from client %u: %s", num, msg.c_str());
+      LOG_DBG("WS", "Text from client %u (%u bytes)", num, static_cast<unsigned>(msg.length()));
 
       if (msg.startsWith("START:")) {
+        // Parse: START:<token>:<filename>:<size>:<path>
+        const int tokenEnd = msg.indexOf(':', 6);
+        if (tokenEnd < 0) {
+          wsServer->sendTXT(num, "ERROR:Invalid START format");
+          break;
+        }
+        if (security.requireCode && !tokenMatches(msg.c_str() + 6, static_cast<size_t>(tokenEnd - 6))) {
+          wsServer->sendTXT(num, "ERROR:Login required");
+          break;
+        }
+        if (security.accessLevel >= 2) {
+          wsServer->sendTXT(num, "ERROR:Uploads are off for this session");
+          break;
+        }
+        lastActivity = millis();
+        wsLastFrame = millis();
+
         // Reject any START while an upload is already active to prevent
         // leaking the open wsUploadFile handle (owning client re-START included)
         if (wsUploadInProgress) {
@@ -2413,13 +2712,12 @@ void CrossPointWebServer::onWebSocketEvent(uint8_t num, WStype_t type, uint8_t* 
           break;
         }
 
-        // Parse: START:<filename>:<size>:<path>
-        int firstColon = msg.indexOf(':', 6);
+        int firstColon = msg.indexOf(':', tokenEnd + 1);
         int secondColon = msg.indexOf(':', firstColon + 1);
 
         if (firstColon > 0 && secondColon > 0) {
-          wsUploadFileName = msg.substring(6, firstColon);
-          if (!FsHelpers::isSafePathComponent(wsUploadFileName)) {
+          wsUploadFileName = msg.substring(tokenEnd + 1, firstColon);
+          if (!FsHelpers::isSafePathComponent(wsUploadFileName) || isProtectedItemName(wsUploadFileName)) {
             LOG_DBG("WS", "START rejected: invalid filename '%s'", wsUploadFileName.c_str());
             wsServer->sendTXT(num, "ERROR:Invalid file name");
             return;
@@ -2438,6 +2736,10 @@ void CrossPointWebServer::onWebSocketEvent(uint8_t num, WStype_t type, uint8_t* 
           }
           wsUploadSize = sizeToken.toInt();
           wsUploadPath = normalizeWebPath(msg.substring(secondColon + 1));
+          if (isProtectedPath(wsUploadPath)) {
+            wsServer->sendTXT(num, "ERROR:Cannot upload to system folders");
+            return;
+          }
           wsUploadReceived = 0;
           wsLastProgressSent = 0;
           wsUploadStartTime = millis();
@@ -2483,6 +2785,7 @@ void CrossPointWebServer::onWebSocketEvent(uint8_t num, WStype_t type, uint8_t* 
 
           wsUploadClientNum = num;
           wsUploadInProgress = true;
+          wsLastFrame = millis();
           wsServer->sendTXT(num, "READY");
         } else {
           wsServer->sendTXT(num, "ERROR:Invalid START format");
@@ -2496,6 +2799,9 @@ void CrossPointWebServer::onWebSocketEvent(uint8_t num, WStype_t type, uint8_t* 
         wsServer->sendTXT(num, "ERROR:No upload in progress");
         return;
       }
+
+      lastActivity = millis();
+      wsLastFrame = lastActivity;
 
       // Write binary data directly to file
       size_t remaining = wsUploadSize - wsUploadReceived;
@@ -2556,6 +2862,159 @@ void CrossPointWebServer::onWebSocketEvent(uint8_t num, WStype_t type, uint8_t* 
     default:
       break;
   }
+}
+
+// --- Firmware push ---
+
+namespace {
+constexpr const char* FIRMWARE_TEMP_PATH = "/.crosspoint/ota/firmware.part";
+constexpr const char* FIRMWARE_DIR = "/.crosspoint/ota";
+constexpr size_t FIRMWARE_MIN_SIZE = 64 * 1024;
+constexpr uint8_t ESP_IMAGE_MAGIC = 0xE9;
+}  // namespace
+
+bool CrossPointWebServer::takeStagedFirmware(size_t& size) {
+  if (stagedFirmwareSize == 0) return false;
+  size = stagedFirmwareSize;
+  stagedFirmwareSize = 0;
+  return true;
+}
+
+void CrossPointWebServer::handleFirmwareUploadData() {
+  HTTPUpload& up = server->upload();
+  FirmwareUploadState& fw = firmwareUpload;
+
+  switch (up.status) {
+    case UPLOAD_FILE_START: {
+      resetTaskWatchdogIfSubscribed();
+      fw.file = HalFile();
+      fw.size = 0;
+      fw.bufferPos = 0;
+      fw.started = true;
+      fw.ok = false;
+      fw.httpCode = 400;
+      fw.error = nullptr;
+
+      const esp_partition_t* slot = esp_ota_get_next_update_partition(nullptr);
+      if (upload.file.isOpen() || fontUpload.file.isOpen() || wsUploadInProgress) {
+        fw.httpCode = 409;
+        fw.error = "Another upload is in progress";
+      } else if (up.name != "firmware") {
+        fw.error = "Expected multipart field \"firmware\"";
+      } else if (stagedFirmwareSize != 0) {
+        fw.httpCode = 409;
+        fw.error = "A firmware image is already waiting for confirmation";
+      } else if (!slot) {
+        fw.httpCode = 500;
+        fw.error = "No OTA slot available";
+      } else if (!Storage.ensureDirectoryExists(FIRMWARE_DIR)) {
+        fw.httpCode = 500;
+        fw.error = "Could not create the staging folder on the SD card";
+      } else {
+        fw.limit = slot->size;
+        if (Storage.exists(FIRMWARE_TEMP_PATH)) Storage.remove(FIRMWARE_TEMP_PATH);
+        if (!Storage.openFileForWrite("WEB", FIRMWARE_TEMP_PATH, fw.file)) {
+          fw.httpCode = 500;
+          fw.error = "Could not create the staging file on the SD card";
+        }
+      }
+      if (fw.error) {
+        LOG_ERR("WEB", "[FW] rejected: %s", fw.error);
+      } else {
+        LOG_INF("WEB", "[FW] receiving firmware, slot limit %u bytes", static_cast<unsigned>(fw.limit));
+      }
+      break;
+    }
+
+    case UPLOAD_FILE_WRITE: {
+      if (fw.error || !fw.file) break;
+      resetTaskWatchdogIfSubscribed();
+      if (fw.size == 0 && up.currentSize > 0 && up.buf[0] != ESP_IMAGE_MAGIC) {
+        fw.error = "Not an ESP32 firmware image";
+        break;
+      }
+      if (fw.size + up.currentSize > fw.limit) {
+        fw.httpCode = 413;
+        fw.error = "Firmware is larger than the OTA slot";
+        break;
+      }
+      // Batch into the generic upload buffer (idle: checked at START) so SD writes are 4 KB.
+      uint8_t* buf = upload.buffer.data();
+      const uint8_t* src = up.buf;
+      size_t remaining = up.currentSize;
+      while (remaining > 0) {
+        const size_t chunk = std::min(remaining, UploadState::UPLOAD_BUFFER_SIZE - fw.bufferPos);
+        memcpy(buf + fw.bufferPos, src, chunk);
+        fw.bufferPos += chunk;
+        src += chunk;
+        remaining -= chunk;
+        if (fw.bufferPos == UploadState::UPLOAD_BUFFER_SIZE) {
+          if (fw.file.write(buf, fw.bufferPos) != fw.bufferPos) {
+            fw.httpCode = 507;
+            fw.error = "Could not write to the SD card (full?)";
+            break;
+          }
+          fw.bufferPos = 0;
+          resetTaskWatchdogIfSubscribed();
+        }
+      }
+      fw.size += up.currentSize;
+      break;
+    }
+
+    case UPLOAD_FILE_END: {
+      if (!fw.error && fw.file && fw.bufferPos > 0) {
+        if (fw.file.write(upload.buffer.data(), fw.bufferPos) != fw.bufferPos) {
+          fw.httpCode = 507;
+          fw.error = "Could not write to the SD card (full?)";
+        }
+      }
+      fw.bufferPos = 0;
+      if (fw.file.isOpen()) fw.file.close();
+      if (!fw.error && fw.size < FIRMWARE_MIN_SIZE) fw.error = "Firmware file is too small";
+      if (!fw.error) {
+        if (Storage.exists(FIRMWARE_STAGED_PATH)) Storage.remove(FIRMWARE_STAGED_PATH);
+        if (!Storage.rename(FIRMWARE_TEMP_PATH, FIRMWARE_STAGED_PATH)) {
+          fw.httpCode = 500;
+          fw.error = "Could not finalise the staged file";
+        }
+      }
+      if (fw.error) {
+        LOG_ERR("WEB", "[FW] upload failed: %s", fw.error);
+        if (Storage.exists(FIRMWARE_TEMP_PATH)) Storage.remove(FIRMWARE_TEMP_PATH);
+      } else {
+        fw.ok = true;
+        LOG_INF("WEB", "[FW] staged %u bytes at %s", static_cast<unsigned>(fw.size), FIRMWARE_STAGED_PATH);
+      }
+      break;
+    }
+
+    case UPLOAD_FILE_ABORTED: {
+      fw.bufferPos = 0;
+      if (fw.file.isOpen()) fw.file.close();
+      if (Storage.exists(FIRMWARE_TEMP_PATH)) Storage.remove(FIRMWARE_TEMP_PATH);
+      fw.ok = false;
+      fw.error = "Upload aborted";
+      LOG_ERR("WEB", "[FW] upload aborted");
+      break;
+    }
+  }
+}
+
+void CrossPointWebServer::handleFirmwareUploadDone() {
+  FirmwareUploadState& fw = firmwareUpload;
+  if (fw.started && fw.ok) {
+    fw.started = false;
+    fw.ok = false;
+    char json[48];
+    snprintf(json, sizeof(json), "{\"ok\":true,\"size\":%u}", static_cast<unsigned>(fw.size));
+    server->send(200, "application/json", json);
+    stagedFirmwareSize = fw.size;  // the activity prompts for confirmation once this response is out
+    return;
+  }
+  const int code = fw.started ? fw.httpCode : 400;
+  sendJsonError(*server, code, fw.error ? fw.error : "Expected a multipart upload with field \"firmware\"");
+  fw.started = false;
 }
 
 // --- Font management handlers ---

@@ -24,6 +24,12 @@ struct Content {
   // Step 2, open: the page. Empty when joining is enough (the captive popup
   // opens it) and the caller wants one QR only.
   std::string pageUrl;
+  // What the second QR encodes when it must differ from the typed pageUrl
+  // (the same URL plus the session's access token). Empty = pageUrl.
+  std::string pageQrUrl;
+  // The 6-digit access code to type on the phone, shown under the URL.
+  // nullptr when the page asks for none.
+  const char* accessCode = nullptr;
   const char* pageAlt = nullptr;  // a second line under the URL, e.g. "or http://eminimal.local/"
 };
 

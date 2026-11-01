@@ -7,9 +7,12 @@
 #include <Logging.h>
 #include <esp_ota_ops.h>
 
+#include <algorithm>
+#include <cstdio>
+#include <cstring>
+
 #include "MappedInputManager.h"
 #include "activities/home/FileBrowserActivity.h"
-#include "activities/util/ConfirmationActivity.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
 #include "network/FirmwareFlasher.h"
@@ -18,6 +21,13 @@ void SdFirmwareUpdateActivity::onEnter() {
   Activity::onEnter();
   // Build-identity marker — confirms which firmware build owns the SD update flow.
   LOG_INF("FW", "SdFirmwareUpdateActivity build=%s %s recovery=%d", __DATE__, __TIME__, recoveryMode ? 1 : 0);
+  if (!stagedPath.empty()) {
+    firmwarePath = stagedPath;
+    state = State::VALIDATING;
+    stagedStartPending = true;
+    requestUpdate();
+    return;
+  }
   state = State::PICKING;
   launchPicker();
 }
@@ -110,36 +120,80 @@ bool SdFirmwareUpdateActivity::validateFirmware() {
     }
     return false;
   }
+  readImageInfo();
   return true;
+}
+
+// Version and build date come from the esp_app_desc_t that opens the first
+// segment (image header 24 B + segment header 8 B = offset 32); the SHA-256 is
+// the trailer the validation pass above just verified against the whole image.
+void SdFirmwareUpdateActivity::readImageInfo() {
+  constexpr size_t IMAGE_HEADER = 24;
+  constexpr size_t SEGMENT_HEADER = 8;
+  constexpr size_t APP_DESC_OFFSET = IMAGE_HEADER + SEGMENT_HEADER;
+  constexpr size_t SHA_SIZE = 32;
+  constexpr size_t HASH_APPENDED_AT = 23;
+  constexpr uint32_t APP_DESC_MAGIC = 0xABCD5432;
+  // esp_app_desc_t: magic(4) secure_version(4) reserv1(8) version[32]
+  // project_name[32] time[16] date[16] ...; only these first 112 bytes are read.
+  constexpr size_t VERSION_AT = 16;
+  constexpr size_t TIME_AT = 80;
+  constexpr size_t DATE_AT = 96;
+  constexpr size_t APP_DESC_READ = 112;
+
+  infoVersion[0] = infoBuilt[0] = infoSha[0] = '\0';
+  HalFile file;
+  if (!Storage.openFileForRead("FW", firmwarePath.c_str(), file) || !file) return;
+
+  uint8_t header[IMAGE_HEADER];
+  if (file.read(header, sizeof(header)) == static_cast<int>(sizeof(header)) && file.seekSet(APP_DESC_OFFSET)) {
+    uint8_t desc[APP_DESC_READ];
+    if (file.read(desc, sizeof(desc)) == static_cast<int>(sizeof(desc))) {
+      uint32_t magic = 0;
+      memcpy(&magic, desc, sizeof(magic));
+      if (magic == APP_DESC_MAGIC) {
+        char date[17];
+        char time[17];
+        memcpy(infoVersion, desc + VERSION_AT, 32);
+        infoVersion[32] = '\0';
+        memcpy(date, desc + DATE_AT, 16);
+        date[16] = '\0';
+        memcpy(time, desc + TIME_AT, 16);
+        time[16] = '\0';
+        snprintf(infoBuilt, sizeof(infoBuilt), "%s %s", date, time);
+      }
+    }
+    if (header[HASH_APPENDED_AT] == 1 && firmwareSize > SHA_SIZE && file.seekSet(firmwareSize - SHA_SIZE)) {
+      uint8_t sha[4];
+      if (file.read(sha, sizeof(sha)) == static_cast<int>(sizeof(sha))) {
+        snprintf(infoSha, sizeof(infoSha), "%02x%02x%02x%02x", sha[0], sha[1], sha[2], sha[3]);
+      }
+    }
+  }
+  LOG_INF("FW", "Image: version '%s' built '%s' sha256 %s...", infoVersion, infoBuilt, infoSha);
 }
 
 void SdFirmwareUpdateActivity::promptConfirmation() {
   {
     RenderLock lock(*this);
     state = State::CONFIRMING;
+    holdStartMs = 0;
+    holdShownSeconds = 0;
   }
-  // Show "Update firmware?" with the file path as the body line.
-  std::string heading = tr(STR_FIRMWARE_UPDATE_PROMPT);
-  // Use the basename only to keep the body short.
-  std::string body = firmwarePath;
-  const auto pos = body.find_last_of('/');
-  if (pos != std::string::npos) body = body.substr(pos + 1);
-
-  startActivityForResult(std::make_unique<ConfirmationActivity>(renderer, mappedInput, heading, body),
-                         [this](const ActivityResult& result) { onConfirmationResult(result); });
+  requestUpdate();
 }
 
-void SdFirmwareUpdateActivity::onConfirmationResult(const ActivityResult& result) {
-  if (result.isCancelled) {
-    if (recoveryMode) {
-      // Go back to the picker rather than exiting recovery.
-      launchPicker();
-      return;
-    }
-    finish();
+void SdFirmwareUpdateActivity::cancelConfirmation() {
+  if (recoveryMode) {
+    // Go back to the picker rather than exiting recovery.
+    state = State::PICKING;
+    launchPicker();
     return;
   }
+  finish();
+}
 
+void SdFirmwareUpdateActivity::startUpdate() {
   {
     RenderLock lock(*this);
     state = State::UPDATING;
@@ -182,6 +236,7 @@ void SdFirmwareUpdateActivity::performUpdate() {
   }
 
   LOG_INF("FW", "SD firmware update complete, restarting");
+  if (!stagedPath.empty()) Storage.remove(firmwarePath.c_str());
   {
     RenderLock lock(*this);
     state = State::SUCCESS;
@@ -192,6 +247,44 @@ void SdFirmwareUpdateActivity::performUpdate() {
 }
 
 void SdFirmwareUpdateActivity::loop() {
+  if (stagedStartPending) {
+    stagedStartPending = false;
+    // Let "Validating" reach the panel before the blocking checksum pass.
+    requestUpdateAndWait();
+    if (!validateFirmware()) {
+      RenderLock lock(*this);
+      state = State::FAILED;
+      requestUpdate();
+      return;
+    }
+    promptConfirmation();
+    return;
+  }
+  if (state == State::CONFIRMING) {
+    if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+      cancelConfirmation();
+      return;
+    }
+    if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) holdStartMs = millis();
+    if (holdStartMs != 0 && mappedInput.isPressed(MappedInputManager::Button::Confirm)) {
+      const unsigned long held = millis() - holdStartMs;
+      if (held >= CONFIRM_HOLD_MS) {
+        holdStartMs = 0;
+        startUpdate();
+        return;
+      }
+      const unsigned seconds = static_cast<unsigned>(held / 1000UL);
+      if (seconds != holdShownSeconds) {
+        holdShownSeconds = seconds;
+        requestUpdate();
+      }
+    } else if (holdStartMs != 0) {
+      holdStartMs = 0;  // released early
+      holdShownSeconds = 0;
+      requestUpdate();
+    }
+    return;
+  }
   if (state == State::FAILED) {
     int x = 0;
     int y = 0;
@@ -223,6 +316,42 @@ void SdFirmwareUpdateActivity::render(RenderLock&&) {
 
   if (state == State::VALIDATING) {
     renderer.drawCenteredText(UI_10_FONT_ID, top, tr(STR_VALIDATING_FIRMWARE));
+  } else if (state == State::CONFIRMING) {
+    int y = metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing * 2;
+    const int side = metrics.contentSidePadding;
+    const auto drawLine = [&](const char* text, const EpdFontFamily::Style style = EpdFontFamily::REGULAR) {
+      const Rect bounds{side, y, pageWidth - side * 2, pageHeight - y};
+      UITheme::drawCenteredWrappedText(renderer, bounds, UI_10_FONT_ID, text, 3, true, style,
+                                       UITheme::TextVerticalAlignment::TOP);
+      const int lines = static_cast<int>(renderer.wrappedText(UI_10_FONT_ID, text, bounds.width, 3, style).size());
+      y += lineHeight * std::max(1, lines) + metrics.verticalSpacing;
+    };
+    drawLine(tr(STR_FIRMWARE_UPDATE_PROMPT), EpdFontFamily::BOLD);
+    const auto slash = firmwarePath.find_last_of('/');
+    drawLine(firmwarePath.c_str() + (slash == std::string::npos ? 0 : slash + 1));
+    char line[96];
+    if (infoVersion[0]) {
+      snprintf(line, sizeof(line), tr(STR_FW_VERSION_LINE), infoVersion);
+      drawLine(line);
+    }
+    if (infoBuilt[0]) {
+      snprintf(line, sizeof(line), tr(STR_FW_BUILT_LINE), infoBuilt);
+      drawLine(line);
+    }
+    if (infoSha[0]) {
+      snprintf(line, sizeof(line), tr(STR_FW_SHA_LINE), infoSha);
+      drawLine(line);
+    }
+    drawLine(tr(STR_FW_UNSIGNED_NOTE));
+    y += metrics.verticalSpacing;
+    if (holdStartMs != 0) {
+      snprintf(line, sizeof(line), tr(STR_FW_HOLDING_LINE), holdShownSeconds + 1);
+      drawLine(line, EpdFontFamily::BOLD);
+    } else {
+      drawLine(tr(STR_FW_HOLD_TO_INSTALL), EpdFontFamily::BOLD);
+    }
+    const auto labels = mappedInput.mapLabels(tr(STR_CANCEL), tr(STR_CONFIRM), "", "");
+    GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
   } else if (state == State::UPDATING) {
     // Throttle redraws to once per percent.
     const unsigned int pct = firmwareSize > 0 ? static_cast<unsigned int>((writtenBytes * 100) / firmwareSize) : 0;

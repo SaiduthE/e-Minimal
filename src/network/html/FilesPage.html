@@ -223,15 +223,7 @@
           <input type="file" id="fileInput" onchange="validateFile()" multiple aria-label="Choose files">
           <p class="dropzone-hint">Drop files here, or tap to choose</p>
         </div>
-        <div class="meta-review" id="metaReview" hidden>
-          <h3>Book details <span class="small muted" id="metaCount"></span></h3>
-          <p class="small muted">Optional. Titles come from the file names; EPUBs keep their own title unless you edit it.</p>
-          <div class="meta-collection">
-            <label><input type="checkbox" id="metaCollection"> Import as collection</label>
-            <input type="text" id="metaSeries" placeholder="Series name" autocomplete="off" aria-label="Series name">
-          </div>
-          <div class="meta-rows" id="metaRows"></div>
-        </div>
+        <div id="metaReview" hidden></div>
         <div class="picker-columns" id="pickerColumns">
           <div id="convertOptions" style="display:none;">
             <div class="list">
@@ -1042,9 +1034,8 @@
       if (e.target.id === 'fileSearch' && e.target.value) return;
       clearSelection();
     });
+    metaTable = ui.bookDetailsTable($('metaReview'));
     uploadPicker = ui.folderPicker($('uploadDest'), { value: currentPath, onChange: syncCollectionName });
-    $('metaCollection').addEventListener('change', onCollectionToggle);
-    $('metaSeries').addEventListener('input', function() { metaSeriesTouched = true; applyCollectionName(); });
     movePicker = ui.folderPicker($('moveDestPath'), { value: currentPath, onChange: function() { clearFieldError('moveDestPath', 'moveError'); } });
     ['folderName', 'renameNewName'].forEach(function(id) {
       const errorId = { folderName: 'folderError', renameNewName: 'renameError' }[id];
@@ -1103,7 +1094,6 @@
 
     uploadPicker.set(currentPath);
     uploadPicker.reload();
-    metaSeriesTouched = false;
     ui.openModal(document.getElementById('uploadModal'), { dismiss: false });
   }
 
@@ -4417,8 +4407,8 @@ function uploadFileWebSocket(file, onProgress, onComplete, onError) {
 
     ws.onopen = function() {
       console.log('[WS] Connected, starting upload:', file.name);
-      // Send start message: START:<filename>:<size>:<path>
-      ws.send(`START:${file.name}:${file.size}:${uploadDest}`);
+      // Send start message: START:<token>:<filename>:<size>:<path>
+      ws.send(`START:${window.emsToken ? window.emsToken() : ''}:${file.name}:${file.size}:${uploadDest}`);
     };
 
     ws.onmessage = async function(event) {
@@ -4588,22 +4578,15 @@ async function uploadFile() {
   fileInput.disabled = true;
   $('uploadDest').disabled = true;
   // Book details as chosen now; each is saved once its file has uploaded.
-  const metaPlan = new Map(metaRowList.map(row => [row.file, metaPayload(row)]));
+  const metaPlan = new Map(metaBooks.map((file, i) => [file, metaTable.getRow(i)]));
   const metaFailed = [];
   lockMetaReview(true);
 
   async function saveBookMeta(original, name) {
-    const plan = metaPlan.get(original);
-    if (!plan) return;
-    try {
-      const response = await fetch('/api/book-meta', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(Object.assign({ path: joinPath(uploadDest, name) }, plan))
-      });
-      if (!response.ok) throw new Error('HTTP ' + response.status);
-    } catch (e) {
-      console.error('[Upload] Book details not saved for ' + name, e);
+    const row = metaPlan.get(original);
+    if (!row) return;
+    if (!(await ui.saveBookDetails(joinPath(uploadDest, name), row, /\.epub$/i.test(name)))) {
+      console.error('[Upload] Book details not saved for ' + name);
       metaFailed.push(name);
     }
   }
@@ -4966,108 +4949,35 @@ function retryAllFailedUploads() {
     button.disabled = false;
   }
 
-  // --- Book details: upload review table ---
+  // --- Book details: upload review table (ui.bookDetailsTable in app.js) ---
 
-  let metaRowList = [];  // one entry per book in the file picker
-  let metaSeriesTouched = false;
-  const SERIES_NUM = /^([1-5]?\d{1,2}|600)(\.\d{1,2})?$/;  // parseSeriesIndex keeps 0-600
+  let metaTable = null;
+  let metaBooks = [];  // the chosen files that are books, in table order
+  const SERIES_NUM = /^([1-5]?\d{1,2}|600)(\.\d{1,2})?$/;  // the reader keeps 0-600 (same rule as app.js)
 
   function lastFolderName(path) {
     return path.split('/').filter(Boolean).pop() || '';
   }
 
   function buildMetaReview(files) {
-    const books = files.filter(file => BOOK_EXT.test(file.name));
-    const box = $('metaRows');
-    box.replaceChildren();
-    metaRowList = [];
-    $('metaReview').hidden = !books.length;
-    if (!books.length) return;
-    const frag = document.createDocumentFragment();
-    books.forEach(function(file, i) {
-      const clean = ui.cleanBookName(file.name);
-      const row = {
-        file: file, stem: file.name.replace(/\.[^.]+$/, ''), isEpub: /\.epub$/i.test(file.name), order: i + 1,
-        parsed: clean.num, title: clean.title, titleEdited: false, series: '', num: clean.num
-      };
-      const node = el('div', 'meta-row');
-      node.appendChild(el('span', 'meta-file', file.name));
-      row.titleInput = metaInput('Title', row.title, function(v) { row.title = v; row.titleEdited = true; });
-      row.seriesInput = metaInput('Series', '', function(v) { row.series = v; });
-      row.numInput = metaInput('#', row.num, function(v) { row.num = v; });
-      node.append(row.titleInput, row.seriesInput, row.numInput);
-      frag.appendChild(node);
-      metaRowList.push(row);
-    });
-    box.appendChild(frag);
-    $('metaCount').textContent = plural(books.length, 'book');
-    metaSeriesTouched = false;
+    metaBooks = files.filter(file => BOOK_EXT.test(file.name));
+    metaTable.setFiles(metaBooks);
     syncCollectionName();
-    if ($('metaCollection').checked) onCollectionToggle();
-  }
-
-  // A cell edit touches its own row's state only.
-  function metaInput(label, value, onInput) {
-    const input = el('input');
-    input.type = 'text';
-    input.value = value;
-    input.placeholder = label;
-    input.autocomplete = 'off';
-    input.setAttribute('aria-label', label);
-    input.addEventListener('input', function() { onInput(input.value); });
-    return input;
   }
 
   function clearMetaReview() {
-    metaRowList = [];
-    $('metaRows').replaceChildren();
-    $('metaReview').hidden = true;
-    lockMetaReview(false);
+    metaBooks = [];
+    metaTable.setFiles([]);
+    metaTable.lock(false);
   }
 
   function lockMetaReview(locked) {
-    $('metaReview').querySelectorAll('input').forEach(function(input) { input.disabled = locked; });
+    metaTable.lock(locked);
   }
 
-  // The series name follows the destination folder until the user types one.
+  // The collection's series name follows the destination folder until the user types one.
   function syncCollectionName() {
-    if (metaSeriesTouched) return;
-    $('metaSeries').value = lastFolderName(uploadPicker ? uploadPicker.value : currentPath);
-    applyCollectionName();
-  }
-
-  function applyCollectionName() {
-    if (!$('metaCollection').checked) return;
-    const name = $('metaSeries').value;
-    metaRowList.forEach(function(row) {
-      row.series = name;
-      row.seriesInput.value = name;
-    });
-  }
-
-  function onCollectionToggle() {
-    const on = $('metaCollection').checked;
-    metaRowList.forEach(function(row) {
-      row.num = on ? (row.parsed || String(row.order)) : row.parsed;
-      row.numInput.value = row.num;
-      row.series = on ? $('metaSeries').value : '';
-      row.seriesInput.value = row.series;
-    });
-  }
-
-  // What to send for one uploaded book, or null. A non-EPUB's own title is its file name, so a cleaned title
-  // counts as different; an EPUB's own title is only replaced when the user edited it.
-  function metaPayload(row) {
-    const out = {};
-    const title = row.title.trim();
-    if (title && (row.isEpub ? row.titleEdited : title !== row.stem)) out.title = title;
-    const series = row.series.trim();
-    if (series) {
-      out.series = series;
-      const num = row.num.trim();
-      if (SERIES_NUM.test(num)) out.seriesIndex = num;
-    }
-    return Object.keys(out).length ? out : null;
+    metaTable.setDefaultName(lastFolderName(uploadPicker ? uploadPicker.value : currentPath));
   }
 
   // --- Book details: Edit dialog ---
@@ -5120,32 +5030,29 @@ function retryAllFailedUploads() {
   }
 
   async function fetchEditOnline() {
-    const query = ($('edit_title').value + ' ' + $('edit_author').value).trim();
+    const query = $('edit_title').value.trim();
     if (!query) return setEditStatus('Enter a title first.', true);
     const button = $('fetchEditBtn');
     const box = $('editCands');
     button.disabled = true;
     box.replaceChildren();
-    setEditStatus('Searching Open Library…');
+    setEditStatus('Searching Open Library and Google Books…');
     try {
-      const found = await ui.searchOpenLibrary(query);
+      const found = (await ui.fetchBookCandidates(query, $('edit_author').value.trim())).slice(0, 5);
       if (!found.length) {
-        setEditStatus('No matches on Open Library.');
+        setEditStatus('No matches online.');
       } else {
         setEditStatus('Tap a match to fill title, author and genre. Series is left for you.');
-        found.forEach(function(c) {
-          const pick = el('button');
-          pick.type = 'button';
-          pick.appendChild(document.createTextNode(c.title));
-          pick.appendChild(el('small', null, [c.author, c.year, c.genre].filter(Boolean).join(' · ')));
-          pick.addEventListener('click', function() {
-            $('edit_title').value = c.title;
-            if (c.author) $('edit_author').value = c.author;
-            if (c.genre) $('edit_genre').value = c.genre;
-            box.replaceChildren();
-            setEditStatus('Filled from Open Library. Check the details, then Save.');
-          });
-          box.appendChild(pick);
+        ui.renderBookCandidates(box, found, function(c) {
+          $('edit_title').value = c.title;
+          if (c.author) $('edit_author').value = c.author;
+          if (c.genre) $('edit_genre').value = c.genre;
+          if (c.series && !$('edit_series').value.trim()) {
+            $('edit_series').value = c.series;
+            if (c.seriesIndex && SERIES_NUM.test(c.seriesIndex)) $('edit_seriesIndex').value = c.seriesIndex;
+          }
+          box.replaceChildren();
+          setEditStatus('Filled from ' + c.src + '. Check the details, then Save.');
         });
       }
     } catch (e) {

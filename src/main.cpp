@@ -25,7 +25,9 @@
 
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
+#if !FREEINK_NO_KOSYNC
 #include "KOReaderCredentialStore.h"
+#endif
 #include "MappedInputManager.h"
 #include "OpdsServerStore.h"
 #include "RecentBooksStore.h"
@@ -626,7 +628,9 @@ void setup() {
   // After the language is set: this first loads the Dashboard settings, whose
   // starting layouts take their names from I18N.
   card_folders::ensure();
+#if !FREEINK_NO_KOSYNC
   KOREADER_STORE.loadFromFile();
+#endif
   OPDS_STORE.loadFromFile();
   UITheme::getInstance().reload();
   ButtonNavigator::setMappedInputManager(mappedInputManager);

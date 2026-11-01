@@ -32,7 +32,8 @@ int drawWrapped(const GfxRenderer& renderer, const Rect& bounds, const int fontI
 // One numbered step: caption, QR, then up to two fallback lines. Returns the
 // height it took.
 int drawStep(const GfxRenderer& renderer, const Rect& column, const int qrSide, const char* caption,
-             const std::string& payload, const std::string& line1, const std::string& line2) {
+             const std::string& payload, const std::string& line1, const std::string& line2,
+             const std::string& line3 = std::string()) {
   const auto& metrics = UITheme::getInstance().getMetrics();
   int y = column.y;
   Rect text = column;
@@ -49,6 +50,10 @@ int drawStep(const GfxRenderer& renderer, const Rect& column, const int qrSide, 
   if (!line2.empty()) {
     text.y = y;
     y += drawWrapped(renderer, text, SMALL_FONT_ID, line2.c_str(), 2);
+  }
+  if (!line3.empty()) {
+    text.y = y;
+    y += drawWrapped(renderer, text, UI_10_FONT_ID, line3.c_str(), 1, EpdFontFamily::BOLD);
   }
   return y - column.y;
 }
@@ -73,7 +78,7 @@ int PhoneJoinPanel::draw(const GfxRenderer& renderer, const Rect& bounds, const 
     // Below the QR row: two fallback lines, the gap and the status. Size the
     // codes so all of that still fits on the panel.
     const int lineHeight = renderer.getLineHeight(UI_10_FONT_ID);
-    const int reservedBelow = lineHeight * 5 + gap * 5;
+    const int reservedBelow = lineHeight * (content.accessCode ? 6 : 5) + gap * 5;
     const int columnWidth = (bounds.width - pad * 2) / steps;
     const int qrSide = std::max(
         QR_MIN_SIDE, std::min({columnWidth - pad, bounds.y + bounds.height - y - reservedBelow - lineHeight, QR_MAX_SIDE}));
@@ -95,8 +100,16 @@ int PhoneJoinPanel::draw(const GfxRenderer& renderer, const Rect& bounds, const 
     if (open) {
       char caption[64];
       snprintf(caption, sizeof(caption), steps == 2 ? "2. %s" : "%s", tr(STR_PHONE_STEP_OPEN));
-      stepHeight = std::max(stepHeight, drawStep(renderer, columnRect(column++), qrSide, caption, content.pageUrl,
-                                                 content.pageUrl, content.pageAlt ? content.pageAlt : ""));
+      std::string codeLine;
+      if (content.accessCode) {
+        char line[48];
+        snprintf(line, sizeof(line), tr(STR_ACCESS_CODE_LINE), content.accessCode);
+        codeLine = line;
+      }
+      stepHeight = std::max(
+          stepHeight, drawStep(renderer, columnRect(column++), qrSide, caption,
+                               content.pageQrUrl.empty() ? content.pageUrl : content.pageQrUrl, content.pageUrl,
+                               content.pageAlt ? content.pageAlt : "", codeLine));
     }
     y += stepHeight;
   }

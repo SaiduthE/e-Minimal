@@ -8,6 +8,7 @@
 #include "activities/Activity.h"
 #include "network/CrossPointWebServer.h"
 #include "network/PhonePortal.h"
+#include "util/WebSession.h"
 
 // Web server activity states
 enum class WebServerActivityState {
@@ -41,6 +42,9 @@ class CrossPointWebServerActivity final : public Activity {
   // Hotspot mode: the access point, captive DNS and mDNS behind the QR.
   PhonePortal portal;
 
+  // Access token and code for this run, handed to the server and the QR.
+  WebSession session;
+
   const std::string landingPath;
 
   // Server status
@@ -65,6 +69,11 @@ class CrossPointWebServerActivity final : public Activity {
   void onWifiSelectionComplete(bool connected);
   void startAccessPoint();
   void startWebServer();
+
+  // A firmware image pushed over Wi-Fi sits staged on the SD card: the install screen asks on the device (info and
+  // a 3 s hold), then installs or discards.
+  void promptFirmwareInstall(size_t size);
+  void installStagedFirmware();
 
  public:
   // landingPath: appended to the page URL the QR and typed fallback show, e.g.

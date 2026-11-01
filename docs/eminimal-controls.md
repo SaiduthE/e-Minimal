@@ -172,6 +172,31 @@ corners; Inverted) draws the charging badge over the sleep screen while USB is
 in. When it is off there is no USB-detect wake and no 30-minute tick. **Sleep
 Screen** holds the sleep screen style, cover mode, cover filter and quick resume.
 
+## Global Settings > Display & System > Security
+Opens `SecuritySettingsActivity`; all fields are device-only (never listed or
+written by the web `/api/settings`, flag `SettingInfo::deviceOnly`). They are
+read once per File Transfer / phone-page session (`WebSession::begin`).
+- **Web Access Code** (`webAccessCode`, On): each session makes a 32-hex token
+  (in the QR as `?t=`) and a 6-digit code shown under the URL; a phone without
+  the token types the code.
+- **Phone Access** (`webAccessLevel`): Full, Upload Only, Read Only.
+- **Install Firmware over Wi-Fi** (`webFirmwareInstall`, Off), **WebDAV**
+  (`webDav`, Off).
+- **Announce on Network** (`networkAnnounce`, On): mDNS `eminimal.local` and
+  the UDP discovery listener.
+- **Hotspot Password** (`hotspotPasswordMode`): Keep the saved passphrase, or
+  New Each Time (a per-session passphrase held in RAM). **Reset Hotspot
+  Password** (confirmed) clears the saved one. The hotspot is always WPA2.
+- **Auto-stop File Transfer** (`fileTransferIdleStop`): Off, 5, 15 (default) or
+  30 minutes without authenticated web traffic leaves File Transfer.
+- **Background Wi-Fi on Open Networks** (`backgroundOpenWifi`, Never): the
+  weather fetch (`SavedWifi`) skips networks with no password unless Allow.
+
+A firmware image (SD Card Firmware Update, or one pushed over Wi-Fi) is
+confirmed on the device: version and build date from the image, the first 8 hex
+of its SHA-256, an unsigned-firmware note, and a 3 s hold on Confirm. Check for
+Updates is hidden on this board (OTA only knows upstream's assets).
+
 ## Apps and boot
 When the app last opened (`lastApp` in `/.crosspoint/state.json`) is the
 reader, the device boots and wakes into it as before: the book it slept in, or

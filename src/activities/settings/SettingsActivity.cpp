@@ -22,10 +22,13 @@
 #include "FirmwareIdentity.h"
 #include "FontDownloadActivity.h"
 #include "HomeButtonSettingsActivity.h"
+#if !FREEINK_NO_KOSYNC
 #include "KOReaderSettingsActivity.h"
+#endif
 #include "KeyboardLayoutsActivity.h"
 #include "LanguageSelectActivity.h"
 #include "ManageDictionariesActivity.h"
+#include "SecuritySettingsActivity.h"
 #include "MappedInputManager.h"
 #include "OpdsServerListActivity.h"
 #include "OtaUpdateActivity.h"
@@ -148,8 +151,12 @@ void SettingsActivity::rebuildSettingsLists() {
   }
 
   if (global) {
+    tabSettings[1].push_back(SettingInfo::Action(StrId::STR_SECURITY, SettingAction::Security));
     tabSettings[1].push_back(SettingInfo::Action(StrId::STR_ABOUT, SettingAction::About));
+#if !FREEINK_DEVICE_EMINIMAL
+    // OtaUpdater only knows upstream's release assets; e-Minimal updates from the SD card.
     tabSettings[1].push_back(SettingInfo::Action(StrId::STR_CHECK_UPDATES, SettingAction::CheckForUpdates));
+#endif
     tabSettings[1].push_back(SettingInfo::Action(StrId::STR_SD_FIRMWARE_UPDATE, SettingAction::SdFirmwareUpdate));
     // After Time to Sleep and the other Power & Sleep rows.
     tabSettings[0].push_back(SettingInfo::Action(StrId::STR_SLEEP_SCREEN, SettingAction::SleepScreen));
@@ -178,7 +185,9 @@ void SettingsActivity::rebuildSettingsLists() {
   if (halClock.isAvailable()) {
     systemSettings.push_back(SettingInfo::Action(StrId::STR_CLOCK, SettingAction::ClockSettings));
   }
+#if !FREEINK_NO_KOSYNC
   systemSettings.push_back(SettingInfo::Action(StrId::STR_KOREADER_SYNC, SettingAction::KOReaderSync));
+#endif
   systemSettings.push_back(SettingInfo::Action(StrId::STR_OPDS_SERVERS, SettingAction::OPDSBrowser));
   systemSettings.push_back(SettingInfo::Action(StrId::STR_CLEAR_READING_CACHE, SettingAction::ClearCache));
   // OTA fetches this board's own release asset (see OtaUpdater); boards whose
@@ -433,6 +442,13 @@ void SettingsActivity::toggleCurrentSetting() {
           LOG_ERR("SETTINGS", "OOM: SleepScreenSettingsActivity");
         }
         return;
+      case SettingAction::Security:
+        if (auto activity = makeUniqueNoThrow<SecuritySettingsActivity>(renderer, mappedInput)) {
+          startActivityForResult(std::move(activity), [this](const ActivityResult&) { requestUpdate(); });
+        } else {
+          LOG_ERR("SETTINGS", "OOM: SecuritySettingsActivity");
+        }
+        return;
       case SettingAction::ChargeBadge:
         if (auto activity = makeUniqueNoThrow<ChargeBadgeSettingsActivity>(renderer, mappedInput)) {
           startActivityForResult(std::move(activity), [this](const ActivityResult&) { requestUpdate(); });
@@ -461,7 +477,9 @@ void SettingsActivity::toggleCurrentSetting() {
         }
         break;
       case SettingAction::KOReaderSync:
+#if !FREEINK_NO_KOSYNC
         startActivityForResult(std::make_unique<KOReaderSettingsActivity>(renderer, mappedInput), resultHandler);
+#endif
         break;
       case SettingAction::OPDSBrowser:
         startActivityForResult(std::make_unique<OpdsServerListActivity>(renderer, mappedInput), resultHandler);
@@ -615,7 +633,7 @@ void SettingsActivity::openSleepPresetPopup() {
 
 std::string SettingsActivity::settingValueText(const SettingInfo& setting) {
   if (setting.action == SettingAction::HomeButton || setting.action == SettingAction::SleepScreen ||
-      setting.action == SettingAction::ChargeBadge) {
+      setting.action == SettingAction::ChargeBadge || setting.action == SettingAction::Security) {
     return tr(STR_CONFIGURE);
   }
   if (setting.type == SettingType::TOGGLE && setting.valuePtr != nullptr) {
@@ -713,7 +731,8 @@ void SettingsActivity::drawFooter() {
     const SettingInfo& row = (*currentSettings)[ring - 1];
     if (row.nameId == StrId::STR_TIME_TO_SLEEP) {
       confirmLabel = tr(STR_SELECT);
-    } else if (row.action == SettingAction::SleepScreen || row.action == SettingAction::ChargeBadge) {
+    } else if (row.action == SettingAction::SleepScreen || row.action == SettingAction::ChargeBadge ||
+               row.action == SettingAction::Security) {
       confirmLabel = tr(STR_OPEN);
     }
   }

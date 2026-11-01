@@ -39,9 +39,25 @@ std::string PhonePortal::generatePassphrase() {
   return out;
 }
 
+void PhonePortal::resetSharedPassphrase() {
+  SETTINGS.phoneTextPassphrase[0] = '\0';
+  if (!SETTINGS.saveToFile()) {
+    LOG_ERR("PORTAL", "Could not save the reset hotspot passphrase");
+  } else {
+    LOG_INF("PORTAL", "Hotspot passphrase reset");
+  }
+}
+
 const char* PhonePortal::sharedPassphrase() {
   static_assert(sizeof(CrossPointSettings::phoneTextPassphrase) > PASSPHRASE_LENGTH,
                 "the settings field holds the passphrase and its terminator");
+  if (SETTINGS.hotspotPasswordMode == 1) {
+    // Per-session: kept in RAM so the saved passphrase and the phones that
+    // remember it are untouched.
+    static char sessionPassphrase[sizeof(CrossPointSettings::phoneTextPassphrase)];
+    snprintf(sessionPassphrase, sizeof(sessionPassphrase), "%s", generatePassphrase().c_str());
+    return sessionPassphrase;
+  }
   // WPA2 needs at least 8 characters; a shorter stored value (hand-edited
   // settings) is replaced the same way as a missing one.
   if (strnlen(SETTINGS.phoneTextPassphrase, sizeof(SETTINGS.phoneTextPassphrase)) >= PASSPHRASE_LENGTH) {
@@ -67,12 +83,12 @@ bool PhonePortal::begin(const Config& config) {
   if (config.passphrase && config.passphrase[0] != '\0') {
     passphraseStr = config.passphrase;
   } else {
-    passphraseStr = config.randomPassphrase ? generatePassphrase() : std::string();
+    passphraseStr = generatePassphrase();  // never raise an open network
   }
   ipStr.clear();
 
   LOG_DBG("PORTAL", "Raising %s on channel %u (%s, %s), free heap %d bytes", ssidStr.c_str(), config.channel,
-          passphraseStr.empty() ? "open" : "WPA2", config.keepStation ? "AP+STA" : "AP", ESP.getFreeHeap());
+          "WPA2", config.keepStation ? "AP+STA" : "AP", ESP.getFreeHeap());
 
   WiFi.mode(config.keepStation ? WIFI_AP_STA : WIFI_AP);
   delay(100);
