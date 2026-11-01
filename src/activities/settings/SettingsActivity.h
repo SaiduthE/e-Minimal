@@ -32,6 +32,8 @@ enum class SettingAction {
   SleepScreen,
   ChargeBadge,
   ManageDictionaries,
+  Security,
+  ResetHotspotPassword,
 };
 
 struct SettingInfo {
@@ -54,6 +56,7 @@ struct SettingInfo {
   StrId category = StrId::STR_NONE_OPT;  // Category for web UI grouping
   bool obfuscated = false;               // Save/load via base64 obfuscation (passwords)
   bool inTextSettings = false;           // Surfaced in the Text Settings screen; hidden from the flat Reader list
+  bool deviceOnly = false;               // Persisted, but never listed or written through the web settings API
 
   // Direct char[] string fields (for settings stored in CrossPointSettings)
   size_t stringOffset = 0;
@@ -67,6 +70,11 @@ struct SettingInfo {
 
   SettingInfo& withObfuscated() {
     obfuscated = true;
+    return *this;
+  }
+
+  SettingInfo& withDeviceOnly() {
+    deviceOnly = true;
     return *this;
   }
 

@@ -30,10 +30,13 @@ class NetworkModeSelectionActivity final : public UiListActivity {
                                         Choices choices = Choices::All, const char* title = nullptr,
                                         NetworkMode initial = NetworkMode::JOIN_NETWORK);
 
-#if FREEINK_CAP_USB_MSC
+  // Join, Hotspot and Game Night always; USB Drive and Calibre depend on build flags.
+#if FREEINK_CAP_USB_MSC && !FREEINK_NO_CALIBRE_WIRELESS
   static constexpr int MENU_ITEM_COUNT = 5;
-#else
+#elif FREEINK_CAP_USB_MSC || !FREEINK_NO_CALIBRE_WIRELESS
   static constexpr int MENU_ITEM_COUNT = 4;
+#else
+  static constexpr int MENU_ITEM_COUNT = 3;
 #endif
 
   void onEnter() override;

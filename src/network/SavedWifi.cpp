@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "CrossPointSettings.h"
 #include "WifiCredentialStore.h"
 #include "util/TaskWatchdog.h"
 
@@ -34,6 +35,10 @@ void prepareStation() {
     WiFi.setHostname(hostname);
   }
 }
+
+// Background jobs run unattended, so they join a network with no password
+// only when Security > Background Wi-Fi on Open Networks says Allow.
+bool openNetworksAllowed() { return SETTINGS.backgroundOpenWifi != 0; }
 
 bool tryNetwork(const WifiCredential& credential, const unsigned long timeoutMs) {
   LOG_DBG("SWIFI", "Connecting to %s", credential.ssid.c_str());
@@ -75,7 +80,11 @@ bool connect(const unsigned long perNetworkTimeoutMs) {
   const std::string lastSsid = WIFI_STORE.getLastConnectedSsid();
   if (!lastSsid.empty()) {
     const auto credential = WIFI_STORE.findCredential(lastSsid);
-    if (credential && tryNetwork(*credential, perNetworkTimeoutMs)) return true;
+    if (credential && credential->password.empty() && !openNetworksAllowed()) {
+      LOG_INF("SWIFI", "Skipping open network %s (background open Wi-Fi is off)", lastSsid.c_str());
+    } else if (credential && tryNetwork(*credential, perNetworkTimeoutMs)) {
+      return true;
+    }
   }
 
   // Then the other saved networks that are in range, strongest first.
@@ -94,7 +103,11 @@ bool connect(const unsigned long perNetworkTimeoutMs) {
     const bool seen = std::any_of(candidates.begin(), candidates.end(),
                                   [&ssid](const Candidate& c) { return c.credential.ssid == ssid; });
     if (seen) continue;
+    // The scan shows what the air offers now: an open network under a name saved
+    // with a password is an impostor, so it is skipped like any open network.
+    if (WiFi.encryptionType(i) == WIFI_AUTH_OPEN && !openNetworksAllowed()) continue;
     auto credential = WIFI_STORE.findCredential(ssid);
+    if (credential && credential->password.empty() && !openNetworksAllowed()) continue;
     if (credential) candidates.push_back({std::move(*credential), WiFi.RSSI(i)});
   }
   WiFi.scanDelete();

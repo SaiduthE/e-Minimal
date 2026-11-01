@@ -11,8 +11,13 @@
 namespace fui = freeink::ui;
 
 SettingRowsActivity::SettingRowsActivity(const char* name, GfxRenderer& renderer, MappedInputManager& mappedInput,
-                                         const StrId title, const Field* fields, const int fieldCount)
-    : UiListActivity(name, renderer, mappedInput), title(title), fields(fields), fieldCount(fieldCount) {}
+                                         const StrId title, const Field* fields, const int fieldCount,
+                                         const StrId actionLabel)
+    : UiListActivity(name, renderer, mappedInput),
+      title(title),
+      fields(fields),
+      fieldCount(fieldCount),
+      actionLabel(actionLabel) {}
 
 void SettingRowsActivity::onEnter() {
   UiListActivity::onEnter();
@@ -37,6 +42,10 @@ void SettingRowsActivity::onEnter() {
     rowItems[i].label = I18N.get(infos[i].nameId);
     rowItems[i].actionValue = static_cast<int16_t>(i);
   }
+  if (hasActionRow()) {
+    rowItems[infos.size()].label = I18N.get(actionLabel);
+    rowItems[infos.size()].actionValue = static_cast<int16_t>(infos.size());
+  }
 }
 
 void SettingRowsActivity::onExit() {
@@ -60,6 +69,11 @@ void SettingRowsActivity::activateIndex(const int index) {
   app.clearTapFlash();
   nav.selected = index;
 
+  if (index >= static_cast<int>(infos.size())) {
+    onActionRow();
+    requestUpdate();
+    return;
+  }
   const SettingInfo& info = infos[index];
   const uint8_t current = SETTINGS.*(info.valuePtr);
   if (info.type == SettingType::TOGGLE) {
@@ -110,7 +124,7 @@ void SettingRowsActivity::buildScreen(UiScreen& screen) {
 
   fui::ListProps props;
   props.items = rowItems;
-  props.count = static_cast<uint16_t>(infos.size());
+  props.count = static_cast<uint16_t>(listCount());
   props.action = ACTION_ROW;
   props.inputMask = fui::InputTouch;  // physical buttons stay in loop()
   props.valueInset = 8;

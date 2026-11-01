@@ -661,7 +661,7 @@
         reject(error);
       };
       pics.abort = function() { fail(new Error('Cancelled.')); };
-      ws.onopen = function() { ws.send('START:' + name + ':' + blob.size + ':' + folder); };
+      ws.onopen = function() { ws.send('START:' + (window.emsToken ? window.emsToken() : '') + ':' + name + ':' + blob.size + ':' + folder); };
       ws.onmessage = async function(event) {
         const msg = String(event.data);
         if (msg === 'READY') {

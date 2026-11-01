@@ -4,11 +4,11 @@
 #include <HalStorage.h>
 #include <Logging.h>
 
+#include "WebPathGuard.h"
 #include "util/BookCacheUtils.h"
 #include "util/TaskWatchdog.h"
 
 namespace {
-constexpr const char* HIDDEN_ITEMS[] = {"System Volume Information", "XTCache"};
 
 // RFC 1123 date format helper: "Sun, 06 Nov 1994 08:49:37 GMT"
 // ESP32 doesn't have real-time clock set by default, so we use a fixed epoch date
@@ -48,7 +48,15 @@ void WebDAVHandler::raw(WebServer& server, const String& uri, HTTPRaw& raw) {
   (void)uri;
   if (raw.status == RAW_START) {
     _putPath = getRequestPath(server);
+    _putDenied = false;
     if (isProtectedPath(_putPath)) {
+      _putOk = false;
+      return;
+    }
+    // A new file is an upload; replacing one is a modification
+    _putNeeded = Storage.exists(_putPath.c_str()) ? WebAccess::Modify : WebAccess::Upload;
+    if (!gate.allow(gate.ctx, _putNeeded, false)) {
+      _putDenied = true;
       _putOk = false;
       return;
     }
@@ -117,6 +125,26 @@ void WebDAVHandler::raw(WebServer& server, const String& uri, HTTPRaw& raw) {
 
 bool WebDAVHandler::handle(WebServer& server, HTTPMethod method, const String& uri) {
   (void)uri;
+  WebAccess needed = WebAccess::Read;
+  switch (method) {
+    case HTTP_PUT:
+      needed = _putNeeded;
+      break;
+    case HTTP_MKCOL:
+    case HTTP_COPY:
+    case HTTP_LOCK:
+    case HTTP_UNLOCK:
+      needed = WebAccess::Upload;
+      break;
+    case HTTP_DELETE:
+    case HTTP_MOVE:
+      needed = WebAccess::Modify;
+      break;
+    default:
+      break;
+  }
+  if (!gate.allow(gate.ctx, needed, true)) return true;  // answered with 401/403/421
+
   switch (method) {
     case HTTP_OPTIONS:
       handleOptions(server);
@@ -228,15 +256,7 @@ void WebDAVHandler::handlePropfind(WebServer& s) {
       String fileName(name);
 
       // Skip hidden/protected items
-      bool shouldHide = fileName.startsWith(".");
-      if (!shouldHide) {
-        for (const auto* item : HIDDEN_ITEMS) {
-          if (fileName.equals(item)) {
-            shouldHide = true;
-            break;
-          }
-        }
-      }
+      const bool shouldHide = web_path::isProtectedSegment(name, strlen(name));
 
       if (!shouldHide) {
         String childPath = path;
@@ -758,31 +778,7 @@ void WebDAVHandler::urlEncodePath(const String& path, String& out) const {
   }
 }
 
-bool WebDAVHandler::isProtectedPath(const String& path) const {
-  // Check every segment of the path, not just the last one.
-  // This prevents access to e.g. /.hidden/somefile or /System Volume Information/foo
-  int start = 0;
-  while (start < (int)path.length()) {
-    if (path.charAt(start) == '/') {
-      start++;
-      continue;
-    }
-    int end = path.indexOf('/', start);
-    if (end == -1) end = path.length();
-
-    String segment = path.substring(start, end);
-
-    if (segment.startsWith(".")) return true;
-
-    for (const auto* item : HIDDEN_ITEMS) {
-      if (segment.equals(item)) return true;
-    }
-
-    start = end + 1;
-  }
-
-  return false;
-}
+bool WebDAVHandler::isProtectedPath(const String& path) const { return web_path::isProtected(path.c_str()); }
 
 int WebDAVHandler::getDepth(WebServer& s) const {
   String depth = s.header("Depth");

@@ -11,6 +11,37 @@ available while CrossPoint Reader is in File Transfer or Calibre Wireless mode.
 Examples use `crosspoint.local`. If mDNS does not resolve on your network, use
 the IP address shown on the device screen.
 
+## Access Control
+
+Set per session in the reader's Security settings; the activity gives the server a random session token (32 hex
+characters), the 6-digit code shown on the screen, and these options: code required (default on), access level,
+firmware install, WebDAV and discovery. A server started without them refuses everything.
+
+**Signing in.** The QR code opens `http://<host>/?t=<token>`: the server sets the `ems` cookie
+(`SameSite=Strict`, `Path=/`, readable by page script so the WebSocket can send it) and redirects to the same URL
+without `t`. Without a valid cookie or `t`, page routes answer `401` with the login page, which posts the code to
+`POST /api/login` (`code=123456`, form-encoded; `200` and `Set-Cookie` on success, `401` wrong, `429 {"retryAfter"}`
+when locked) and reloads. API routes answer `401 {"error":"Login required"}`. Five wrong codes lock every code
+attempt out for 60 seconds. Scripts can pass `?t=<token>` on any request. WebDAV clients use HTTP Basic with any
+user name and the code as the password.
+
+**Checks on every route.** The `Host` header must be the reader's IP, the hotspot IP or `eminimal.local` (otherwise
+`421`; on the hotspot a GET is redirected to the hotspot IP instead). A write (`POST`, `PUT`, ...) carrying an
+`Origin` header must name one of those hosts (`403`). JSON bodies over 64 KB get `413`. There are no CORS headers.
+Paths with a dot-name, `System Volume Information`, `XTCache` or an 8.3 alias (`NAME~1`) in any segment are
+refused on download, listing, upload, mkdir, rename, move, delete, book details and the WebSocket.
+`/api/settings` never lists or writes device-only (security) settings. `/api/status` carries no serial number.
+
+**Access levels** (Full, Upload only, Read only) admit routes up to their own level; a refused route answers
+`403 {"error":"Not allowed at this access level"}`.
+
+| Level needed | Routes |
+|--------------|--------|
+| Read | every page and asset, `GET /api/status`, `/api/files`, `/api/folders`, `/download`, `/api/book-meta`, `/api/settings`, `/api/fonts`, `/api/dictionaries`, `/api/dashboards`, `/api/todo`; WebDAV `OPTIONS`, `PROPFIND`, `GET`, `HEAD` |
+| Upload | `POST /upload`, `/mkdir`, `/api/fonts/upload`; WebSocket upload; WebDAV `PUT` of a new file, `MKCOL`, `COPY`, `LOCK`, `UNLOCK` |
+| Modify | `POST /rename`, `/move`, `/delete`, `/api/book-meta`, `/api/settings`, `/api/fonts/delete`, `/api/dictionaries/select`, `/api/dictionaries/delete`, `/api/dashboards`, `/api/todo`; `GET` and `POST` of `/api/opds`, `/api/wifi` and their `delete`; `POST /api/firmware` (also needs the firmware setting on, else `403`); WebDAV `DELETE`, `MOVE`, `PUT` over an existing file |
+| none | `POST /api/login` (host and origin still checked) |
+
 ## HTTP Pages
 
 | Method | Path | Purpose |
@@ -42,7 +73,8 @@ Response:
   "rssi": -45,
   "freeHeap": 123456,
   "uptime": 3600,
-  "device": "X4"
+  "device": "X4",
+  "access": 0
 }
 ```
 
@@ -54,7 +86,8 @@ Response:
 | `rssi` | number | Wi-Fi RSSI in dBm; `0` in AP mode |
 | `freeHeap` | number | Free heap in bytes |
 | `uptime` | number | Seconds since boot |
-| `device` | string | `"X3"` or `"X4"` hardware detection |
+| `device` | string | Hardware name |
+| `access` | number | Session access level: 0 Full, 1 Upload only, 2 Read only |
 
 ## File Management
 
@@ -626,7 +659,7 @@ ws://crosspoint.local:81/
 
 Protocol:
 
-1. Client sends text: `START:<filename>:<size>:<path>`
+1. Client sends text: `START:<token>:<filename>:<size>:<path>` (`<token>` is the `ems` session token, empty when no code is required)
 2. Server replies `READY`
 3. Client sends binary chunks
 4. Server sends `PROGRESS:<received>:<total>` every 64 KB or at completion
@@ -635,7 +668,7 @@ Protocol:
 Example session:
 
 ```text
-Client -> START:mybook.epub:1234567:/Books
+Client -> START:<token>:mybook.epub:1234567:/Books
 Server -> READY
 Client -> [binary chunk]
 Server -> PROGRESS:65536:1234567
@@ -648,13 +681,17 @@ Error messages include:
 | Message | Cause |
 |---------|-------|
 | `ERROR:Upload already in progress` | A second upload was started before the first completed |
+| `ERROR:Login required` | Missing or wrong session token |
+| `ERROR:Uploads are off for this session` | Read only access level |
+| `ERROR:Cannot upload to system folders` | Destination has a hidden or system segment |
+| `ERROR:Upload timed out` | No frame for 30 s; the slot and partial file are released |
 | `ERROR:Invalid START format` | Malformed START message or invalid size token |
 | `ERROR:Failed to create file` | Destination file could not be opened |
 | `ERROR:No upload in progress` | Binary data arrived without a matching START |
 | `ERROR:Upload overflow` | Client sent more bytes than declared |
 | `ERROR:Write failed - disk full?` | SD write failed |
 
-Incomplete WebSocket uploads are deleted on disconnect or error.
+Incomplete WebSocket uploads are deleted on disconnect or error. The handshake applies the same Host and Origin checks as HTTP.
 
 ## WebDAV
 

@@ -3,6 +3,7 @@
 #include <ESPmDNS.h>
 #include <FontCacheManager.h>
 #include <GfxRenderer.h>
+#include <HalStorage.h>
 #include <I18n.h>
 #include <WiFi.h>
 
@@ -12,9 +13,13 @@
 #include "NetworkModeSelectionActivity.h"
 #include "SilentRestart.h"
 #include "WifiSelectionActivity.h"
+#if !FREEINK_NO_CALIBRE_WIRELESS
 #include "activities/network/CalibreConnectActivity.h"
+#endif
+#include "activities/settings/SdFirmwareUpdateActivity.h"
 #include "components/PhoneJoinPanel.h"
 #include "components/UITheme.h"
+#include "CrossPointSettings.h"
 #include "fontIds.h"
 #include "util/TaskWatchdog.h"
 
@@ -135,6 +140,7 @@ void CrossPointWebServerActivity::onNetworkModeSelected(const NetworkMode mode) 
   networkMode = mode;
   isApMode = (mode == NetworkMode::CREATE_HOTSPOT);
 
+#if !FREEINK_NO_CALIBRE_WIRELESS
   if (mode == NetworkMode::CONNECT_CALIBRE) {
     startActivityForResult(
         std::make_unique<CalibreConnectActivity>(renderer, mappedInput), [this](const ActivityResult& result) {
@@ -151,6 +157,7 @@ void CrossPointWebServerActivity::onNetworkModeSelected(const NetworkMode mode) 
         });
     return;
   }
+#endif
 
   if (mode == NetworkMode::JOIN_NETWORK) {
     // STA mode - launch WiFi selection
@@ -183,8 +190,8 @@ void CrossPointWebServerActivity::onWifiSelectionComplete(const bool connected) 
     // Get connection info before exiting subactivity
     isApMode = false;
 
-    // Start mDNS for hostname resolution
-    restartMdns(PhonePortal::SHARED_HOSTNAME, "WEBACT");
+    // Start mDNS for hostname resolution (Security > Announce on Network)
+    if (SETTINGS.networkAnnounce) restartMdns(PhonePortal::SHARED_HOSTNAME, "WEBACT");
 
     // Start the web server
     startWebServer();
@@ -212,7 +219,7 @@ void CrossPointWebServerActivity::startAccessPoint() {
   config.passphrase = PhonePortal::sharedPassphrase();
   config.channel = AP_CHANNEL;
   config.maxClients = AP_MAX_CONNECTIONS;
-  config.hostname = PhonePortal::SHARED_HOSTNAME;
+  config.hostname = SETTINGS.networkAnnounce ? PhonePortal::SHARED_HOSTNAME : nullptr;
   if (!portal.begin(config)) {
     LOG_ERR("WEBACT", "ERROR: Failed to start Access Point!");
     onGoHome();
@@ -241,6 +248,8 @@ void CrossPointWebServerActivity::startWebServer() {
 
   // Create the web server instance
   webServer.reset(new CrossPointWebServer());
+  session.begin();
+  session.applyTo(*webServer);
   webServer->begin();
 
   if (webServer->isRunning()) {
@@ -257,6 +266,30 @@ void CrossPointWebServerActivity::startWebServer() {
     // Go back on error
     onGoHome();
   }
+}
+
+void CrossPointWebServerActivity::promptFirmwareInstall(const size_t size) {
+  LOG_INF("WEBACT", "Staged firmware %u bytes, handing over to the install screen", static_cast<unsigned>(size));
+  installStagedFirmware();
+}
+
+void CrossPointWebServerActivity::installStagedFirmware() {
+  // Free the radio and the server first: the flash pass needs the heap and a quiet SD bus. The install activity
+  // restarts the device on success; on failure we restart here to get the Wi-Fi heap back.
+  state = WebServerActivityState::SHUTTING_DOWN;
+  webServer.reset();
+  portal.end();
+  MDNS.end();
+  if (!isApMode) WiFi.disconnect(false);
+  WiFi.mode(WIFI_OFF);
+  LOG_INF("WEBACT", "Installing staged firmware, free heap %d bytes", ESP.getFreeHeap());
+
+  startActivityForResult(std::make_unique<SdFirmwareUpdateActivity>(renderer, mappedInput, false,
+                                                                     CrossPointWebServer::FIRMWARE_STAGED_PATH),
+                         [](const ActivityResult&) {
+                           Storage.remove(CrossPointWebServer::FIRMWARE_STAGED_PATH);
+                           silentRestart();
+                         });
 }
 
 void CrossPointWebServerActivity::loop() {
@@ -345,6 +378,18 @@ void CrossPointWebServerActivity::loop() {
         }
       }
       lastHandleClientTime = millis();
+
+      if (session.idleExpired(*webServer)) {
+        LOG_INF("WEBACT", "No phone activity for the Auto-stop time; leaving File Transfer");
+        onGoHome();
+        return;
+      }
+
+      size_t stagedSize = 0;
+      if (webServer->takeStagedFirmware(stagedSize)) {
+        promptFirmwareInstall(stagedSize);
+        return;
+      }
     }
 
     // Also check outside the request-processing loop.
@@ -402,12 +447,15 @@ void CrossPointWebServerActivity::renderServerRunning() const {
   const std::string hostnameUrl =
       portal.isUp() ? portal.hostnameUrl() : std::string("http://") + PhonePortal::SHARED_HOSTNAME + ".local/";
   const std::string altUrl =
-      std::string(tr(STR_OR_HTTP_PREFIX)) + hostnameUrl.substr(sizeof("http://") - 1) + landingPath;
+      session.announces() ? std::string(tr(STR_OR_HTTP_PREFIX)) + hostnameUrl.substr(sizeof("http://") - 1) + landingPath
+                          : std::string();
   PhoneJoinPanel::Content content;
   content.headline = isApMode ? tr(STR_PHONE_SCAN_HEADLINE) : tr(STR_OPEN_URL_HINT);
   content.portal = isApMode ? &portal : nullptr;
   content.pageUrl = "http://" + connectedIP + "/" + landingPath;
+  content.pageQrUrl = session.urlWithToken(content.pageUrl);
   content.pageAlt = altUrl.c_str();
+  if (session.requiresCode()) content.accessCode = session.code();
   PhoneJoinPanel::draw(renderer, bounds, content);
 
   const auto labels = mappedInput.mapLabels(tr(STR_EXIT), "", "", "");

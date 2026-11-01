@@ -33,8 +33,10 @@
 #include "EpubReaderPercentSelectionActivity.h"
 #include "EpubReaderUtils.h"
 #include "HighlightSelectActivity.h"
+#if !FREEINK_NO_KOSYNC
 #include "KOReaderCredentialStore.h"
 #include "KOReaderSyncActivity.h"
+#endif
 #include "MappedInputManager.h"
 #include "ProgressMapper.h"
 #include "QrDisplayActivity.h"
@@ -546,11 +548,13 @@ void EpubReaderActivity::loop() {
         bookmarkMessageTime = millis();
         requestUpdate();
         break;
+#if !FREEINK_NO_KOSYNC
       case CrossPointSettings::LP_MENU_KOSYNC:
         if (launchKOReaderSync()) {
           return;
         }
         break;
+#endif
       case CrossPointSettings::LP_MENU_DICTIONARY:
         openDictionaryWordSelect();
         return;
@@ -572,7 +576,9 @@ void EpubReaderActivity::loop() {
         }
         return;
       case HomeButtonAction::Sync:
+#if !FREEINK_NO_KOSYNC
         launchKOReaderSync();
+#endif
         return;
       case HomeButtonAction::Dictionary:
         if (!showDictionaryMessage) openDictionaryWordSelect();
@@ -931,7 +937,9 @@ void EpubReaderActivity::onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction 
       break;
     }
     case EpubReaderMenuActivity::MenuAction::SYNC: {
+#if !FREEINK_NO_KOSYNC
       launchKOReaderSync();
+#endif
       break;
     }
     case EpubReaderMenuActivity::MenuAction::BOOKMARKS: {
@@ -958,8 +966,10 @@ unsigned long EpubReaderActivity::confirmLongPressThreshold() const {
     case CrossPointSettings::LP_MENU_BOOKMARK:
     case CrossPointSettings::LP_MENU_DICTIONARY:
       return ReaderUtils::BOOKMARK_HOLD_MS;
+#if !FREEINK_NO_KOSYNC
     case CrossPointSettings::LP_MENU_KOSYNC:
       return KOREADER_STORE.hasCredentials() ? ReaderUtils::GO_HOME_MS : 0;
+#endif
     case CrossPointSettings::LP_MENU_READER_MENU:
     case CrossPointSettings::LP_MENU_DISABLED:
     default:
@@ -1051,6 +1061,7 @@ void EpubReaderActivity::openHoldMenu() {
                          });
 }
 
+#if !FREEINK_NO_KOSYNC
 bool EpubReaderActivity::launchKOReaderSync() {
   if (!KOREADER_STORE.hasCredentials()) return false;
 
@@ -1097,6 +1108,7 @@ bool EpubReaderActivity::launchKOReaderSync() {
       renderer, mappedInput, savedEpubPath, localPos, std::move(localKoPos), std::move(localChapterName)));
   return true;
 }
+#endif
 
 void EpubReaderActivity::applyInitialOrientation() {
   ReaderActivity::applyInitialOrientation();

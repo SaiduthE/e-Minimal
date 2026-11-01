@@ -6,6 +6,7 @@
 
 #include "activities/Activity.h"
 #include "network/PhonePortal.h"
+#include "util/WebSession.h"
 
 class CrossPointWebServer;
 
@@ -61,12 +62,14 @@ class DashboardPortalActivity final : public Activity {
 
   std::unique_ptr<CrossPointWebServer> webServer;
   PhonePortal portal;
+  WebSession session;  // access token and code for this run
   Phase phase = Phase::Choosing;
   // The radio came on: leaving restarts.
   bool radioUsed = false;
   // Written under a RenderLock; render() reads them.
   bool onHotspot = false;
   std::string pageUrl;
+  std::string pageQrUrl;  // pageUrl plus the access token
   std::string pageAlt;
   std::string networkName;
 };

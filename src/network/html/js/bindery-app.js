@@ -65,7 +65,7 @@
   const baseName = (name) => name.replace(/^.*[\\/]/, '').replace(/\.[^.]+$/, '');
   const prettyName = (name) => baseName(name).replace(/[_]+/g, ' ').replace(/\s+/g, ' ').trim();
 
-  // Safe on FAT32 and in the upload's "START:name:size:path" message.
+  // Safe on FAT32 and in the upload's "START:token:name:size:path" message.
   function safeFileName(name, ext) {
     let n = String(name || 'Untitled').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ').trim();
     n = n.replace(/^\.+/, '').slice(0, 96).trim() || 'Untitled';
@@ -864,7 +864,7 @@
         this.error = null;
         this.finished = false;
         let settled = false;
-        ws.onopen = () => ws.send(`START:${this.name}:${this.total}:${this.folder}`);
+        ws.onopen = () => ws.send(`START:${window.emsToken ? window.emsToken() : ''}:${this.name}:${this.total}:${this.folder}`);
         ws.onmessage = (ev) => {
           const msg = String(ev.data);
           if (!settled) {
@@ -1043,7 +1043,7 @@
     return { name: sink.name, size: blob.size, blob: sink instanceof MemorySink ? blob : null, pages };
   }
 
-  async function runBooks(sinkFactory, progress) {
+  async function runBooks(sinkFactory, progress, sent) {
     const out = [];
     const ok = state.books.filter((b) => !b.error);
     const texts = ok.filter((b) => b.kind !== 'EPUB');
@@ -1055,12 +1055,14 @@
       const cover = await coverBlob(title, author);
       const blob = await B.writeZip(B.buildTextEpub({ title, author, lang: $('lang').value, chapters, cover, listParts: chapters.length === 1 }));
       out.push(await deliverBlob(blob, safeFileName(title, 'epub'), sinkFactory, progress));
+      if (sent) await sent(out[out.length - 1], out.length - 1);
     }
     for (const it of ok.filter((b) => b.kind === 'EPUB')) {
       const r = await tidyEpub(it, (a, b) => progress(`${it.meta.title} · picture ${a} of ${b}`, a / b));
       const res = await deliverBlob(r.blob, safeFileName(it.meta.title, 'epub'), sinkFactory, progress);
       res.note = r.stats.changed ? `${r.stats.changed} pictures, ${formatBytes(r.stats.before)} → ${formatBytes(r.stats.after)}` : 'no pictures needed changing';
       out.push(res);
+      if (sent) await sent(res, out.length - 1);
     }
     return out;
   }
@@ -1100,6 +1102,7 @@
   // ------------------------------------------------------------ run
 
   let wakeLock = null;
+  let details = null;  // ui.bookDetailsTable on the reader; null on the standalone page
 
   async function run(toReader) {
     if (state.busy) return;
@@ -1129,10 +1132,12 @@
           const prefix = jobs.length > 1 ? `Book ${j + 1} of ${jobs.length} · ` : '';
           const r = await runMangaJob(jobs[j], o, sinkFactory, (t, f) => progress(prefix + t, (j + f) / jobs.length));
           done.push(r);
+          if (toReader) await saveDetails(j, r, folder);
           addResult(r, toReader, folder);
         }
       } else {
-        for (const r of await runBooks(sinkFactory, progress)) { done.push(r); addResult(r, toReader, folder); }
+        const sent = toReader ? (r, i) => saveDetails(i, r, folder) : null;
+        for (const r of await runBooks(sinkFactory, progress, sent)) { done.push(r); addResult(r, toReader, folder); }
       }
       progress(toReader ? `Done. ${done.length === 1 ? 'The book is' : done.length + ' books are'} on the card.` : 'Done. Save the files below.', 1);
       toast(toReader ? 'Sent to the reader' : 'Converted', 'ok');
@@ -1146,6 +1151,15 @@
       if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
     }
     if (!results.children.length) results.hidden = true;
+  }
+
+  // Book details are stored per output file, in the order the table lists them.
+  async function saveDetails(index, r, folder) {
+    const row = details && details.getRow(index);
+    if (!row) return;
+    if (!(await ui.saveBookDetails(ui.joinPath(folder, r.name), row, /\.epub$/i.test(r.name)))) {
+      r.note = [r.note, 'book details not saved'].filter(Boolean).join(' · ');
+    }
   }
 
   function addResult(r, toReader, folder) {
@@ -1173,6 +1187,7 @@
   }
 
   function setBusy(busy) {
+    if (details) details.lock(busy);
     $('cancelBtn').hidden = !busy;
     for (const id of ['sendBtn', 'saveBtn', 'fileInput', 'modeManga', 'modeBooks', 'clearFiles']) { const el = $(id); if (el) el.disabled = busy; }
     if (!busy) refreshButtons();
@@ -1254,7 +1269,25 @@
     $('saveBtn').disabled = !any || state.busy;
   }
 
+  // One row per file the next run will write, in write order.
+  function syncDetails() {
+    if (!details) return;
+    let files;
+    if (state.mode === 'manga') {
+      const items = state.manga.filter((it) => !it.error);
+      files = (($('join').checked && items.length > 1) ? items.slice(0, 1) : items).map((it) => ({ name: it.name }));
+    } else {
+      const ok = state.books.filter((b) => !b.error);
+      const texts = ok.filter((b) => b.kind !== 'EPUB');
+      // Text files are laid out as one EPUB; its row is named after the first and titled like it.
+      const first = texts.length ? [{ name: texts.length > 1 ? `${texts[0].name} + ${texts.length - 1} more` : texts[0].name, title: ui.cleanBookName(texts[0].name).title }] : [];
+      files = first.concat(ok.filter((b) => b.kind === 'EPUB').map((b) => ({ name: b.name })));
+    }
+    details.setFiles(files);
+  }
+
   function changed() {
+    syncDetails();
     renderFiles();
     fillMeta();
     estimate();
@@ -1332,8 +1365,14 @@
   let directionTouched = false;
 
   function init() {
+    if (HOST === 'device' && ui.bookDetailsTable) {
+      details = ui.bookDetailsTable($('bookDetails'), { hint: 'Optional. Saved with each book when you use Send to reader (not when saving to this device). Titles come from the file names.' });
+    }
     // Turns #folder into the card-folder picker; its .value keeps reading and writing the path.
     ui.folderPicker($('folder'), { value: '/Manga' });
+    const folderName = () => { if (details) details.setDefaultName($('folder').value.split('/').filter(Boolean).pop() || ''); };
+    folderName();
+    $('folder').addEventListener('change', folderName);
     restoreSettings();
     $('customSize').hidden = $('device').value !== 'custom';
     $('formatHint').textContent = FORMAT_HINTS[$('format').value];
@@ -1361,7 +1400,7 @@
     $('contrast').addEventListener('input', () => { $('contrastOut').textContent = $('contrast').value; });
     $('gamma').addEventListener('input', () => { $('gammaOut').textContent = (+$('gamma').value / 100).toFixed(2); });
     for (const id of ['title', 'author', 'bTitle', 'bAuthor']) $(id).addEventListener('input', () => { $(id).dataset.touched = '1'; });
-    $('join').addEventListener('change', fillMeta);
+    $('join').addEventListener('change', () => { fillMeta(); syncDetails(); });
     $('coverMode').addEventListener('change', () => { $('coverFile').hidden = $('coverMode').value !== 'image'; schedulePreview(); });
     $('coverFile').addEventListener('change', (e) => { state.cover = e.target.files[0] || null; schedulePreview(); });
 

@@ -13,7 +13,6 @@
       <section class="card">
         <h2>Device status</h2>
         <div class="kv">
-          <div><span>Serial</span><span id="serial"></span></div>
           <div><span>Version</span><span id="version"></span></div>
           <div><span>Network</span><span id="network"></span></div>
           <div><span>IP address</span><span id="ip-address"></span></div>
@@ -53,7 +52,6 @@
           }
           const data = await response.json();
           document.getElementById('version').textContent = data.version || 'N/A';
-          document.getElementById('serial').textContent = data.serial;
           document.getElementById('ip-address').textContent = data.ip || 'N/A';
           document.getElementById('free-heap').textContent = data.freeHeap
             ? data.freeHeap.toLocaleString() + ' bytes'
@@ -63,7 +61,7 @@
             : 'Joined' + (data.rssi ? ', ' + data.rssi + ' dBm' : '');
         } catch (error) {
           console.error('Error fetching status:', error);
-          ['serial', 'version', 'network', 'ip-address', 'free-heap'].forEach((id) => {
+          ['version', 'network', 'ip-address', 'free-heap'].forEach((id) => {
             document.getElementById(id).textContent = 'Not available';
           });
         }

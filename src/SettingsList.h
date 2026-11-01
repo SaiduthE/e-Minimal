@@ -14,7 +14,9 @@
 
 #include "CrossPointSettings.h"
 #include "HomeButtonSettings.h"
+#if !FREEINK_NO_KOSYNC
 #include "KOReaderCredentialStore.h"
+#endif
 #include "ReaderFontSizes.h"
 #include "activities/settings/SettingsActivity.h"
 #include "components/UITheme.h"
@@ -182,7 +184,14 @@ inline SettingInfo buildDictionarySetting(const std::vector<DictionaryEntry>& di
 }
 
 inline std::vector<StrId> buildLongPressMenuValues() {
-  static constexpr StrId VALUES[] = {StrId::STR_KOSYNC, StrId::STR_DISABLED, StrId::STR_BOOKMARK_OPTION,
+  // Index 0 stays reserved for the persisted "sync" value; builds without
+  // KOReader Sync show it as Disabled.
+#if FREEINK_NO_KOSYNC
+  static constexpr StrId SYNC_LABEL = StrId::STR_DISABLED;
+#else
+  static constexpr StrId SYNC_LABEL = StrId::STR_KOSYNC;
+#endif
+  static constexpr StrId VALUES[] = {SYNC_LABEL, StrId::STR_DISABLED, StrId::STR_BOOKMARK_OPTION,
                                      StrId::STR_DICTIONARY, StrId::STR_READER_MENU};
   const size_t count = BoardConfig::hasHomeKey() ? std::size(VALUES) : std::size(VALUES) - 1;
   return {VALUES, VALUES + count};
@@ -461,6 +470,31 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
 #endif
         SettingInfo::Toggle(StrId::STR_FRONTLIGHT, &CrossPointSettings::frontlightOn, "frontlightOn"),
 
+        // --- Security (Global Settings > Security; persisted, never web-exposed) ---
+        SettingInfo::Toggle(StrId::STR_WEB_ACCESS_CODE, &CrossPointSettings::webAccessCode, "webAccessCode")
+            .withDeviceOnly(),
+        SettingInfo::Enum(StrId::STR_PHONE_ACCESS, &CrossPointSettings::webAccessLevel,
+                          {StrId::STR_ACCESS_FULL, StrId::STR_ACCESS_UPLOAD_ONLY, StrId::STR_ACCESS_READ_ONLY},
+                          "webAccessLevel")
+            .withDeviceOnly(),
+        SettingInfo::Toggle(StrId::STR_WEB_FIRMWARE_INSTALL, &CrossPointSettings::webFirmwareInstall,
+                            "webFirmwareInstall")
+            .withDeviceOnly(),
+        SettingInfo::Toggle(StrId::STR_WEBDAV, &CrossPointSettings::webDav, "webDav").withDeviceOnly(),
+        SettingInfo::Toggle(StrId::STR_ANNOUNCE_ON_NETWORK, &CrossPointSettings::networkAnnounce, "networkAnnounce")
+            .withDeviceOnly(),
+        SettingInfo::Enum(StrId::STR_HOTSPOT_PASSWORD, &CrossPointSettings::hotspotPasswordMode,
+                          {StrId::STR_HOTSPOT_PW_KEEP, StrId::STR_HOTSPOT_PW_NEW_EACH}, "hotspotPasswordMode")
+            .withDeviceOnly(),
+        SettingInfo::Enum(StrId::STR_AUTO_STOP_TRANSFER, &CrossPointSettings::fileTransferIdleStop,
+                          {StrId::STR_STATE_OFF, StrId::STR_MIN_5, StrId::STR_MIN_15, StrId::STR_MIN_30},
+                          "fileTransferIdleStop")
+            .withDeviceOnly(),
+        SettingInfo::Enum(StrId::STR_BACKGROUND_OPEN_WIFI, &CrossPointSettings::backgroundOpenWifi,
+                          {StrId::STR_NEVER, StrId::STR_ALLOW}, "backgroundOpenWifi")
+            .withDeviceOnly(),
+
+#if !FREEINK_NO_KOSYNC
         // --- KOReader Sync (web-only, uses KOReaderCredentialStore) ---
         SettingInfo::DynamicString(
             StrId::STR_KOREADER_USERNAME, [] { return KOREADER_STORE.getUsername(); },
@@ -507,6 +541,7 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
               KOREADER_STORE.saveToFile();
             },
             "koSyncBehavior", StrId::STR_KOREADER_SYNC),
+#endif
         // --- Status Bar Settings (web-only, uses StatusBarSettingsActivity) ---
         SettingInfo::Toggle(StrId::STR_CHAPTER_PAGE_COUNT, &CrossPointSettings::statusBarChapterPageCount,
                             "statusBarChapterPageCount", StrId::STR_CUSTOMISE_STATUS_BAR),

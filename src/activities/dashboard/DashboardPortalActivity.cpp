@@ -11,6 +11,7 @@
 
 #include <cstdio>
 
+#include "CrossPointSettings.h"
 #include "CrossPointState.h"
 #include "MappedInputManager.h"
 #include "SilentRestart.h"
@@ -97,6 +98,7 @@ void DashboardPortalActivity::onEnter() {
     phase = Phase::Choosing;
     onHotspot = false;
     pageUrl.clear();
+    pageQrUrl.clear();
     pageAlt.clear();
     networkName.clear();
   }
@@ -177,7 +179,7 @@ void DashboardPortalActivity::startHotspot() {
   config.passphrase = PhonePortal::sharedPassphrase();
   config.channel = HOTSPOT_CHANNEL;
   config.maxClients = HOTSPOT_MAX_CLIENTS;
-  config.hostname = PhonePortal::SHARED_HOSTNAME;
+  config.hostname = SETTINGS.networkAnnounce ? PhonePortal::SHARED_HOSTNAME : nullptr;
   if (!portal.begin(config)) {
     fail("Hotspot");
     return;
@@ -192,7 +194,7 @@ void DashboardPortalActivity::startHotspot() {
 void DashboardPortalActivity::onJoined(const std::string& ssid, const std::string& ip) {
   LOG_INF("DPORTAL", "On %s at %s", ssid.c_str(), ip.c_str());
   MDNS.end();
-  if (!MDNS.begin(PhonePortal::SHARED_HOSTNAME)) {
+  if (SETTINGS.networkAnnounce && !MDNS.begin(PhonePortal::SHARED_HOSTNAME)) {
     LOG_DBG("DPORTAL", "mDNS failed to start");
   }
   if (!startServer()) {
@@ -215,6 +217,8 @@ bool DashboardPortalActivity::startServer() {
     LOG_ERR("DPORTAL", "OOM: web server");
     return false;
   }
+  session.begin();
+  session.applyTo(*webServer);
   webServer->begin();
   if (!webServer->isRunning()) {
     LOG_ERR("DPORTAL", "Web server did not start");
@@ -231,7 +235,10 @@ void DashboardPortalActivity::showPage(const std::string& ip, const std::string&
     onHotspot = hotspot;
     networkName = ssid;
     pageUrl = "http://" + ip + path;
-    pageAlt = std::string(tr(STR_OR_HTTP_PREFIX)) + PhonePortal::SHARED_HOSTNAME + ".local" + path;
+    pageQrUrl = session.urlWithToken(pageUrl);
+    pageAlt = session.announces()
+                  ? std::string(tr(STR_OR_HTTP_PREFIX)) + PhonePortal::SHARED_HOSTNAME + ".local" + path
+                  : std::string();
     phase = Phase::Running;
   }
   LOG_INF("DPORTAL", "Serving %s, free heap %u bytes", pageUrl.c_str(), static_cast<unsigned>(ESP.getFreeHeap()));
@@ -304,6 +311,12 @@ void DashboardPortalActivity::loop() {
     }
   }
 
+  if (webServer && session.idleExpired(*webServer)) {
+    LOG_INF("DPORTAL", "No phone activity for the Auto-stop time; leaving");
+    finish();
+    return;
+  }
+
   if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
     finish();
   }
@@ -328,6 +341,8 @@ void DashboardPortalActivity::render(RenderLock&&) {
       PhoneJoinPanel::Content content;
       content.headline = section == Section::Dictionaries ? tr(STR_DICT_PORTAL_HINT) : tr(STR_DASH_PORTAL_HINT);
       content.pageUrl = pageUrl;
+      content.pageQrUrl = pageQrUrl;
+      if (session.requiresCode()) content.accessCode = session.code();
       content.pageAlt = pageAlt.c_str();
       char status[128];
       if (onHotspot) {

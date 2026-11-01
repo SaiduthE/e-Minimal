@@ -16,7 +16,8 @@ class DNSServer;
 // with sharedPassphrase(), generated once and kept, so a phone saves it once
 // and rejoins by itself whichever feature raised it. The join QR carries the
 // passphrase, so a scanned join costs nothing and only the typed fallback
-// shows it. A Config without a passphrase raises an open network.
+// shows it. The access point is never open: a Config without a passphrase gets
+// a random one for that session.
 class PhonePortal {
  public:
   static constexpr size_t PASSPHRASE_LENGTH = 8;
@@ -27,12 +28,17 @@ class PhonePortal {
   // The shared hotspot's WPA2 passphrase. Generated and saved to settings on
   // first use (SETTINGS.phoneTextPassphrase); later calls return it as kept.
   // Never null; points into SETTINGS, valid for the life of the program.
+  // With Security > Hotspot Password set to "New Each Time", every call returns
+  // a fresh passphrase held in RAM only: call it once per portal session.
   static const char* sharedPassphrase();
+  // Forgets the saved passphrase; the next sharedPassphrase() generates a new one.
+  static void resetSharedPassphrase();
 
   struct Config {
     const char* ssid = SHARED_SSID;
-    // WPA2 with a fresh 8-character passphrase per begin(); otherwise open.
-    bool randomPassphrase = false;
+    // Kept for callers that name it; a Config without a passphrase is WPA2
+    // with a fresh 8-character one per begin() either way.
+    bool randomPassphrase = true;
     // WPA2 with this passphrase (8..63 characters) when non-empty; takes
     // precedence over randomPassphrase.
     const char* passphrase = nullptr;
