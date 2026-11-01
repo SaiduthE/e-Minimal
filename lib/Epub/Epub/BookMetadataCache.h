@@ -15,6 +15,9 @@ class BookMetadataCache {
     std::string title;
     std::string author;
     std::string language;
+    std::string series;       // empty = none
+    std::string seriesIndex;  // raw OPF string ("2", "2.5")
+    std::string genre;        // first dc:subject
     std::string coverItemHref;
     std::string textReferenceHref;
   };

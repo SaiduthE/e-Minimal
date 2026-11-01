@@ -104,6 +104,8 @@ class CrossPointWebServer {
   void handleRename() const;
   void handleMove() const;
   void handleDelete() const;
+  void handleGetBookMeta() const;
+  void handlePostBookMeta();
 
   // Settings handlers
   void handleSettingsPage() const;

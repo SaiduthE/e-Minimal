@@ -18,6 +18,9 @@ class ContentOpfParser final : public Print {
     IN_BOOK_TITLE,
     IN_BOOK_AUTHOR,
     IN_BOOK_LANGUAGE,
+    IN_BOOK_SUBJECT,
+    IN_META_COLLECTION,
+    IN_META_GROUP_POSITION,
     IN_MANIFEST,
     IN_SPINE,
     IN_GUIDE,
@@ -39,6 +42,11 @@ class ContentOpfParser final : public Print {
   // separation as element state rather than inferring either from callbacks.
   bool metadataSpacePending = false;
   bool authorSeparatorPending = false;
+  // EPUB3 series: the belongs-to-collection meta id, and a group-position seen for it.
+  std::string collectionId;
+  std::string collectionName;
+  std::string groupPosition;
+  std::string groupPositionRefines;
 
   // Index for fast idref→href lookup (binary search over .items.bin)
   struct ItemIndexEntry {
@@ -59,6 +67,9 @@ class ContentOpfParser final : public Print {
     return hash;
   }
 
+  // Applies the EPUB3 collection as the series when no calibre series was given.
+  void finishCollectionSeries();
+
   static void startElement(void* userData, const XML_Char* name, const XML_Char** atts);
   static void characterData(void* userData, const XML_Char* s, int len);
   static void endElement(void* userData, const XML_Char* name);
@@ -67,6 +78,9 @@ class ContentOpfParser final : public Print {
   std::string title;
   std::string author;
   std::string language;
+  std::string series;       // calibre:series, else EPUB3 belongs-to-collection
+  std::string seriesIndex;  // raw string: "2", "2.5"
+  std::string genre;        // first dc:subject
   std::string tocNcxPath;
   std::string tocNavPath;  // EPUB 3 nav document path
   std::string coverItemHref;

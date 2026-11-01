@@ -41,6 +41,8 @@ class CrossPointWebServerActivity final : public Activity {
   // Hotspot mode: the access point, captive DNS and mDNS behind the QR.
   PhonePortal portal;
 
+  const std::string landingPath;
+
   // Server status
   std::string connectedIP;
   std::string connectedSSID;  // For STA mode: network name, For AP mode: AP name
@@ -65,8 +67,11 @@ class CrossPointWebServerActivity final : public Activity {
   void startWebServer();
 
  public:
-  explicit CrossPointWebServerActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
-      : Activity("CrossPointWebServer", renderer, mappedInput) {}
+  // landingPath: appended to the page URL the QR and typed fallback show, e.g.
+  // "files?edit=%2Fbooks%2Fa.epub" (already URL-encoded, no leading slash).
+  explicit CrossPointWebServerActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
+                                       std::string landingPath = {})
+      : Activity("CrossPointWebServer", renderer, mappedInput), landingPath(std::move(landingPath)) {}
   void onEnter() override;
   void onExit() override;
   void loop() override;

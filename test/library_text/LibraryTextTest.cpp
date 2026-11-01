@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -345,4 +346,37 @@ TEST(LibraryPath, RootDoesNotGainASecondSeparator) {
 
 TEST(LibraryPath, NestedFolderGetsOneSeparator) {
   EXPECT_EQ(library::joinLibraryPath("/Books", "book.epub"), "/Books/book.epub");
+}
+
+namespace {
+std::string natKey(const char* text, size_t cap = 64) {
+  char buf[64];
+  const size_t n = library::naturalSortKey(fold(text), buf, std::min(cap, sizeof(buf)));
+  return std::string(buf, n);
+}
+bool natLess(const char* a, const char* b) { return natKey(a) < natKey(b); }
+}  // namespace
+
+TEST(NaturalSortKey, NumbersOrderNumerically) {
+  EXPECT_TRUE(natLess("Book 1", "Book 2"));
+  EXPECT_TRUE(natLess("Book 2", "Book 10"));
+  EXPECT_TRUE(natLess("Book 10", "Book 100"));
+  EXPECT_TRUE(natLess("Saga 2 y", "Saga 10 a"));
+}
+
+TEST(NaturalSortKey, LeadingZerosAreIgnored) {
+  EXPECT_EQ(natKey("Saga 01 x"), natKey("Saga 1 x"));
+  EXPECT_TRUE(natLess("Saga 01 x", "Saga 2 y"));
+  EXPECT_TRUE(natLess("Book 0", "Book 1"));
+}
+
+TEST(NaturalSortKey, NumbersStayBetweenSpaceAndLetters) {
+  EXPECT_TRUE(natLess("a b", "a 1"));
+  EXPECT_TRUE(natLess("a 9", "a b"));
+  EXPECT_TRUE(natLess("1984", "alpha"));
+  EXPECT_TRUE(natLess("a1", "a1b"));
+}
+
+TEST(NaturalSortKey, TruncatesAtCap) {
+  EXPECT_EQ(natKey("abcdefghij 12345", 12).size(), 12u);
 }

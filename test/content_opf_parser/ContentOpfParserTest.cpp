@@ -135,3 +135,65 @@ TEST(ContentOpfParserCover, ReadingParserStillOpensManifestCache) {
   EXPECT_EQ(Storage.writeOpens, 1);
   EXPECT_EQ(Storage.readOpens, 1);
 }
+
+TEST(ContentOpfParserSeries, ReadsCalibreSeriesAndIndex) {
+  const std::string xml = R"(<package xmlns:dc="urn:dc"><metadata>
+    <dc:title>The Fellowship</dc:title>
+    <dc:subject>Fantasy</dc:subject>
+    <dc:subject>Adventure</dc:subject>
+    <meta name="calibre:series" content="The Lord of the Rings"/>
+    <meta name="calibre:series_index" content="2.5"/>
+  </metadata></package>)";
+  ContentOpfParser parser("", "", xml.size(), nullptr);
+
+  parse(parser, xml);
+
+  EXPECT_EQ(parser.series, "The Lord of the Rings");
+  EXPECT_EQ(parser.seriesIndex, "2.5");
+  EXPECT_EQ(parser.genre, "Fantasy");
+}
+
+TEST(ContentOpfParserSeries, ReadsEpub3CollectionAndGroupPosition) {
+  const std::string xml = R"(<package xmlns:dc="urn:dc"><metadata>
+    <dc:title>Book</dc:title>
+    <meta property="belongs-to-collection" id="c01">Discworld</meta>
+    <meta refines="#c01" property="collection-type">series</meta>
+    <meta refines="#c01" property="group-position">3</meta>
+    <dc:creator>Terry Pratchett</dc:creator>
+  </metadata></package>)";
+  ContentOpfParser parser("", "", xml.size(), nullptr);
+
+  parse(parser, xml);
+
+  EXPECT_EQ(parser.series, "Discworld");
+  EXPECT_EQ(parser.seriesIndex, "3");
+  EXPECT_EQ(parser.author, "Terry Pratchett");
+  EXPECT_TRUE(parser.genre.empty());
+}
+
+TEST(ContentOpfParserSeries, CalibreSeriesWinsOverEpub3Collection) {
+  const std::string xml = R"(<package><metadata>
+    <meta property="belongs-to-collection" id="c1">Collection Name</meta>
+    <meta name="calibre:series" content="Calibre Name"/>
+    <meta name="calibre:series_index" content="1"/>
+  </metadata></package>)";
+  ContentOpfParser parser("", "", xml.size(), nullptr);
+
+  parse(parser, xml);
+
+  EXPECT_EQ(parser.series, "Calibre Name");
+  EXPECT_EQ(parser.seriesIndex, "1");
+}
+
+TEST(ContentOpfParserSeries, CoverMetaStillResolvesAlongsideSeries) {
+  const std::string xml = R"(<package><metadata>
+    <meta name="cover" content="cover"/>
+    <meta name="calibre:series" content="S"/>
+  </metadata>
+  <manifest><item id="cover" href="cover.png" media-type="image/png"/></manifest><spine/></package>)";
+  ContentOpfParser parser("", "OPS/", xml.size(), nullptr, true);
+
+  parse(parser, xml);
+
+  EXPECT_EQ(parser.series, "S");
+}

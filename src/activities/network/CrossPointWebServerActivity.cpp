@@ -401,11 +401,12 @@ void CrossPointWebServerActivity::renderServerRunning() const {
   const Rect bounds{0, top, pageWidth, pageHeight - top - metrics.buttonHintsHeight - metrics.verticalSpacing};
   const std::string hostnameUrl =
       portal.isUp() ? portal.hostnameUrl() : std::string("http://") + PhonePortal::SHARED_HOSTNAME + ".local/";
-  const std::string altUrl = std::string(tr(STR_OR_HTTP_PREFIX)) + hostnameUrl.substr(sizeof("http://") - 1);
+  const std::string altUrl =
+      std::string(tr(STR_OR_HTTP_PREFIX)) + hostnameUrl.substr(sizeof("http://") - 1) + landingPath;
   PhoneJoinPanel::Content content;
   content.headline = isApMode ? tr(STR_PHONE_SCAN_HEADLINE) : tr(STR_OPEN_URL_HINT);
   content.portal = isApMode ? &portal : nullptr;
-  content.pageUrl = "http://" + connectedIP + "/";
+  content.pageUrl = "http://" + connectedIP + "/" + landingPath;
   content.pageAlt = altUrl.c_str();
   PhoneJoinPanel::draw(renderer, bounds, content);
 

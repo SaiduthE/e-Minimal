@@ -244,6 +244,30 @@ std::string fold(const std::string_view text, const bool stripArticle) {
   return out;
 }
 
+size_t naturalSortKey(const std::string_view folded, char* const out, const size_t cap) {
+  // Longest digit run encoded exactly; a longer one saturates its marker.
+  constexpr size_t MAX_RUN = 0x2F;
+  size_t n = 0;
+  size_t i = 0;
+  while (i < folded.size() && n < cap) {
+    const char c = folded[i];
+    if (c < '0' || c > '9') {
+      out[n++] = c;
+      i++;
+      continue;
+    }
+    size_t end = i;
+    while (end < folded.size() && folded[end] >= '0' && folded[end] <= '9') end++;
+    size_t start = i;
+    while (start < end && folded[start] == '0') start++;
+    const size_t len = end - start;
+    out[n++] = static_cast<char>('0' + std::min(len, MAX_RUN));
+    for (size_t k = start; k < end && n < cap; k++) out[n++] = folded[k];
+    i = end;
+  }
+  return n;
+}
+
 uint32_t foldedGroupInitial(const std::string_view folded) {
   if (folded.empty()) return 0;
   const auto* cursor = reinterpret_cast<const unsigned char*>(folded.data());

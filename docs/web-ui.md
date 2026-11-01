@@ -146,6 +146,10 @@ genuinely page-specific, scoped under `body[data-page="…"]`.
 | `.progress` | 4 px track `--rule`, fill `--ink` |
 | `.visually-hidden` | the usual |
 
+**Folder picker.** `ui.folderPicker(select, {value, onChange})` fills a `<select>` from `GET /api/folders` (streamed `{"folders":["/","/Books",…],"truncated":false}`: directories only, depth 4, 256 entries, hidden and `System Volume Information`/`XTCache` left out) and ends with "New folder…" (a dialog that POSTs `/mkdir`; names with `:*?"<>|` are refused). `select.value` reads and writes the path; a path that is not on the card shows as "(new)", and `picker.ensure()` / `ui.ensureFolder(path)` makes it, segment by segment, before an upload. Used by Files (upload "Save to" and Move), Convert (`#folder`) and Pictures ("Save to").
+
+**Book details.** Files keeps per-book overrides of title, author, series, series number and genre (stored by the reader under `/.crosspoint/meta/`, one file per book; rename, move and delete carry or drop them). `GET /api/book-meta?path=<book>` answers `{"path","book":{title,author,series,seriesIndex,genre},"override":{…}}` (`book` is the EPUB's own metadata, or the file name as title for other formats; an EPUB is opened for the request only and skipped when the heap is low); `POST /api/book-meta` with JSON `{path,title,author,series,seriesIndex,genre}` stores the overrides (all empty removes them). The row menu's "Edit details" opens the Edit book dialog, whose "Fetch online" asks Open Library (`search.json`, 8 s timeout) from the browser, so it needs a phone that is online; a pick fills title, author and genre, never series. `/files?edit=<book path>` opens that book's folder and the dialog (the reader's "Manage book" QR points there). In the upload dialog, a review table lists each chosen book with a cleaned title (extension stripped, `_` and `.` to spaces, a leading or trailing number, "Book N", "Vol N" or "#N" moved to the # column), a Series and a # cell; "Import as collection" fills Series from one name (the destination folder's name until typed over) and # from the parsed number, else the row order. After each file uploads, only the rows with something to store are POSTed; an EPUB keeps its own title unless its cell was edited.
+
 Dark mode: tokens only; no component overrides.
 
 ## Rules for every page
@@ -195,7 +199,7 @@ Dark mode: tokens only; no component overrides.
   changes, so `/files?path=/carousel&type=pictures` opens on the pictures. Rows
   are one grid list: checkbox, type glyph, name (folders open, pictures preview,
   files download; "EPUB · 1.2 MB" under it on phones, Type and Size columns from
-  700 px) and a More button whose shared menu has Download, Rename, Move, Delete
+  700 px) and a More button whose shared menu has Download, Edit details (books), Rename, Move, Delete
   (Open, Delete for folders: the reader renames and moves files only). Checkbox,
   a tap on a row's empty space, Shift+click or select-all (rows shown) raise a
   `.savebar` selection bar ("3 selected", Clear, "Move 2 files", "Delete 3

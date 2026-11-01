@@ -2,11 +2,14 @@
 
 #include <ArduinoJson.h>
 #include <BoardConfig.h>
+#include <BookOverrides.h>
+#include <Epub.h>
 #include <FsHelpers.h>
 #include <HalGPIO.h>
 #include <HalStorage.h>
 #include <LibraryBuilder.h>
 #include <Logging.h>
+#include <Memory.h>
 #include <WiFi.h>
 #include <esp_efuse.h>
 #include <esp_efuse_table.h>
@@ -112,6 +115,67 @@ bool isProtectedItemName(const String& name) {
     }
   }
   return false;
+}
+
+// Directory walk behind GET /api/folders. One shared path buffer: each level appends its entry name after
+// baseLen and truncates on return, so recursion holds only a HalFile and two ints per level. Bytes 0-1 of
+// buf hold the `,"` prefix, so each entry goes out as a single sendContent.
+constexpr int FOLDER_WALK_MAX_DEPTH = 4;
+constexpr int FOLDER_WALK_MAX_ENTRIES = 256;
+constexpr size_t FOLDER_PATH_MAX = 190;
+
+struct FolderWalk {
+  WebServer* server;
+  int count;
+  bool truncated;
+  char buf[FOLDER_PATH_MAX + 4];
+};
+
+void walkFolders(FolderWalk& w, const size_t baseLen, const int depth) {
+  char* const path = w.buf + 2;
+  path[baseLen] = '\0';
+  HalFile dir = Storage.open(baseLen == 0 ? "/" : path);
+  if (!dir || !dir.isDirectory()) return;
+
+  const size_t nameAt = baseLen;  // "/" root has baseLen 0, so every entry is "/" + name
+  HalFile entry = dir.openNextFile();
+  while (entry) {
+    if (w.count >= FOLDER_WALK_MAX_ENTRIES) {
+      w.truncated = true;
+      return;
+    }
+    if (entry.isDirectory() && nameAt + 2 < FOLDER_PATH_MAX) {
+      path[nameAt] = '/';
+      entry.getName(path + nameAt + 1, FOLDER_PATH_MAX - nameAt - 1);
+      const char* name = path + nameAt + 1;
+      bool skip = name[0] == '\0' || (!SETTINGS.showHiddenFiles && name[0] == '.') ||
+                  strpbrk(name, "\"\\") != nullptr;
+      for (const auto* item : HIDDEN_ITEMS) {
+        if (strcmp(name, item) == 0) skip = true;
+      }
+      for (const char* c = name; !skip && *c; c++) {
+        if (static_cast<unsigned char>(*c) < 0x20) skip = true;
+      }
+      if (!skip) {
+        const size_t len = strlen(path);
+        path[len] = '"';
+        path[len + 1] = '\0';
+        w.server->sendContent(w.buf);
+        path[len] = '\0';
+        w.count++;
+        if (depth < FOLDER_WALK_MAX_DEPTH) {
+          entry.close();
+          walkFolders(w, len, depth + 1);
+          if (w.truncated) return;
+        }
+      }
+      path[nameAt] = '\0';
+    }
+    entry.close();
+    yield();
+    resetTaskWatchdogIfSubscribed();
+    entry = dir.openNextFile();
+  }
 }
 
 // Answers {"error":message} or, when a JSON key was rejected, {"error":message,"field":"weather.lat"}.
@@ -428,6 +492,16 @@ void CrossPointWebServer::begin() {
 
   server->on("/api/status", HTTP_GET, [this] { handleStatus(); });
   server->on("/api/files", HTTP_GET, [this] { handleFileListData(); });
+  server->on("/api/folders", HTTP_GET, [this] {
+    // Streamed {"folders":["/","/Books",...],"truncated":false}; the walk state is ~200 bytes of stack.
+    FolderWalk walk = {server.get(), 0, false, {',', '"'}};
+    server->setContentLength(CONTENT_LENGTH_UNKNOWN);
+    server->send(200, "application/json", "");
+    server->sendContent("{\"folders\":[\"/\"");
+    walkFolders(walk, 0, 1);
+    server->sendContent(walk.truncated ? "],\"truncated\":true}" : "],\"truncated\":false}");
+    server->sendContent("");
+  });
   server->on("/download", HTTP_GET, [this] { handleDownload(); });
 
   // Upload endpoint with special handling for multipart form data
@@ -444,6 +518,10 @@ void CrossPointWebServer::begin() {
 
   // Delete file/folder endpoint
   server->on("/delete", HTTP_POST, [this] { handleDelete(); });
+
+  // Per-book metadata overrides (title/author/series/#/genre)
+  server->on("/api/book-meta", HTTP_GET, [this] { handleGetBookMeta(); });
+  server->on("/api/book-meta", HTTP_POST, [this] { handlePostBookMeta(); });
 
   // Settings endpoints
   server->on("/settings", HTTP_GET, [this] { handleSettingsPage(); });
@@ -1134,6 +1212,10 @@ void CrossPointWebServer::handleCreateFolder() const {
     server->send(403, "text/plain", "Cannot create protected item");
     return;
   }
+  if (strpbrk(folderName.c_str(), ":*?\"<>|") != nullptr) {
+    server->send(400, "text/plain", "Folder name has characters FAT does not allow");
+    return;
+  }
 
   // Get parent path
   String parentPath = "/";
@@ -1307,8 +1389,10 @@ void CrossPointWebServer::handleRename() const {
     LOG_DBG("WEB", "Renamed %s: %s -> %s", isDir ? "folder" : "file", itemPath.c_str(), newPath.c_str());
     if (isDir) {
       moveBookStateInFolder(itemPath.c_str(), newPath.c_str());
+      bookmeta::moveTree(itemPath.c_str(), newPath.c_str());
     } else {
       moveBookState(itemPath.c_str(), newPath.c_str(), true);
+      if (isLibraryBookFile(itemPath)) bookmeta::move(itemPath.c_str(), newPath.c_str());
     }
     if (isDir || isLibraryBookFile(itemPath) || isLibraryBookFile(newPath)) library::markLibraryIndexDirty();
     server->send(200, "text/plain", "Renamed successfully");
@@ -1404,6 +1488,7 @@ void CrossPointWebServer::handleMove() const {
 
   if (success) {
     LOG_DBG("WEB", "Moved file: %s -> %s", itemPath.c_str(), newPath.c_str());
+    if (isLibraryBookFile(itemPath)) bookmeta::move(itemPath.c_str(), newPath.c_str());
     if (isLibraryBookFile(itemPath) || isLibraryBookFile(newPath)) library::markLibraryIndexDirty();
     server->send(200, "text/plain", "Moved successfully");
   } else {
@@ -1510,11 +1595,13 @@ void CrossPointWebServer::handleDelete() const {
       }
       f.close();
       success = Storage.rmdir(itemPath.c_str());
+      if (success) bookmeta::removeTree(itemPath.c_str());
     } else {
       // It's a file (or couldn't open as dir) — remove file
       if (f) f.close();
       success = Storage.remove(itemPath.c_str());
       clearBookCache(itemPath.c_str());
+      if (success && isLibraryBookFile(itemPath)) bookmeta::remove(itemPath.c_str());
     }
 
     if (!success) {
@@ -1530,6 +1617,133 @@ void CrossPointWebServer::handleDelete() const {
   } else {
     server->send(500, "text/plain", "Failed to delete some items: " + failedItems);
   }
+}
+
+namespace {
+// Heap needed to open an EPUB for its OPF metadata (zip central directory plus parser state).
+constexpr uint32_t BOOK_META_MIN_HEAP = 60 * 1024;
+
+void putBookMetaFields(JsonObject obj, const char* title, const char* author, const char* series,
+                       const char* seriesIndex, const char* genre) {
+  obj["title"] = title;
+  obj["author"] = author;
+  obj["series"] = series;
+  obj["seriesIndex"] = seriesIndex;
+  obj["genre"] = genre;
+}
+
+// Valid, existing, non-hidden book file path from a request, or "" after answering the error.
+String requireBookPath(WebServer& server, const String& raw) {
+  const String path = normalizeWebPath(raw);
+  if (path == "/" || !isLibraryBookFile(path)) {
+    sendJsonError(server, 400, "Not a book file", "path");
+    return "";
+  }
+  const String name = path.substring(path.lastIndexOf('/') + 1);
+  if (isProtectedItemName(name)) {
+    sendJsonError(server, 403, "Protected item", "path");
+    return "";
+  }
+  if (!Storage.exists(path.c_str())) {
+    sendJsonError(server, 404, "Book not found", "path");
+    return "";
+  }
+  return path;
+}
+}  // namespace
+
+void CrossPointWebServer::handleGetBookMeta() const {
+  if (!server->hasArg("path")) {
+    sendJsonError(*server, 400, "Missing path", "path");
+    return;
+  }
+  const String path = requireBookPath(*server, server->arg("path"));
+  if (path.isEmpty()) return;
+
+  // BookOverride is ~400 bytes: keep it off the task stack.
+  auto ov = makeUniqueNoThrow<bookmeta::BookOverride>();
+  if (!ov) {
+    LOG_ERR("WEB", "No memory for book override");
+    sendJsonError(*server, 500, "Out of memory");
+    return;
+  }
+  bookmeta::load(path.c_str(), *ov);  // false leaves *ov zeroed
+
+  std::string title, author, series, seriesIndex, genre;
+  if (FsHelpers::hasEpubExtension(path)) {
+    if (ESP.getMaxAllocHeap() >= BOOK_META_MIN_HEAP) {
+      // Scoped: the parsed Epub is released before the response is built, never kept across requests.
+      Epub epub(path.c_str(), "/.crosspoint");
+      if (!epub.loadMetadata(title, author, series, seriesIndex, genre)) {
+        title.clear();
+        author.clear();
+        series.clear();
+        seriesIndex.clear();
+        genre.clear();
+      }
+    } else {
+      LOG_ERR("WEB", "Low heap, skipping EPUB metadata for %s", path.c_str());
+    }
+  }
+  if (title.empty()) {
+    const int slash = path.lastIndexOf('/');
+    const int dot = path.lastIndexOf('.');
+    title = path.substring(slash + 1, dot > slash ? dot : path.length()).c_str();
+  }
+
+  JsonDocument doc;
+  doc["path"] = path;
+  putBookMetaFields(doc["book"].to<JsonObject>(), title.c_str(), author.c_str(), series.c_str(), seriesIndex.c_str(),
+                    genre.c_str());
+  putBookMetaFields(doc["override"].to<JsonObject>(), ov->title, ov->author, ov->series, ov->seriesIndex, ov->genre);
+  String json;
+  serializeJson(doc, json);
+  server->send(200, "application/json", json);
+}
+
+void CrossPointWebServer::handlePostBookMeta() {
+  if (!server->hasArg("plain")) {
+    sendJsonError(*server, 400, "Missing JSON body");
+    return;
+  }
+  JsonDocument doc;
+  const DeserializationError err = deserializeJson(doc, server->arg("plain"));
+  if (err) {
+    sendJsonError(*server, 400, (String("Invalid JSON: ") + err.c_str()).c_str());
+    return;
+  }
+  if (!doc.is<JsonObject>()) {
+    sendJsonError(*server, 400, "Expected a JSON object");
+    return;
+  }
+  const String path = requireBookPath(*server, String(doc["path"] | ""));
+  if (path.isEmpty()) return;
+
+  auto ov = makeUniqueNoThrow<bookmeta::BookOverride>();
+  if (!ov) {
+    LOG_ERR("WEB", "No memory for book override");
+    sendJsonError(*server, 500, "Out of memory");
+    return;
+  }
+  memset(ov.get(), 0, sizeof(bookmeta::BookOverride));
+  const auto copyField = [&doc](const char* key, char* dst, const size_t cap) {
+    const char* v = doc[key] | "";
+    while (*v == ' ') v++;
+    snprintf(dst, cap, "%s", v);
+    for (size_t n = strlen(dst); n > 0 && dst[n - 1] == ' '; n--) dst[n - 1] = '\0';
+  };
+  copyField("title", ov->title, sizeof(ov->title));
+  copyField("author", ov->author, sizeof(ov->author));
+  copyField("series", ov->series, sizeof(ov->series));
+  copyField("seriesIndex", ov->seriesIndex, sizeof(ov->seriesIndex));
+  copyField("genre", ov->genre, sizeof(ov->genre));
+
+  if (!bookmeta::save(path.c_str(), *ov)) {
+    LOG_ERR("WEB", "Failed to save book override for %s", path.c_str());
+    sendJsonError(*server, 500, "Could not save to the SD card");
+    return;
+  }
+  server->send(200, "application/json", "{\"ok\":true}");
 }
 
 void CrossPointWebServer::handleSettingsPage() const {

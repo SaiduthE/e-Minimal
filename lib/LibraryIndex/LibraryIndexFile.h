@@ -25,7 +25,15 @@ enum class SortOrder : uint8_t {
   TitleDesc,
   AuthorAsc,
   AuthorDesc,
+  // Books that have a series / genre, grouped (see GroupKind). Series order is
+  // series name, then series number, then title; Genre order is genre name, then
+  // title. No descending form. Appended: orders are never persisted, but keep
+  // existing values stable anyway.
+  SeriesAsc,
+  GenreAsc,
 };
+
+enum class GroupKind : uint8_t { Series, Genre };
 
 // One book to locate in the index: the complete-path hash (clixPathHash) is
 // the identity; fileSize, when nonzero, is a cheap in-record prefilter that
@@ -57,6 +65,20 @@ class LibraryIndexFile {
   ClixValidity validity() const { return lastValidity; }
   const ClixHeader& header() const { return head; }
   uint16_t bookCount() const { return opened ? head.bookCount : 0; }
+  // Rows `order` lists: every book, or only those that have a series / genre.
+  uint16_t rowCount(SortOrder order) const;
+  uint16_t groupCount(GroupKind kind) const;
+  // Group `index` of the view; start/count are validated against the view's size.
+  bool readGroup(GroupKind kind, uint16_t index, ClixGroup& out);
+  // Group holding `row` of the view's order (binary search over the group table),
+  // 0xFFFF on failure.
+  uint16_t groupForRow(GroupKind kind, uint16_t row);
+  static std::string groupName(const ClixGroup& group) {
+    return std::string(group.name, group.nameLen < CLIX_GROUP_NAME_BYTES ? group.nameLen : CLIX_GROUP_NAME_BYTES);
+  }
+  // Series position in hundredths of the record at `ordinal`, CLIX_NO_SERIES_NUMBER
+  // when absent or unreadable.
+  uint16_t readSeriesNumber(uint16_t ordinal);
   bool ranksDegraded() const { return opened && (head.flags & CLIX_FLAG_RANKS_DEGRADED) != 0; }
   bool dedupDegraded() const { return opened && (head.flags & CLIX_FLAG_DEDUP_DEGRADED) != 0; }
 
@@ -88,6 +110,11 @@ class LibraryIndexFile {
   // Cleaned author spelling before the library-wide spelling vote. Empty is a
   // valid value, so success is independent of `out.empty()`.
   bool readSourceAuthor(const ClixRecord& record, std::string& out);
+
+  // The book's series and genre, empty when it has none. Success is independent of
+  // `out.empty()`.
+  bool readSeries(const ClixRecord& record, std::string& out);
+  bool readGenre(const ClixRecord& record, std::string& out);
 
   // Absolute path of the book, rebuilt from its folder record.
   bool readPath(const ClixRecord& record, std::string& out);

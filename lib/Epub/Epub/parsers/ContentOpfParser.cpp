@@ -64,6 +64,12 @@ void appendMetadataText(std::string& out, const XML_Char* text, const int len, b
     out.push_back(c);
   }
 }
+// Copies an attribute value into out with the same whitespace/length rules as element text.
+void setMetadataFromAttr(std::string& out, const char* value) {
+  out.clear();
+  bool spacePending = false;
+  appendMetadataText(out, value, static_cast<int>(strlen(value)), spacePending);
+}
 }  // namespace
 
 bool ContentOpfParser::setup() {
@@ -131,6 +137,14 @@ size_t ContentOpfParser::write(const uint8_t* buffer, const size_t size) {
   }
 
   return size;
+}
+
+void ContentOpfParser::finishCollectionSeries() {
+  if (!series.empty() || collectionName.empty()) return;
+  series = collectionName;
+  if (seriesIndex.empty() && !groupPosition.empty() && (collectionId.empty() || groupPositionRefines == collectionId)) {
+    seriesIndex = groupPosition;
+  }
 }
 
 void XMLCALL ContentOpfParser::startElement(void* userData, const XML_Char* name, const XML_Char** atts) {
@@ -215,20 +229,58 @@ void XMLCALL ContentOpfParser::startElement(void* userData, const XML_Char* name
     return;
   }
 
+  if (self->state == IN_METADATA && xmlLocalNameEquals(name, "subject")) {
+    // Only the first subject becomes the genre.
+    if (self->genre.empty()) {
+      self->state = IN_BOOK_SUBJECT;
+      self->metadataSpacePending = false;
+    }
+    return;
+  }
+
   if (self->state == IN_METADATA && xmlLocalNameEquals(name, "meta")) {
     bool isCover = false;
     std::string coverItemId;
+    const char* metaName = nullptr;
+    const char* metaContent = nullptr;
+    const char* property = nullptr;
+    const char* refines = nullptr;
+    const char* id = nullptr;
 
     for (int i = 0; atts[i]; i += 2) {
-      if (strcmp(atts[i], "name") == 0 && strcmp(atts[i + 1], "cover") == 0) {
-        isCover = true;
+      if (strcmp(atts[i], "name") == 0) {
+        metaName = atts[i + 1];
+        if (strcmp(atts[i + 1], "cover") == 0) isCover = true;
       } else if (strcmp(atts[i], "content") == 0) {
         coverItemId = atts[i + 1];
+        metaContent = atts[i + 1];
+      } else if (strcmp(atts[i], "property") == 0) {
+        property = atts[i + 1];
+      } else if (strcmp(atts[i], "refines") == 0) {
+        refines = atts[i + 1];
+      } else if (strcmp(atts[i], "id") == 0) {
+        id = atts[i + 1];
       }
     }
 
     if (isCover) {
       self->coverItemId = coverItemId;
+    }
+    if (metaName && metaContent) {
+      if (strcmp(metaName, "calibre:series") == 0) {
+        setMetadataFromAttr(self->series, metaContent);
+      } else if (strcmp(metaName, "calibre:series_index") == 0) {
+        setMetadataFromAttr(self->seriesIndex, metaContent);
+      }
+    }
+    if (property && strcmp(property, "belongs-to-collection") == 0 && self->collectionName.empty()) {
+      self->collectionId = id ? id : "";
+      self->state = IN_META_COLLECTION;
+      self->metadataSpacePending = false;
+    } else if (property && refines && strcmp(property, "group-position") == 0 && self->groupPosition.empty()) {
+      self->groupPositionRefines = refines[0] == '#' ? refines + 1 : refines;
+      self->state = IN_META_GROUP_POSITION;
+      self->metadataSpacePending = false;
     }
     return;
   }
@@ -413,6 +465,21 @@ void XMLCALL ContentOpfParser::characterData(void* userData, const XML_Char* s, 
     appendMetadataText(self->language, s, len, self->metadataSpacePending);
     return;
   }
+
+  if (self->state == IN_BOOK_SUBJECT) {
+    appendMetadataText(self->genre, s, len, self->metadataSpacePending);
+    return;
+  }
+
+  if (self->state == IN_META_COLLECTION) {
+    appendMetadataText(self->collectionName, s, len, self->metadataSpacePending);
+    return;
+  }
+
+  if (self->state == IN_META_GROUP_POSITION) {
+    appendMetadataText(self->groupPosition, s, len, self->metadataSpacePending);
+    return;
+  }
 }
 
 void XMLCALL ContentOpfParser::endElement(void* userData, const XML_Char* name) {
@@ -456,9 +523,21 @@ void XMLCALL ContentOpfParser::endElement(void* userData, const XML_Char* name) 
     return;
   }
 
+  if (self->state == IN_BOOK_SUBJECT && xmlLocalNameEquals(name, "subject")) {
+    self->state = IN_METADATA;
+    return;
+  }
+
+  if ((self->state == IN_META_COLLECTION || self->state == IN_META_GROUP_POSITION) &&
+      xmlLocalNameEquals(name, "meta")) {
+    self->state = IN_METADATA;
+    return;
+  }
+
   if (self->state == IN_METADATA && xmlLocalNameEquals(name, "metadata")) {
     self->state = IN_PACKAGE;
     self->metadataComplete = true;
+    self->finishCollectionSeries();
     return;
   }
 

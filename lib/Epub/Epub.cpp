@@ -89,6 +89,9 @@ bool Epub::parseContentOpf(BookMetadataCache::BookMetadata& bookMetadata, const 
   bookMetadata.title = utf8ComposeNfc(opfParser.title);
   bookMetadata.author = utf8ComposeNfc(opfParser.author);
   bookMetadata.language = opfParser.language;
+  bookMetadata.series = utf8ComposeNfc(opfParser.series);
+  bookMetadata.seriesIndex = opfParser.seriesIndex;
+  bookMetadata.genre = utf8ComposeNfc(opfParser.genre);
 
   if (metadataOnly) {
     LOG_DBG("EBP", "Successfully parsed package metadata");
@@ -594,13 +597,25 @@ bool Epub::load(const bool buildIfMissing, const bool skipLoadingCss) {
 }
 
 bool Epub::loadMetadata(std::string& title, std::string& author) {
+  std::string series, seriesIndex, genre;
+  return loadMetadata(title, author, series, seriesIndex, genre);
+}
+
+bool Epub::loadMetadata(std::string& title, std::string& author, std::string& series, std::string& seriesIndex,
+                        std::string& genre) {
   title.clear();
   author.clear();
+  series.clear();
+  seriesIndex.clear();
+  genre.clear();
 
   auto metadataCache = makeUniqueNoThrow<BookMetadataCache>(cachePath);
   if (metadataCache && metadataCache->load()) {
     title = metadataCache->coreMetadata.title;
     author = metadataCache->coreMetadata.author;
+    series = metadataCache->coreMetadata.series;
+    seriesIndex = metadataCache->coreMetadata.seriesIndex;
+    genre = metadataCache->coreMetadata.genre;
     return true;
   }
   if (!metadataCache) {
@@ -621,6 +636,9 @@ bool Epub::loadMetadata(std::string& title, std::string& author) {
 
   title = std::move(metadata.title);
   author = std::move(metadata.author);
+  series = std::move(metadata.series);
+  seriesIndex = std::move(metadata.seriesIndex);
+  genre = std::move(metadata.genre);
   return true;
 }
 
@@ -661,6 +679,24 @@ const std::string& Epub::getAuthor() const {
   static std::string blank;
   if (!bookMetadataCache || !bookMetadataCache->isLoaded()) return blank;
   return bookMetadataCache->coreMetadata.author;
+}
+
+const std::string& Epub::getSeries() const {
+  static std::string blank;
+  if (!bookMetadataCache || !bookMetadataCache->isLoaded()) return blank;
+  return bookMetadataCache->coreMetadata.series;
+}
+
+const std::string& Epub::getSeriesIndex() const {
+  static std::string blank;
+  if (!bookMetadataCache || !bookMetadataCache->isLoaded()) return blank;
+  return bookMetadataCache->coreMetadata.seriesIndex;
+}
+
+const std::string& Epub::getGenre() const {
+  static std::string blank;
+  if (!bookMetadataCache || !bookMetadataCache->isLoaded()) return blank;
+  return bookMetadataCache->coreMetadata.genre;
 }
 
 const std::string& Epub::getLanguage() const {
