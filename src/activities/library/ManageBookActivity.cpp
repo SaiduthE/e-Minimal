@@ -34,7 +34,7 @@ std::string urlEncode(const std::string& in) {
   for (const char ch : in) {
     const auto c = static_cast<unsigned char>(ch);
     if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_' ||
-        c == '.' || c == '~') {
+        c == '.' || c == '~' || c == '/') {
       out.push_back(ch);
     } else {
       out.push_back('%');

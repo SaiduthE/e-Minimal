@@ -342,7 +342,7 @@ void HomeActivity::loop() {
     }
   };
 
-  // Hold Select on a book opens Manage book. wasLongPressed() fires mid-hold and
+  // Hold Select on a book opens Book Details. wasLongPressed() fires mid-hold and
   // swallows the release that follows, so it cannot also open the book.
   if (selectorIndex < recentBooks.size() &&
       mappedInput.wasLongPressed(MappedInputManager::Button::Confirm, COVER_GRID_JUMP_MS)) {

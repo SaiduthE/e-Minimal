@@ -47,7 +47,7 @@ Up/Down walk one flat list: current book, then the grid, then the bottom
 tabs, wrapping at both ends. Hold Down jumps to the tabs, hold Up to the
 first book. Select opens the highlighted item; Back resumes the most
 recently read book directly (when one exists). Hold Select (about 0.7 s) on a
-book opens **Manage book**: its title, author, series, genre and file, with
+book opens **Book Details**: its title, author, series, genre and file, with
 Edit on phone (a file-transfer QR that opens the web Edit book dialog) and
 Clear edited details (asks first; shown only while the book has overrides).
 Up/Down move, Select picks, Back leaves.
