@@ -292,7 +292,7 @@ void LibraryListActivity::showRecentBookOptions(const int entry) {
   optionPopup.show(tr(STR_LIBRARY), title.c_str(), isStoreRow ? STORE_OPTIONS : INDEX_OPTIONS, isStoreRow ? 5 : 4, 0,
                    [this, path, title, isStoreRow](const int choice) {
                      swallowHeldReleases();
-                     // Rows after Open and Manage book: store rows carry Remove from recents first.
+                     // Rows after Open and Book Details: store rows carry Remove from recents first.
                      const int tail = isStoreRow ? choice - 2 : choice - 2 + 1;
                      if (choice == 0) {
                        openBookByPath(path);
