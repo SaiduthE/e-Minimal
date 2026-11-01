@@ -835,6 +835,14 @@ bool LibraryListActivity::handleButtons() {
       nav.selected = 0;
       nav.top = 0;
       requestUpdate();
+    } else if (groupsCollapsed && isViewSort(sortOrder)) {
+      // Series / Genre: the group list is the tab's top level, so Back climbs to the strip, then Home.
+      if (!tabsFocused()) {
+        nav.selected = 0;
+        requestUpdate();
+      } else {
+        onGoHome();
+      }
     } else if (groupsCollapsed) {
       restoreExpandedList();
     } else if (!tabsFocused() && isViewSort(sortOrder) && groupable() && collapseGroups(selectedEntry())) {
