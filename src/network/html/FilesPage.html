@@ -217,7 +217,7 @@
       <div class="modal-body">
         <div class="field">
           <label for="uploadDest">Save to</label>
-          <select id="uploadDest"></select>
+          <button type="button" class="fp-field" id="uploadDest"></button>
         </div>
         <div class="dropzone" id="dropZone">
           <input type="file" id="fileInput" onchange="validateFile()" multiple aria-label="Choose files">
@@ -401,7 +401,7 @@
         <p class="small muted">Moving <strong id="moveItemName"></strong></p>
         <div class="field">
           <label for="moveDestPath">Destination folder</label>
-          <select id="moveDestPath" aria-describedby="moveError"></select>
+          <button type="button" class="fp-field" id="moveDestPath" aria-describedby="moveError"></button>
           <span class="field-hint field-error" id="moveError" hidden></span>
         </div>
       </div>
@@ -1045,14 +1045,14 @@
     uploadPicker = ui.folderPicker($('uploadDest'), { value: currentPath, onChange: syncCollectionName });
     $('metaCollection').addEventListener('change', onCollectionToggle);
     $('metaSeries').addEventListener('input', function() { metaSeriesTouched = true; applyCollectionName(); });
-    movePicker = ui.folderPicker($('moveDestPath'), { value: currentPath });
-    ['folderName', 'renameNewName', 'moveDestPath'].forEach(function(id) {
-      const errorId = { folderName: 'folderError', renameNewName: 'renameError', moveDestPath: 'moveError' }[id];
+    movePicker = ui.folderPicker($('moveDestPath'), { value: currentPath, onChange: function() { clearFieldError('moveDestPath', 'moveError'); } });
+    ['folderName', 'renameNewName'].forEach(function(id) {
+      const errorId = { folderName: 'folderError', renameNewName: 'renameError' }[id];
       $(id).addEventListener('input', function() { clearFieldError(id, errorId); });
       $(id).addEventListener('keydown', function(e) {
         if (e.key !== 'Enter') return;
         e.preventDefault();
-        ({ folderName: createFolder, renameNewName: confirmRename, moveDestPath: confirmMove })[id]();
+        ({ folderName: createFolder, renameNewName: confirmRename })[id]();
       });
     });
 

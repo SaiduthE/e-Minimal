@@ -159,7 +159,6 @@
   }
 
   /* Folders: makes a path one segment at a time (POST /mkdir answers 400 "already exists" for a segment that is there) */
-  var NEW_FOLDER = '\u0001new';
   var BAD_NAME = /[\/\\:*?"<>|\u0000-\u001f]/;
   function joinPath(folder, name) {
     return (folder === '/' ? '' : folder) + '/' + name;
@@ -229,82 +228,230 @@
     });
   }
 
-  function sortKey(p) { return p.toLowerCase().split('/'); }
-  function byPath(a, b) {
-    var x = sortKey(a), y = sortKey(b);
-    for (var i = 0; i < x.length && i < y.length; i++) {
-      if (x[i] !== y[i]) return x[i] < y[i] ? -1 : 1;
-    }
-    return x.length - y.length;
+  /* Folder picker. The host element (a <button>) shows the chosen path; clicking it opens one shared dialog that
+     browses the card's folders (built client-side from GET /api/folders). opts: {value, onChange(path)}.
+     el.value reads and writes the path, and a bubbling 'change' fires when the user picks another folder, so
+     pages treat the host like the text field it replaces. A value= attribute set before this runs wins over opts.value. */
+  var TRUNC_NOTE = 'Showing the first 256 folders';
+  var tree = null, treeLoad = null, treeSeq = 0, painters = [];
+  function normPath(p) { return '/' + String(p || '').split('/').filter(Boolean).join('/'); }
+  function parentOf(p) { var i = p.lastIndexOf('/'); return i <= 0 ? '/' : p.slice(0, i); }
+  function leafOf(p) { return p.slice(p.lastIndexOf('/') + 1); }
+  function byLeaf(a, b) { return leafOf(a).localeCompare(leafOf(b), undefined, { numeric: true, sensitivity: 'base' }); }
+  function byFull(a, b) { return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }); }
+
+  // Folder tree from the flat list: kids[path] = sorted child paths. Keys all start with "/".
+  function buildTree(list, truncated, failed) {
+    var t = { kids: { '/': [] }, truncated: truncated, failed: failed };
+    t.add = function (raw) {
+      var p = normPath(raw);
+      if (t.kids[p]) return;
+      t.kids[p] = [];
+      var par = parentOf(p);
+      t.add(par);
+      t.kids[par].push(p);
+      t.kids[par].sort(byLeaf);
+    };
+    list.forEach(t.add);
+    return t;
+  }
+  function paintAll() { painters.forEach(function (f) { f(); }); }
+  function loadTree(force) {
+    if (treeLoad && !force) return treeLoad;
+    var seq = ++treeSeq;
+    var p = fetch('/api/folders', { cache: 'no-store' })
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function (j) { if (seq === treeSeq) tree = buildTree(j.folders || [], !!j.truncated, false); },
+        function () { if (seq === treeSeq && !tree) tree = buildTree([], false, true); })
+      .then(function () { paintAll(); return tree; });
+    treeLoad = p;
+    return p;
+  }
+  function nearestFolder(p) {
+    p = normPath(p);
+    while (tree && p !== '/' && !tree.kids[p]) p = parentOf(p);
+    return p;
   }
 
-  /* Fills a <select> with the card's folders plus "New folder…". opts: {value, onChange(path)}.
-     sel.value reads and writes the chosen path, so pages can treat it like the text field it replaces. */
-  function folderPicker(sel, opts) {
-    opts = opts || {};
-    var list = ['/'], current = '/', busy = false;
-    var nativeValue = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
-    function norm(p) { var s = String(p || '').split('/').filter(Boolean); return '/' + s.join('/'); }
-    function render() {
-      var all = list.slice();
-      if (all.indexOf(current) < 0) all.push(current);
-      all.sort(byPath);
-      sel.innerHTML = '';
-      all.forEach(function (p) {
-        var o = d.createElement('option');
-        var depth = p === '/' ? 0 : p.split('/').length - 1;
-        var leaf = p === '/' ? '/ (SD card)' : p.slice(p.lastIndexOf('/') + 1);
-        o.value = p;
-        o.textContent = new Array(depth + 1).join('  ') + leaf + (list.indexOf(p) < 0 ? ' (new)' : '');
-        sel.appendChild(o);
-      });
-      var n = d.createElement('option');
-      n.value = NEW_FOLDER;
-      n.textContent = 'New folder…';
-      sel.appendChild(n);
-      nativeValue.set.call(sel, current);
+  var fpEl;
+  function mk(tag, cls, text) {
+    var n = d.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+  function fpBuild() {
+    if (fpEl) return;
+    fpEl = d.createElement('div');
+    fpEl.className = 'modal-backdrop';
+    fpEl.innerHTML =
+      '<div class="modal fp-modal" aria-labelledby="fpTitle">' +
+        '<div class="modal-head"><h2 id="fpTitle">Choose folder</h2>' +
+          '<button type="button" class="btn" data-x="new">New folder</button></div>' +
+        '<div class="fp-bar"><button type="button" class="btn" data-x="up" aria-label="Up one folder">↑ Up</button>' +
+          '<nav class="crumbs fp-crumbs" aria-label="Folder"></nav></div>' +
+        '<div class="fp-search"><input type="search" placeholder="Search all folders" aria-label="Search all folders" ' +
+          'autocomplete="off" autocapitalize="off" spellcheck="false"></div>' +
+        '<div class="modal-body fp-body"></div>' +
+        '<p class="field-hint fp-note" hidden></p>' +
+        '<div class="modal-foot"><button type="button" class="btn" data-x="cancel">Cancel</button>' +
+          '<button type="button" class="btn btn-primary" data-x="select">Select this folder</button></div></div>';
+    body.appendChild(fpEl);
+    var q = function (s) { return fpEl.querySelector(s); };
+    var input = q('input');
+    function go(p) {
+      var st = fpEl.st;
+      if (!st) return;
+      st.browse = p;
+      st.query = '';
+      input.value = '';
+      fpDraw();
+      q('.fp-body').scrollTop = 0;
     }
-    function load() {
-      return fetch('/api/folders', { cache: 'no-store' })
-        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
-        .then(function (j) { list = (j.folders && j.folders.length) ? j.folders : ['/']; })
-        .catch(function () { list = ['/']; });
+    q('[data-x=cancel]').onclick = function () { closeModal(fpEl, ''); };
+    q('[data-x=select]').onclick = function () { if (fpEl.st) closeModal(fpEl, fpEl.st.browse); };
+    q('[data-x=up]').onclick = function () { if (fpEl.st) go(parentOf(fpEl.st.browse)); };
+    q('[data-x=new]').onclick = function () {
+      var st = fpEl.st;
+      if (!st) return;
+      askNewFolder(st.browse).then(function (made) {
+        if (!made) return;
+        if (tree) tree.add(made);
+        go(made);
+        loadTree(true).then(function () { if (fpEl.st) fpDraw(); });
+      });
+    };
+    function onPick(e) {
+      var b = e.target.closest('button[data-path]');
+      if (b) go(b.getAttribute('data-path'));
+    }
+    q('.fp-crumbs').addEventListener('click', onPick);
+    q('.fp-body').addEventListener('click', onPick);
+    input.addEventListener('input', function () {
+      if (!fpEl.st) return;
+      fpEl.st.query = input.value.trim().toLowerCase();
+      fpDraw();
+      q('.fp-body').scrollTop = 0;
+    });
+    input.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      var first = q('.fp-body button[data-path]');
+      if (first && fpEl.st && fpEl.st.query) go(first.getAttribute('data-path'));
+    });
+  }
+  function fpRow(path, withPath, selected) {
+    var b = mk('button', 'fp-row');
+    b.type = 'button';
+    b.setAttribute('data-path', path);
+    if (selected) b.setAttribute('aria-current', 'true');
+    b.appendChild(mk('span', 'fp-ico', '📁'));
+    var main = mk('span', 'fp-row-main', leafOf(path));
+    if (withPath) main.appendChild(mk('span', 'fp-row-meta', path));
+    b.appendChild(main);
+    var n = tree && tree.kids[path] ? tree.kids[path].length : 0;
+    if (!withPath && n) {
+      b.appendChild(mk('span', 'fp-count', String(n)));
+      b.appendChild(mk('span', 'fp-chev', '›'));
+    }
+    return b;
+  }
+  function fpDraw() {
+    var st = fpEl.st;
+    if (!st) return;
+    var crumbs = fpEl.querySelector('.fp-crumbs'), list = fpEl.querySelector('.fp-body'), note = fpEl.querySelector('.fp-note');
+    var segs = st.browse.split('/').filter(Boolean), at = '', i;
+    crumbs.textContent = '';
+    for (i = -1; i < segs.length; i++) {
+      if (i >= 0) at += '/' + segs[i];
+      var label = i < 0 ? 'SD card' : segs[i];
+      if (i === segs.length - 1) {
+        var cur = mk('span', 'fp-crumb-cur', label);
+        cur.setAttribute('aria-current', 'page');
+        crumbs.appendChild(cur);
+      } else {
+        var cb = mk('button', 'fp-crumb', label);
+        cb.type = 'button';
+        cb.setAttribute('data-path', i < 0 ? '/' : at);
+        crumbs.appendChild(cb);
+      }
+    }
+    fpEl.querySelector('[data-x=up]').disabled = st.browse === '/';
+    list.textContent = '';
+    if (!tree) {
+      list.appendChild(mk('p', 'fp-empty', 'Loading folders…'));
+    } else if (st.query) {
+      var hits = Object.keys(tree.kids).filter(function (p) {
+        return p !== '/' && p.toLowerCase().indexOf(st.query) >= 0;
+      }).sort(byFull);
+      hits.forEach(function (p) { list.appendChild(fpRow(p, true, false)); });
+      if (!hits.length) list.appendChild(mk('p', 'fp-empty', 'No folder matches “' + st.query + '”.'));
+    } else {
+      var kids = tree.kids[st.browse] || [];
+      kids.forEach(function (p) { list.appendChild(fpRow(p, false, p === st.current)); });
+      if (!kids.length) list.appendChild(mk('p', 'fp-empty', 'No subfolders here.'));
+    }
+    var msg = tree && tree.failed ? 'Could not load the folder list.' : (tree && tree.truncated ? TRUNC_NOTE : '');
+    note.textContent = msg;
+    note.hidden = !msg;
+  }
+  // Resolves to the chosen folder, or '' when cancelled.
+  function chooseFolder(start) {
+    fpBuild();
+    var st = fpEl.st = { browse: nearestFolder(start), query: '', current: normPath(start) };
+    fpEl.querySelector('input').value = '';
+    return new Promise(function (resolve) {
+      openModal(fpEl, { onClose: function (r) { fpEl.st = null; resolve(r || ''); } });
+      fpDraw();
+      if (window.matchMedia && window.matchMedia('(pointer: fine)').matches) {
+        setTimeout(function () { fpEl.querySelector('input').focus(); }, 0);
+      }
+      loadTree(true).then(function () {
+        if (fpEl.st !== st) return;
+        st.browse = nearestFolder(st.browse);
+        fpDraw();
+      });
+    });
+  }
+
+  function folderPicker(el, opts) {
+    opts = opts || {};
+    var attr = el.getAttribute('value');
+    var current = normPath(attr != null ? attr : opts.value);
+    function paint() {
+      el.textContent = '';
+      el.appendChild(mk('span', 'fp-ico', '📁'));
+      el.appendChild(mk('span', 'fp-path', current));
+      if (tree && !tree.failed && !tree.kids[current]) el.appendChild(mk('span', 'fp-new', '(new)'));
+      el.appendChild(mk('span', 'fp-change', 'Change'));
+      el.title = current;
     }
     function setPath(p, fire) {
-      current = norm(p);
-      render();
-      // The change listener below reports it to opts.onChange.
-      if (fire) sel.dispatchEvent(new Event('change', { bubbles: true }));
+      var next = normPath(p), changed = next !== current;
+      current = next;
+      paint();
+      if (fire && changed) {
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        if (opts.onChange) opts.onChange(current);
+      }
     }
-    Object.defineProperty(sel, 'value', {
+    Object.defineProperty(el, 'value', {
       configurable: true,
-      get: function () { return nativeValue.get.call(sel) === NEW_FOLDER ? current : nativeValue.get.call(sel); },
+      get: function () { return current; },
       set: function (v) { setPath(v, false); }
     });
-    sel.addEventListener('change', function (e) {
-      if (busy) { e.stopImmediatePropagation(); return; }
-      if (nativeValue.get.call(sel) !== NEW_FOLDER) {
-        current = nativeValue.get.call(sel);
-        if (opts.onChange) opts.onChange(current);
-        return;
-      }
-      // The dialog is not a real change: hide this event until a folder exists.
-      e.stopImmediatePropagation();
-      busy = true;
-      askNewFolder(current).then(function (made) {
-        busy = false;
-        if (!made) { render(); return; }
-        return load().then(function () { setPath(made, true); });
-      });
-    }, true);
-    current = norm(opts.value);
-    render();
-    var ready = load().then(function () { render(); });
+    el.classList.add('fp-field');
+    el.setAttribute('aria-haspopup', 'dialog');
+    el.addEventListener('click', function () {
+      chooseFolder(current).then(function (p) { if (p) setPath(p, true); });
+    });
+    painters.push(paint);
+    paint();
     return {
-      ready: ready,
+      ready: loadTree(),
       get value() { return current; },
       set: function (p) { setPath(p, false); },
-      reload: function () { return load().then(render); },
+      reload: function () { return loadTree(true); },
       ensure: function () { return ensureFolder(current); }
     };
   }
