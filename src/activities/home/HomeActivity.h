@@ -77,6 +77,7 @@ class HomeActivity final : public Activity {
     return HomeMenuItem::NONE;
   }
   void onSelectBook(const std::string& path);
+  void onManageBook(const std::string& path);
   void onFileBrowserOpen();
   void onLibraryOpen();
   void onSettingsOpen();

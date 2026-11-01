@@ -222,3 +222,58 @@ TEST(LibraryIndexFile, RejectsFolderRecordBeyondFolderBlob) {
   std::string path;
   EXPECT_FALSE(index.readPath(record, path));
 }
+
+TEST(LibraryIndexFile, ReadsSeriesAndGenreViews) {
+  library::ClixHeader header{};
+  std::memcpy(header.magic, library::CLIX_MAGIC, sizeof(header.magic));
+  header.formatVersion = library::CLIX_FORMAT_VERSION;
+  header.foldVersion = library::CLIX_FOLD_VERSION;
+  header.bookCount = 4;
+  header.seriesBookCount = 3;
+  header.seriesGroupCount = 2;
+  header.genreBookCount = 1;
+  header.genreGroupCount = 1;
+  library::layoutSections(header, 0, 0);
+  std::vector<uint8_t> bytes(header.selfSize, 0);
+  std::memcpy(bytes.data(), &header, sizeof(header));
+
+  const uint16_t numbers[] = {200, library::CLIX_NO_SERIES_NUMBER, 100, 100};
+  std::memcpy(bytes.data() + library::seriesNumberOffset(header, 0), numbers, sizeof(numbers));
+  // Series order: ordinals 2, 0 form "Alpha"; ordinal 3 forms "Beta".
+  const uint16_t seriesOrder[] = {2, 0, 3};
+  for (uint16_t k = 0; k < 3; k++) {
+    std::memcpy(bytes.data() + library::seriesOrderOffset(header, k), &seriesOrder[k], sizeof(uint16_t));
+  }
+  const auto putGroup = [&](const uint32_t at, const uint16_t start, const uint16_t count, const char* name) {
+    library::ClixGroup group{};
+    group.start = start;
+    group.count = count;
+    group.nameLen = static_cast<uint8_t>(std::strlen(name));
+    std::memcpy(group.name, name, group.nameLen);
+    std::memcpy(bytes.data() + at, &group, sizeof(group));
+  };
+  putGroup(library::seriesGroupOffset(header, 0), 0, 2, "Alpha");
+  putGroup(library::seriesGroupOffset(header, 1), 2, 1, "Beta");
+  const uint16_t genreOrdinal = 1;
+  std::memcpy(bytes.data() + library::genreOrderOffset(header, 0), &genreOrdinal, sizeof(genreOrdinal));
+  putGroup(library::genreGroupOffset(header, 0), 0, 1, "Horror");
+  Storage.setFile("/library.clx", std::move(bytes));
+
+  library::LibraryIndexFile index;
+  ASSERT_TRUE(index.open("/library.clx"));
+  EXPECT_EQ(index.rowCount(library::SortOrder::SeriesAsc), 3);
+  EXPECT_EQ(index.rowCount(library::SortOrder::GenreAsc), 1);
+  EXPECT_EQ(index.rowCount(library::SortOrder::TitleAsc), 4);
+  EXPECT_EQ(index.ordinalForRow(library::SortOrder::SeriesAsc, 0), 2);
+  EXPECT_EQ(index.ordinalForRow(library::SortOrder::SeriesAsc, 2), 3);
+  EXPECT_EQ(index.ordinalForRow(library::SortOrder::SeriesAsc, 3), 0xFFFF);
+  EXPECT_EQ(index.ordinalForRow(library::SortOrder::GenreAsc, 0), 1);
+  EXPECT_EQ(index.groupForRow(library::GroupKind::Series, 1), 0);
+  EXPECT_EQ(index.groupForRow(library::GroupKind::Series, 2), 1);
+  library::ClixGroup group{};
+  ASSERT_TRUE(index.readGroup(library::GroupKind::Series, 1, group));
+  EXPECT_EQ(library::LibraryIndexFile::groupName(group), "Beta");
+  EXPECT_FALSE(index.readGroup(library::GroupKind::Series, 2, group));
+  EXPECT_EQ(index.readSeriesNumber(0), 200);
+  EXPECT_EQ(index.readSeriesNumber(1), library::CLIX_NO_SERIES_NUMBER);
+}

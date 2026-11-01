@@ -18,7 +18,7 @@ import std.mem;
 import std.string;
 import std.core;
 
-#define EXPECTED_VERSION 10
+#define EXPECTED_VERSION 11
 #define MAX_STRING_LENGTH 65535
 
 struct String {
@@ -433,7 +433,7 @@ Written by `lib/LibraryIndex/LibraryBuilder.cpp`, read by `LibraryIndexFile`. On
 file describing every book on the card, so the shelf can sort and search
 thousands of titles without opening any of them.
 
-Format version 2. An index written by another version fails validation on open
+Format version 3. An index written by another version fails validation on open
 and is rebuilt; that is the entire migration mechanism.
 
 ### Layout
@@ -444,15 +444,49 @@ and is rebuilt; that is the entire migration mechanism.
 | Folders | `folderStart` | length-prefixed paths, one per folder |
 | Records | `recordStart` | `bookCount` × 128-byte `ClixRecord` |
 | Permutations | `permStart` | `bookCount` u16 author order, then `bookCount` u16 arrival order |
-| Name blob | `nameStart` | per record: path hash, name, canonical author, title, source author (see below) |
+| Extra | `extraStart` | series numbers, then the Series and Genre views (see below) |
+| Name blob | `nameStart` | per record: path hash, name, canonical author, title, source author, series, genre (see below) |
 
 The arrival permutation runs oldest first, keyed by the record's FAT
 modification time (when the file landed on the card); `firstSeen` — the
 build-assigned discovery counter — breaks ties and carries books whose
 filesystem reports no time. Fold version 3 introduced the timestamp key; a
-fold bump rebuilds ranks while preserving `firstSeen`.
+fold bump rebuilds ranks while preserving `firstSeen`. Fold version 4 made the
+title and author sort keys number-aware (`naturalSortKey`: a digit run sorts as
+a length marker plus its digits, so "Book 2" precedes "Book 10"); the stored
+`fold` bytes are unchanged, only the permutation order differs. Books whose
+12-byte key prefix ties are re-ordered by the longer natural key, then by
+ordinal.
 
 Sections are 512-byte aligned so each starts on an SD block boundary.
+
+### The extra section (Series and Genre views)
+
+Header fields `seriesBookCount` (SB), `seriesGroupCount` (SG), `genreBookCount`
+(GB), `genreGroupCount` (GG) and `extraStart` describe it; its size is derived
+from the counts (`extraBytes`). In order:
+
+```text
+seriesNumber[N]   u16 per record, title order: series position in hundredths
+                  ("2.5" = 250), 0xFFFF when the book has none
+seriesOrder[SB]   u16 record ordinals of books that have a series, ordered by
+                  series name (natural key), then seriesNumber, then title order
+seriesGroup[SG]   96-byte ClixGroup, ordered by series name
+genreOrder[GB]    u16 ordinals of books that have a genre, by genre then title
+genreGroup[GG]    96-byte ClixGroup, ordered by genre name
+```
+
+`ClixGroup` is `u16 start, u16 count, u8 nameLen, char name[91]`; the group's books
+are `order[start .. start+count)`. Fixed-size groups let the reader reach group g
+with a seek, and `groupForRow` binary-searches by `start`. Group identity is the
+folded name (hashed, so names sharing a 12-byte sort prefix stay apart). Books
+with no series or genre appear in neither view. A series or genre longer than
+the staging fields (96 / 64 bytes) is cut at a UTF-8 boundary.
+
+A book's effective title, author, series, seriesNumber and genre are its user
+override (`/.crosspoint/meta/<hash>.json`, lib/BookMeta) where non-empty, else the
+EPUB's own value, else the filename for the title. Overrides apply even when
+"Use Book Metadata" is off.
 
 ### Records are exactly 128 bytes
 
@@ -485,6 +519,8 @@ Per record, at `nameStart + nameOff`:
 [u8][author]     display author, one spelling chosen per authorKey across the library
 [u8][title]      the book's own title, or length 0 if it never gave one
 [u8][source]     cleaned author spelling before the library-wide spelling vote
+[u8][series]     series name, or length 0
+[u8][genre]      genre, or length 0
 ```
 
 The filename must stay the first textual field and stay the filename: `readPath`
@@ -501,6 +537,12 @@ Reconciliation treats the persisted 64-bit complete-path fingerprint as the
 book identity. Metadata is reused only when the fingerprint, size, nonzero FAT
 timestamp, fold version, metadata mode, and expected extraction status agree.
 EPUBs with a zero timestamp or a previous extraction failure are parsed again.
+
+A book whose hash is listed in `/.crosspoint/meta/reenrich.bin` (appended by
+every override edit) is not reused even if its size and timestamp match. The
+builder reads that file and one listing of `/.crosspoint/meta/` before the walk
+into sorted hash sets, so a full rebuild finds overrides without a per-book
+`exists()`; the file is deleted after a successful build.
 
 If every current record reuses metadata, the old and new counts agree, and no
 unreadable entry was seen, the staging files are discarded and the live index is

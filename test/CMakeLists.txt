@@ -62,6 +62,7 @@ add_subdirectory(chapter_html_slim_parser)
 add_subdirectory(ligature_guard)
 add_subdirectory(page_link)
 add_subdirectory(content_opf_parser)
+add_subdirectory(book_overrides)
 add_subdirectory(chapter_position)
 add_subdirectory(home_button)
 

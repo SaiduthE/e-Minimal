@@ -215,10 +215,22 @@
         <button type="button" class="btn btn-ghost btn-icon" id="uploadModalClose" onclick="closeUploadModal()" aria-label="Close">&times;</button>
       </div>
       <div class="modal-body">
-        <p class="small muted">Uploads go to <strong id="uploadPathDisplay"></strong></p>
+        <div class="field">
+          <label for="uploadDest">Save to</label>
+          <select id="uploadDest"></select>
+        </div>
         <div class="dropzone" id="dropZone">
           <input type="file" id="fileInput" onchange="validateFile()" multiple aria-label="Choose files">
           <p class="dropzone-hint">Drop files here, or tap to choose</p>
+        </div>
+        <div class="meta-review" id="metaReview" hidden>
+          <h3>Book details <span class="small muted" id="metaCount"></span></h3>
+          <p class="small muted">Optional. Titles come from the file names; EPUBs keep their own title unless you edit it.</p>
+          <div class="meta-collection">
+            <label><input type="checkbox" id="metaCollection"> Import as collection</label>
+            <input type="text" id="metaSeries" placeholder="Series name" autocomplete="off" aria-label="Series name">
+          </div>
+          <div class="meta-rows" id="metaRows"></div>
         </div>
         <div class="picker-columns" id="pickerColumns">
           <div id="convertOptions" style="display:none;">
@@ -389,14 +401,42 @@
         <p class="small muted">Moving <strong id="moveItemName"></strong></p>
         <div class="field">
           <label for="moveDestPath">Destination folder</label>
-          <input type="text" id="moveDestPath" list="moveFolderOptions" placeholder="/Books" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="done" aria-describedby="moveError">
-          <datalist id="moveFolderOptions"></datalist>
+          <select id="moveDestPath" aria-describedby="moveError"></select>
           <span class="field-hint field-error" id="moveError" hidden></span>
         </div>
       </div>
       <div class="modal-foot">
         <button type="button" class="btn" onclick="closeMoveModal()">Cancel</button>
         <button type="button" class="btn btn-primary" id="confirmMoveBtn" onclick="confirmMove()">Move</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="editModal">
+    <div class="modal">
+      <div class="modal-head">
+        <h2>Edit book</h2>
+        <button type="button" class="btn btn-ghost btn-icon" onclick="closeEditModal()" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="small muted"><strong id="editBookName"></strong></p>
+        <div class="edit-grid">
+          <div class="field field-wide"><label for="edit_title">Title</label><input type="text" id="edit_title" maxlength="127" autocomplete="off"></div>
+          <div class="field field-wide"><label for="edit_author">Author</label><input type="text" id="edit_author" maxlength="95" autocomplete="off"></div>
+          <div class="field"><label for="edit_series">Series</label><input type="text" id="edit_series" maxlength="95" autocomplete="off"></div>
+          <div class="field"><label for="edit_seriesIndex">#</label><input type="text" id="edit_seriesIndex" maxlength="11" inputmode="decimal" autocomplete="off"></div>
+          <div class="field field-wide"><label for="edit_genre">Genre</label><input type="text" id="edit_genre" maxlength="63" autocomplete="off"></div>
+        </div>
+        <div class="field-row">
+          <button type="button" class="btn btn-sm" id="fetchEditBtn" onclick="fetchEditOnline()" disabled>Fetch online</button>
+          <button type="button" class="btn btn-sm btn-ghost" id="resetEditBtn" onclick="resetEditToBook()" disabled>Use the book&rsquo;s own</button>
+        </div>
+        <p class="field-hint" id="editStatus" role="status"></p>
+        <div class="meta-cands" id="editCands"></div>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn" onclick="closeEditModal()">Cancel</button>
+        <button type="button" class="btn btn-primary" id="saveEditBtn" onclick="saveEdit()" disabled>Save</button>
       </div>
     </div>
   </div>
@@ -422,7 +462,10 @@
 
 <script>
   // The folder from ?path=; URLSearchParams has already decoded it once, so a name with "%" stays intact.
-  const currentPath = new URLSearchParams(window.location.search).get('path') || '/';
+  // /files?edit=<book path> opens that book's folder and its Edit dialog.
+  const editParam = new URLSearchParams(window.location.search).get('edit') || '';
+  const currentPath = new URLSearchParams(window.location.search).get('path') ||
+    (editParam.lastIndexOf('/') > 0 ? editParam.slice(0, editParam.lastIndexOf('/')) : '/');
 
   if (currentPath !== '/') {
     const leaf = currentPath.split('/').filter(Boolean).pop();
@@ -853,11 +896,12 @@
       ];
     }
     return [
-      ['Download', function() { downloadFile(entry); }],
+      ['Download', function() { downloadFile(entry); }]
+    ].concat(BOOK_EXT.test(entry.name) ? [['Edit details', function() { openEditModal(entry.path); }]] : [], [
       ['Rename', function() { openRenameModal(entry.name, entry.path); }],
       ['Move', function() { openMoveModal([entry]); }],
       ['Delete', function() { openDeleteModalForItems([entry]); }, true]
-    ];
+    ]);
   }
 
   function openRowMenu(button, entry) {
@@ -940,6 +984,9 @@
     $(errorId).hidden = true;
   }
 
+  let uploadPicker, movePicker;
+  let uploadDest = currentPath;  // Folder of the running upload, fixed when it starts
+
   async function hydrate() {
     // Fetch CrossPoint version
     fetchVersion();
@@ -954,6 +1001,7 @@
           if (overlay.id === 'deleteModal') return closeDeleteModal();
           if (overlay.id === 'renameModal') return closeRenameModal();
           if (overlay.id === 'moveModal') return closeMoveModal();
+          if (overlay.id === 'editModal') return closeEditModal();
           if (overlay.id === 'imagePreviewModal') return closeImagePreview();
           overlay.classList.remove('open');
         }
@@ -994,6 +1042,10 @@
       if (e.target.id === 'fileSearch' && e.target.value) return;
       clearSelection();
     });
+    uploadPicker = ui.folderPicker($('uploadDest'), { value: currentPath, onChange: syncCollectionName });
+    $('metaCollection').addEventListener('change', onCollectionToggle);
+    $('metaSeries').addEventListener('input', function() { metaSeriesTouched = true; applyCollectionName(); });
+    movePicker = ui.folderPicker($('moveDestPath'), { value: currentPath });
     ['folderName', 'renameNewName', 'moveDestPath'].forEach(function(id) {
       const errorId = { folderName: 'folderError', renameNewName: 'renameError', moveDestPath: 'moveError' }[id];
       $(id).addEventListener('input', function() { clearFieldError(id, errorId); });
@@ -1005,6 +1057,7 @@
     });
 
     await loadFolder();
+    if (editParam) openEditModal(editParam);
   }
 
   // Image preview
@@ -1048,7 +1101,9 @@
     const logContainer = document.getElementById('log-container');
     if (logContainer) logContainer.innerHTML = '';
 
-    document.getElementById('uploadPathDisplay').textContent = currentPath === '/' ? '/' : currentPath;
+    uploadPicker.set(currentPath);
+    uploadPicker.reload();
+    metaSeriesTouched = false;
     ui.openModal(document.getElementById('uploadModal'), { dismiss: false });
   }
 
@@ -1076,6 +1131,7 @@
     progressFill.style.backgroundColor = 'var(--danger)';
     progressText.style.color = 'var(--danger)';
     progressText.textContent = 'Upload cancelled.';
+    lockMetaReview(false);
     // Re-enable the action button (uploadBtn is always visible at this point;
     // its text is already "Upload" or "Optimise and upload" depending on checkbox state)
     document.getElementById('uploadBtn').disabled = false;
@@ -1087,10 +1143,12 @@
       return;
     }
     ui.closeModal(document.getElementById('uploadModal'));
+    clearMetaReview();
     const fileInput = document.getElementById('fileInput');
     fileInput.value = '';
     fileInput.classList.remove('has-files');
     fileInput.disabled = false;
+    $('uploadDest').disabled = false;
     const uploadBtn = document.getElementById('uploadBtn');
     uploadBtn.disabled = true;
     uploadBtn.style.display = 'block';
@@ -2117,6 +2175,7 @@
     const files = fileInput.files;
     const convertOptions = document.getElementById('convertOptions');
     fileInput.classList.toggle('has-files', files.length > 0);
+    buildMetaReview(Array.from(files));
 
     // Show convert options only when at least one selected file is an EPUB.
     const hasEpub = Array.from(files).some(f => f.name.toLowerCase().endsWith('.epub'));
@@ -2857,8 +2916,8 @@ function reserveAvailableUploadFilename(fileName, usedFileNames) {
   return candidateName;
 }
 
-async function fetchExistingUploadNames() {
-  const response = await fetch('/api/files?path=' + encodeURIComponent(currentPath) + '&_=' + Date.now());
+async function fetchExistingUploadNames(folder) {
+  const response = await fetch('/api/files?path=' + encodeURIComponent(folder) + '&_=' + Date.now());
   if (!response.ok) {
     throw new Error(response.status + ' ' + response.statusText);
   }
@@ -4359,7 +4418,7 @@ function uploadFileWebSocket(file, onProgress, onComplete, onError) {
     ws.onopen = function() {
       console.log('[WS] Connected, starting upload:', file.name);
       // Send start message: START:<filename>:<size>:<path>
-      ws.send(`START:${file.name}:${file.size}:${currentPath}`);
+      ws.send(`START:${file.name}:${file.size}:${uploadDest}`);
     };
 
     ws.onmessage = async function(event) {
@@ -4462,7 +4521,7 @@ function uploadFileHTTP(file, onProgress, onComplete, onError) {
 
     const xhr = new XMLHttpRequest();
     currentUploadXhr = xhr;
-    xhr.open('POST', '/upload?path=' + encodeURIComponent(currentPath), true);
+    xhr.open('POST', '/upload?path=' + encodeURIComponent(uploadDest), true);
 
     xhr.upload.onprogress = function(e) {
       if (e.lengthComputable && onProgress) {
@@ -4513,10 +4572,12 @@ async function uploadFile() {
   isUploadInProgress = true;
   let usedFileNames;
   try {
-    usedFileNames = await fetchExistingUploadNames();
+    uploadDest = uploadPicker.value;
+    await uploadPicker.ensure();
+    usedFileNames = await fetchExistingUploadNames(uploadDest);
   } catch (error) {
     isUploadInProgress = false;
-    alert('Failed to check existing files: ' + error.message);
+    alert('Failed to prepare ' + uploadPicker.value + ': ' + error.message);
     return;
   }
 
@@ -4525,6 +4586,27 @@ async function uploadFile() {
   const myGeneration = uploadGeneration;
   document.getElementById('uploadModalClose').classList.add('disabled');
   fileInput.disabled = true;
+  $('uploadDest').disabled = true;
+  // Book details as chosen now; each is saved once its file has uploaded.
+  const metaPlan = new Map(metaRowList.map(row => [row.file, metaPayload(row)]));
+  const metaFailed = [];
+  lockMetaReview(true);
+
+  async function saveBookMeta(original, name) {
+    const plan = metaPlan.get(original);
+    if (!plan) return;
+    try {
+      const response = await fetch('/api/book-meta', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(Object.assign({ path: joinPath(uploadDest, name) }, plan))
+      });
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+    } catch (e) {
+      console.error('[Upload] Book details not saved for ' + name, e);
+      metaFailed.push(name);
+    }
+  }
 
   const progressContainer = document.getElementById('progress-container');
   const progressFill = document.getElementById('progress-fill');
@@ -4553,7 +4635,8 @@ async function uploadFile() {
       // All files processed - show summary
       if (failedFiles.length === 0) {
         progressFill.style.backgroundColor = 'var(--ink)';
-        progressText.textContent = 'All uploads complete.';
+        progressText.textContent = 'All uploads complete.' +
+          (metaFailed.length ? ' Book details were not saved for: ' + metaFailed.join(', ') + '.' : '');
 
         // Finalize batch log if in batch mode
         if (useBatchLog) {
@@ -4644,7 +4727,8 @@ async function uploadFile() {
       progressText.textContent = `${prefix} ${file.name} (${currentIndex + 1}/${files.length})${methodText} — ${uploadPercent}%`;
     };
 
-    const onComplete = () => {
+    const onComplete = async () => {
+      await saveBookMeta(originalFile, file.name);
       // Save file log to batch if in batch mode and this file was converted
       // Consider it successful only if conversion didn't fail
       if (useBatchLog && needsConversion) {
@@ -4882,6 +4966,224 @@ function retryAllFailedUploads() {
     button.disabled = false;
   }
 
+  // --- Book details: upload review table ---
+
+  let metaRowList = [];  // one entry per book in the file picker
+  let metaSeriesTouched = false;
+  const SERIES_NUM = /^([1-5]?\d{1,2}|600)(\.\d{1,2})?$/;  // parseSeriesIndex keeps 0-600
+
+  function lastFolderName(path) {
+    return path.split('/').filter(Boolean).pop() || '';
+  }
+
+  function buildMetaReview(files) {
+    const books = files.filter(file => BOOK_EXT.test(file.name));
+    const box = $('metaRows');
+    box.replaceChildren();
+    metaRowList = [];
+    $('metaReview').hidden = !books.length;
+    if (!books.length) return;
+    const frag = document.createDocumentFragment();
+    books.forEach(function(file, i) {
+      const clean = ui.cleanBookName(file.name);
+      const row = {
+        file: file, stem: file.name.replace(/\.[^.]+$/, ''), isEpub: /\.epub$/i.test(file.name), order: i + 1,
+        parsed: clean.num, title: clean.title, titleEdited: false, series: '', num: clean.num
+      };
+      const node = el('div', 'meta-row');
+      node.appendChild(el('span', 'meta-file', file.name));
+      row.titleInput = metaInput('Title', row.title, function(v) { row.title = v; row.titleEdited = true; });
+      row.seriesInput = metaInput('Series', '', function(v) { row.series = v; });
+      row.numInput = metaInput('#', row.num, function(v) { row.num = v; });
+      node.append(row.titleInput, row.seriesInput, row.numInput);
+      frag.appendChild(node);
+      metaRowList.push(row);
+    });
+    box.appendChild(frag);
+    $('metaCount').textContent = plural(books.length, 'book');
+    metaSeriesTouched = false;
+    syncCollectionName();
+    if ($('metaCollection').checked) onCollectionToggle();
+  }
+
+  // A cell edit touches its own row's state only.
+  function metaInput(label, value, onInput) {
+    const input = el('input');
+    input.type = 'text';
+    input.value = value;
+    input.placeholder = label;
+    input.autocomplete = 'off';
+    input.setAttribute('aria-label', label);
+    input.addEventListener('input', function() { onInput(input.value); });
+    return input;
+  }
+
+  function clearMetaReview() {
+    metaRowList = [];
+    $('metaRows').replaceChildren();
+    $('metaReview').hidden = true;
+    lockMetaReview(false);
+  }
+
+  function lockMetaReview(locked) {
+    $('metaReview').querySelectorAll('input').forEach(function(input) { input.disabled = locked; });
+  }
+
+  // The series name follows the destination folder until the user types one.
+  function syncCollectionName() {
+    if (metaSeriesTouched) return;
+    $('metaSeries').value = lastFolderName(uploadPicker ? uploadPicker.value : currentPath);
+    applyCollectionName();
+  }
+
+  function applyCollectionName() {
+    if (!$('metaCollection').checked) return;
+    const name = $('metaSeries').value;
+    metaRowList.forEach(function(row) {
+      row.series = name;
+      row.seriesInput.value = name;
+    });
+  }
+
+  function onCollectionToggle() {
+    const on = $('metaCollection').checked;
+    metaRowList.forEach(function(row) {
+      row.num = on ? (row.parsed || String(row.order)) : row.parsed;
+      row.numInput.value = row.num;
+      row.series = on ? $('metaSeries').value : '';
+      row.seriesInput.value = row.series;
+    });
+  }
+
+  // What to send for one uploaded book, or null. A non-EPUB's own title is its file name, so a cleaned title
+  // counts as different; an EPUB's own title is only replaced when the user edited it.
+  function metaPayload(row) {
+    const out = {};
+    const title = row.title.trim();
+    if (title && (row.isEpub ? row.titleEdited : title !== row.stem)) out.title = title;
+    const series = row.series.trim();
+    if (series) {
+      out.series = series;
+      const num = row.num.trim();
+      if (SERIES_NUM.test(num)) out.seriesIndex = num;
+    }
+    return Object.keys(out).length ? out : null;
+  }
+
+  // --- Book details: Edit dialog ---
+
+  const EDIT_FIELDS = ['title', 'author', 'series', 'seriesIndex', 'genre'];
+  let editState = null;  // { path, book } once loaded
+
+  function setEditStatus(text, isError) {
+    const status = $('editStatus');
+    status.textContent = text;
+    status.style.color = isError ? 'var(--danger)' : '';
+  }
+
+  async function openEditModal(path) {
+    editState = null;
+    $('editBookName').textContent = path.slice(path.lastIndexOf('/') + 1);
+    EDIT_FIELDS.forEach(function(key) {
+      $('edit_' + key).value = '';
+      $('edit_' + key).disabled = true;
+    });
+    ['saveEditBtn', 'fetchEditBtn', 'resetEditBtn'].forEach(function(id) { $(id).disabled = true; });
+    $('editCands').replaceChildren();
+    setEditStatus('Loading…');
+    ui.openModal($('editModal'));
+    try {
+      const response = await fetch('/api/book-meta?path=' + encodeURIComponent(path), { cache: 'no-store' });
+      const data = await response.json().catch(function() { return {}; });
+      if (!response.ok) throw new Error(data.error || 'HTTP ' + response.status);
+      editState = { path: data.path || path, book: data.book };
+      EDIT_FIELDS.forEach(function(key) {
+        $('edit_' + key).value = data.override[key] || data.book[key] || '';
+        $('edit_' + key).disabled = false;
+      });
+      ['saveEditBtn', 'fetchEditBtn', 'resetEditBtn'].forEach(function(id) { $(id).disabled = false; });
+      setEditStatus('');
+    } catch (e) {
+      console.error(e);
+      setEditStatus('Could not load this book: ' + e.message, true);
+    }
+  }
+
+  function closeEditModal() {
+    ui.closeModal($('editModal'));
+  }
+
+  function resetEditToBook() {
+    if (!editState) return;
+    EDIT_FIELDS.forEach(function(key) { $('edit_' + key).value = editState.book[key] || ''; });
+    setEditStatus('Showing the book\u2019s own details. Save to drop your changes.');
+  }
+
+  async function fetchEditOnline() {
+    const query = ($('edit_title').value + ' ' + $('edit_author').value).trim();
+    if (!query) return setEditStatus('Enter a title first.', true);
+    const button = $('fetchEditBtn');
+    const box = $('editCands');
+    button.disabled = true;
+    box.replaceChildren();
+    setEditStatus('Searching Open Library…');
+    try {
+      const found = await ui.searchOpenLibrary(query);
+      if (!found.length) {
+        setEditStatus('No matches on Open Library.');
+      } else {
+        setEditStatus('Tap a match to fill title, author and genre. Series is left for you.');
+        found.forEach(function(c) {
+          const pick = el('button');
+          pick.type = 'button';
+          pick.appendChild(document.createTextNode(c.title));
+          pick.appendChild(el('small', null, [c.author, c.year, c.genre].filter(Boolean).join(' · ')));
+          pick.addEventListener('click', function() {
+            $('edit_title').value = c.title;
+            if (c.author) $('edit_author').value = c.author;
+            if (c.genre) $('edit_genre').value = c.genre;
+            box.replaceChildren();
+            setEditStatus('Filled from Open Library. Check the details, then Save.');
+          });
+          box.appendChild(pick);
+        });
+      }
+    } catch (e) {
+      setEditStatus(e.message, true);
+    }
+    button.disabled = !editState;
+  }
+
+  // Fields equal to the book's own values are sent empty, so only real changes are stored.
+  async function saveEdit() {
+    if (!editState) return;
+    const body = { path: editState.path };
+    EDIT_FIELDS.forEach(function(key) {
+      const value = $('edit_' + key).value.trim();
+      body[key] = value === (editState.book[key] || '') ? '' : value;
+    });
+    if (body.seriesIndex && !SERIES_NUM.test(body.seriesIndex)) return setEditStatus('Series number: use digits like 2 or 2.5.', true);
+    const button = $('saveEditBtn');
+    button.disabled = true;
+    try {
+      const response = await fetch('/api/book-meta', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(function() { return {}; });
+        throw new Error(data.error || 'HTTP ' + response.status);
+      }
+      closeEditModal();
+      showNotification('Saved details for ' + $('editBookName').textContent, 'success');
+    } catch (e) {
+      console.error(e);
+      setEditStatus('Could not save: ' + e.message, true);
+    }
+    button.disabled = false;
+  }
+
   // Rename functions
   function openRenameModal(name, path, isDirectory) {
     $('renameItemName').textContent = name;
@@ -4948,50 +5250,6 @@ function retryAllFailedUploads() {
     return idx <= 0 ? '/' : normalized.slice(0, idx);
   }
 
-  async function loadMoveFolderOptions() {
-    const options = new Set();
-    options.add('/');
-    const parent = getParentPath(currentPath);
-    if (parent) options.add(parent);
-
-    async function fetchFolders(path) {
-      try {
-        const response = await fetch('/api/files?path=' + encodeURIComponent(path));
-        if (!response.ok) return [];
-        return await response.json();
-      } catch (e) {
-        return [];
-      }
-    }
-
-    const rootFiles = await fetchFolders('/');
-    rootFiles.forEach(file => {
-      if (file.isDirectory) {
-        options.add('/' + file.name);
-      }
-    });
-
-    if (currentPath !== '/') {
-      const currentFiles = await fetchFolders(currentPath);
-      currentFiles.forEach(file => {
-        if (file.isDirectory) {
-          let folderPath = currentPath;
-          if (!folderPath.endsWith('/')) folderPath += '/';
-          folderPath += file.name;
-          options.add(folderPath);
-        }
-      });
-    }
-
-    const dataList = document.getElementById('moveFolderOptions');
-    dataList.innerHTML = '';
-    Array.from(options).sort().forEach(path => {
-      const option = document.createElement('option');
-      option.value = path;
-      dataList.appendChild(option);
-    });
-  }
-
   // Folders cannot be moved (POST /move answers 400), so they are left out of the set.
   let moveItems = [];
   let moveSkipped = 0;
@@ -5001,12 +5259,11 @@ function retryAllFailedUploads() {
     moveSkipped = items.length - moveItems.length;
     if (!moveItems.length) return;
     $('moveItemName').textContent = moveItems.length === 1 ? moveItems[0].name : plural(moveItems.length, 'file');
-    $('moveDestPath').value = normalizePath(currentPath);
+    movePicker.set(currentPath);
+    movePicker.reload();
     $('confirmMoveBtn').disabled = false;
     clearFieldError('moveDestPath', 'moveError');
     ui.openModal(document.getElementById('moveModal'));
-    loadMoveFolderOptions();
-    setTimeout(() => $('moveDestPath').select(), 0);
   }
 
   function closeMoveModal() {
@@ -5015,7 +5272,6 @@ function retryAllFailedUploads() {
 
   // One POST /move per file, in turn: the reader serves one request at a time.
   async function confirmMove() {
-    if (!$('moveDestPath').value.trim()) return showFieldError('moveDestPath', 'moveError', 'Enter a destination folder, such as /Books.');
     const dest = normalizePath($('moveDestPath').value);
     if (dest === normalizePath(currentPath)) return showFieldError('moveDestPath', 'moveError', 'Pick another folder: this is where they are now.');
     const button = $('confirmMoveBtn');

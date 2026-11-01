@@ -60,11 +60,64 @@ bool LibraryIndexFile::readAt(const uint32_t offset, void* dst, const size_t len
   return true;
 }
 
+uint16_t LibraryIndexFile::rowCount(const SortOrder order) const {
+  if (!opened) return 0;
+  if (order == SortOrder::SeriesAsc) return head.seriesBookCount;
+  if (order == SortOrder::GenreAsc) return head.genreBookCount;
+  return head.bookCount;
+}
+
+uint16_t LibraryIndexFile::groupCount(const GroupKind kind) const {
+  if (!opened) return 0;
+  return kind == GroupKind::Series ? head.seriesGroupCount : head.genreGroupCount;
+}
+
+bool LibraryIndexFile::readGroup(const GroupKind kind, const uint16_t index, ClixGroup& out) {
+  if (!opened || index >= groupCount(kind)) return false;
+  const uint32_t at = kind == GroupKind::Series ? seriesGroupOffset(head, index) : genreGroupOffset(head, index);
+  if (!readAt(at, &out, sizeof(out))) return false;
+  const uint32_t books = kind == GroupKind::Series ? head.seriesBookCount : head.genreBookCount;
+  if (static_cast<uint32_t>(out.start) + out.count > books) return false;
+  out.nameLen = static_cast<uint8_t>(std::min<size_t>(out.nameLen, CLIX_GROUP_NAME_BYTES));
+  return true;
+}
+
+uint16_t LibraryIndexFile::groupForRow(const GroupKind kind, const uint16_t row) {
+  constexpr uint16_t NONE = 0xFFFF;
+  uint16_t lo = 0;
+  uint16_t hi = groupCount(kind);
+  // Last group whose start <= row.
+  while (lo < hi) {
+    const uint16_t mid = static_cast<uint16_t>(lo + (hi - lo) / 2);
+    ClixGroup group{};
+    if (!readGroup(kind, mid, group)) return NONE;
+    if (group.start <= row)
+      lo = static_cast<uint16_t>(mid + 1);
+    else
+      hi = mid;
+  }
+  return lo == 0 ? NONE : static_cast<uint16_t>(lo - 1);
+}
+
+uint16_t LibraryIndexFile::readSeriesNumber(const uint16_t ordinal) {
+  uint16_t number = CLIX_NO_SERIES_NUMBER;
+  if (!opened || ordinal >= head.bookCount || !readAt(seriesNumberOffset(head, ordinal), &number, sizeof(number))) {
+    return CLIX_NO_SERIES_NUMBER;
+  }
+  return number;
+}
+
 uint16_t LibraryIndexFile::ordinalForRow(const SortOrder order, const uint16_t row) {
   constexpr uint16_t NONE = 0xFFFF;
-  if (!opened || row >= head.bookCount) return NONE;
+  if (!opened || row >= rowCount(order)) return NONE;
 
   switch (order) {
+    case SortOrder::SeriesAsc:
+    case SortOrder::GenreAsc: {
+      uint16_t ordinal = NONE;
+      const uint32_t at = order == SortOrder::SeriesAsc ? seriesOrderOffset(head, row) : genreOrderOffset(head, row);
+      return readAt(at, &ordinal, sizeof(ordinal)) && ordinal < head.bookCount ? ordinal : NONE;
+    }
     case SortOrder::TitleAsc:
       // The record section IS in title order, so this costs no storage and no
       // read at all.
@@ -230,6 +283,10 @@ bool LibraryIndexFile::readTitle(const ClixRecord& record, std::string& out) {
 bool LibraryIndexFile::readSourceAuthor(const ClixRecord& record, std::string& out) {
   return readBlobField(record, 2, out);
 }
+
+bool LibraryIndexFile::readSeries(const ClixRecord& record, std::string& out) { return readBlobField(record, 3, out); }
+
+bool LibraryIndexFile::readGenre(const ClixRecord& record, std::string& out) { return readBlobField(record, 4, out); }
 
 bool LibraryIndexFile::readPath(const ClixRecord& record, std::string& out) {
   out.clear();

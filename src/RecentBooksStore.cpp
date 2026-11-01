@@ -9,6 +9,19 @@
 #include <algorithm>
 #include <iterator>
 
+#include "CrossPointSettings.h"
+
+namespace {
+// Last path component without its extension.
+std::string filenameStem(const std::string& path) {
+  const size_t slash = path.find_last_of('/');
+  std::string name = slash == std::string::npos ? path : path.substr(slash + 1);
+  const size_t dot = name.find_last_of('.');
+  if (dot != std::string::npos && dot > 0) name.resize(dot);
+  return name;
+}
+}  // namespace
+
 void RecentBooksStore::toJson(JsonDocument& doc) const {
   JsonArray arr = doc["books"].to<JsonArray>();
   for (const auto& book : recentBooks) {
@@ -104,6 +117,19 @@ bool RecentBooksStore::updatePath(const std::string& oldPath, const std::string&
     saveToFile();
   }
   return true;
+}
+
+void RecentBooksStore::clearCover(const std::string& path) {
+  auto it =
+      std::find_if(recentBooks.begin(), recentBooks.end(), [&](const RecentBook& book) { return book.path == path; });
+  if (it == recentBooks.end()) return;
+  it->coverBmpPath.clear();
+  saveToFile();
+}
+
+std::string RecentBooksStore::displayTitle(const RecentBook& book) {
+  if (SETTINGS.libraryUseMetadata != 0 && !book.title.empty()) return book.title;
+  return filenameStem(book.path);
 }
 
 bool RecentBooksStore::isMissing(const RecentBook& book) { return !Storage.exists(book.path.c_str()); }

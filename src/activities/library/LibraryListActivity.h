@@ -76,6 +76,9 @@ class LibraryListActivity final : public UiTabListActivity {
   void openBookByPath(const std::string& path);
   void promptRebuildIndex();
   void resetAfterRebuild();
+  // Opens the per-book details screen; refreshes the index afterwards when an
+  // edit marked it stale.
+  void openManageBook(const std::string& path);
   // Recent-row long-press menu: open / remove from recents / delete / rebuild.
   void showRecentBookOptions(int entry);
   // Tab-strip long-press menu: Search / Reverse sort.
@@ -109,6 +112,10 @@ class LibraryListActivity final : public UiTabListActivity {
   bool buildGroupStarts();
   int groupForBook(int bookEntry) const;
   bool groupable() const;
+  // Series / Genre tabs: group of a row of the view's order (cached; sequential
+  // rows cost no reads), and its display name. 0xFFFF / false when unreadable.
+  uint16_t viewGroupForRow(uint16_t row);
+  bool viewGroupName(uint16_t group, std::string& out);
 
   // Screen building
   void buildHeader(UiScreen& screen);
@@ -144,6 +151,10 @@ class LibraryListActivity final : public UiTabListActivity {
   // Set when the walk finished but the sort did not, so the screen can say the
   // order is discovery order rather than silently showing a wrong one.
   bool degraded = false;
+  // Last group looked up by viewGroupForRow and the view rows it spans.
+  uint16_t cachedGroup = 0xFFFF;
+  uint16_t cachedGroupStart = 0;
+  uint16_t cachedGroupEnd = 0;
 
   // Rows surviving the current query, as positions in the active sort order.
   // Empty query means no filtering and this owns no allocation, so the ordinary

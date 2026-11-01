@@ -50,6 +50,13 @@ class RecentBooksStore : public PersistableStore<RecentBooksStore> {
   bool updatePath(const std::string& oldPath, const std::string& newPath, const std::string& oldCachePath,
                   const std::string& newCachePath, bool save = true);
 
+  // Drop the stored cover path of an entry without touching its title/author.
+  void clearCover(const std::string& path);
+
+  // Title to show for an entry: the filename stem when "Use Book Metadata" is
+  // off (so toggling takes effect without reopening books), else the stored title.
+  static std::string displayTitle(const RecentBook& book);
+
   // True if the book's backing file is no longer present on the SD card.
   static bool isMissing(const RecentBook& book);
 

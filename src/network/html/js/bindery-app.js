@@ -838,19 +838,6 @@
     return `ws://${location.hostname}:${port + 1}/`;
   }
 
-  async function ensureFolder(path) {
-    const segs = path.split('/').filter(Boolean);
-    let parent = '/';
-    for (const s of segs) {
-      const fd = new FormData();
-      fd.append('name', s);
-      fd.append('path', parent);
-      try { await fetch('/mkdir', { method: 'POST', body: fd }); } catch (_) { /* exists, or the upload will say */ }
-      parent = parent.replace(/\/?$/, '/') + s;
-    }
-    return '/' + segs.join('/');
-  }
-
   class ReaderSink {
     constructor(folder) { this.folder = folder; }
 
@@ -1133,7 +1120,7 @@
     try {
       if (toReader) {
         progress('Getting the folder ready…', 0);
-        folder = await ensureFolder($('folder').value.trim() || '/');
+        folder = await ui.ensureFolder($('folder').value || '/');
       }
       if (state.mode === 'manga') {
         const o = mangaOptions();
@@ -1345,6 +1332,8 @@
   let directionTouched = false;
 
   function init() {
+    // Turns #folder into a card-folder select; its .value keeps reading and writing the path.
+    ui.folderPicker($('folder'), { value: '/Manga' });
     restoreSettings();
     $('customSize').hidden = $('device').value !== 'custom';
     $('formatHint').textContent = FORMAT_HINTS[$('format').value];
@@ -1376,7 +1365,7 @@
     $('coverMode').addEventListener('change', () => { $('coverFile').hidden = $('coverMode').value !== 'image'; schedulePreview(); });
     $('coverFile').addEventListener('change', (e) => { state.cover = e.target.files[0] || null; schedulePreview(); });
 
-    for (const id of ['device', 'customW', 'customH', 'format', 'direction', 'spread', 'trim', 'fill', 'autoLevels', 'contrast', 'gamma', 'dither', 'chapters', 'gutenberg', 'bTitle', 'bAuthor', 'bDevice', 'lang', 'join']) {
+    for (const id of ['device', 'customW', 'customH', 'format', 'direction', 'spread', 'trim', 'fill', 'autoLevels', 'contrast', 'gamma', 'dither', 'chapters', 'gutenberg', 'bTitle', 'bAuthor', 'bDevice', 'lang', 'join', 'folder']) {
       $(id).addEventListener('change', () => { saveSettings(); estimate(); schedulePreview(); });
     }
     for (const id of ['bTitle', 'bAuthor']) $(id).addEventListener('input', schedulePreview);

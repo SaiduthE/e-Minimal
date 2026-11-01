@@ -158,5 +158,206 @@
     });
   }
 
-  window.ui = { toast: toast, confirm: confirm, openModal: openModal, closeModal: closeModal };
+  /* Folders: makes a path one segment at a time (POST /mkdir answers 400 "already exists" for a segment that is there) */
+  var NEW_FOLDER = '\u0001new';
+  var BAD_NAME = /[\/\\:*?"<>|\u0000-\u001f]/;
+  function joinPath(folder, name) {
+    return (folder === '/' ? '' : folder) + '/' + name;
+  }
+  function mkdir(parent, name) {
+    var fd = new FormData();
+    fd.append('name', name);
+    fd.append('path', parent);
+    return fetch('/mkdir', { method: 'POST', body: fd }).then(function (r) {
+      if (r.ok) return;
+      return r.text().then(function (t) {
+        if (!/already exists/i.test(t)) throw new Error(t || ('Could not create ' + joinPath(parent, name)));
+      });
+    });
+  }
+  function ensureFolder(path) {
+    var segs = String(path || '').split('/').filter(Boolean);
+    var parent = '/';
+    var p = Promise.resolve();
+    segs.forEach(function (s) {
+      var at = parent;
+      p = p.then(function () { return mkdir(at, s); });
+      parent = joinPath(parent, s);
+    });
+    return p.then(function () { return '/' + segs.join('/'); });
+  }
+
+  /* New-folder dialog: resolves to the created path, or '' when cancelled */
+  var folderEl;
+  function askNewFolder(parent) {
+    if (!folderEl) {
+      folderEl = d.createElement('div');
+      folderEl.className = 'modal-backdrop';
+      folderEl.innerHTML =
+        '<form class="modal" aria-labelledby="uiFolderTitle">' +
+          '<div class="modal-head"><h2 id="uiFolderTitle">New folder</h2></div>' +
+          '<div class="modal-body">' +
+            '<p class="field-hint folder-parent"></p>' +
+            '<div class="field"><label for="uiFolderName">Name</label>' +
+            '<input type="text" id="uiFolderName" maxlength="100" autocomplete="off" autofocus></div>' +
+            '<p class="field-hint folder-err" role="alert"></p>' +
+          '</div>' +
+          '<div class="modal-foot"><button type="button" class="btn" data-x="cancel">Cancel</button>' +
+          '<button type="submit" class="btn btn-primary">Create</button></div></form>';
+      body.appendChild(folderEl);
+    }
+    var form = folderEl.querySelector('form'), input = folderEl.querySelector('input');
+    var err = folderEl.querySelector('.folder-err'), go = form.querySelector('[type=submit]');
+    folderEl.querySelector('.folder-parent').textContent = 'In ' + parent;
+    input.value = '';
+    err.textContent = '';
+    return new Promise(function (resolve) {
+      form.querySelector('[data-x=cancel]').onclick = function () { closeModal(folderEl, ''); };
+      form.onsubmit = function (e) {
+        e.preventDefault();
+        var name = input.value.trim();
+        if (!name || BAD_NAME.test(name) || name.charAt(0) === '.') {
+          err.textContent = 'Use a name without / \\ : * ? " < > | and not starting with a dot.';
+          return;
+        }
+        go.disabled = true;
+        mkdir(parent, name).then(function () { closeModal(folderEl, joinPath(parent, name)); },
+          function (ex) { err.textContent = ex.message; })
+          .then(function () { go.disabled = false; });
+      };
+      openModal(folderEl, { onClose: function (r) { resolve(r || ''); } });
+    });
+  }
+
+  function sortKey(p) { return p.toLowerCase().split('/'); }
+  function byPath(a, b) {
+    var x = sortKey(a), y = sortKey(b);
+    for (var i = 0; i < x.length && i < y.length; i++) {
+      if (x[i] !== y[i]) return x[i] < y[i] ? -1 : 1;
+    }
+    return x.length - y.length;
+  }
+
+  /* Fills a <select> with the card's folders plus "New folder…". opts: {value, onChange(path)}.
+     sel.value reads and writes the chosen path, so pages can treat it like the text field it replaces. */
+  function folderPicker(sel, opts) {
+    opts = opts || {};
+    var list = ['/'], current = '/', busy = false;
+    var nativeValue = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
+    function norm(p) { var s = String(p || '').split('/').filter(Boolean); return '/' + s.join('/'); }
+    function render() {
+      var all = list.slice();
+      if (all.indexOf(current) < 0) all.push(current);
+      all.sort(byPath);
+      sel.innerHTML = '';
+      all.forEach(function (p) {
+        var o = d.createElement('option');
+        var depth = p === '/' ? 0 : p.split('/').length - 1;
+        var leaf = p === '/' ? '/ (SD card)' : p.slice(p.lastIndexOf('/') + 1);
+        o.value = p;
+        o.textContent = new Array(depth + 1).join('  ') + leaf + (list.indexOf(p) < 0 ? ' (new)' : '');
+        sel.appendChild(o);
+      });
+      var n = d.createElement('option');
+      n.value = NEW_FOLDER;
+      n.textContent = 'New folder…';
+      sel.appendChild(n);
+      nativeValue.set.call(sel, current);
+    }
+    function load() {
+      return fetch('/api/folders', { cache: 'no-store' })
+        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+        .then(function (j) { list = (j.folders && j.folders.length) ? j.folders : ['/']; })
+        .catch(function () { list = ['/']; });
+    }
+    function setPath(p, fire) {
+      current = norm(p);
+      render();
+      // The change listener below reports it to opts.onChange.
+      if (fire) sel.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    Object.defineProperty(sel, 'value', {
+      configurable: true,
+      get: function () { return nativeValue.get.call(sel) === NEW_FOLDER ? current : nativeValue.get.call(sel); },
+      set: function (v) { setPath(v, false); }
+    });
+    sel.addEventListener('change', function (e) {
+      if (busy) { e.stopImmediatePropagation(); return; }
+      if (nativeValue.get.call(sel) !== NEW_FOLDER) {
+        current = nativeValue.get.call(sel);
+        if (opts.onChange) opts.onChange(current);
+        return;
+      }
+      // The dialog is not a real change: hide this event until a folder exists.
+      e.stopImmediatePropagation();
+      busy = true;
+      askNewFolder(current).then(function (made) {
+        busy = false;
+        if (!made) { render(); return; }
+        return load().then(function () { setPath(made, true); });
+      });
+    }, true);
+    current = norm(opts.value);
+    render();
+    var ready = load().then(function () { render(); });
+    return {
+      ready: ready,
+      get value() { return current; },
+      set: function (p) { setPath(p, false); },
+      reload: function () { return load().then(render); },
+      ensure: function () { return ensureFolder(current); }
+    };
+  }
+
+  /* Book names: a readable title and a series number from a file name */
+  var TRAIL_PREFIXED = /^(.+?)[\s,:(\[\-–]*(?:book|vol(?:ume)?\.?|part|bk\.?)\s*(\d{1,3}(?:\.\d{1,2})?)[)\]]?$/i;
+  var TRAIL_HASH = /^(.+?)[\s,:(\[\-–]*#\s*(\d{1,3}(?:\.\d{1,2})?)[)\]]?$/;
+  var TRAIL_BARE = /^(.+?)\s+(\d{1,2}(?:\.\d)?)$/;
+  var LEAD_PREFIXED = /^(?:book|vol(?:ume)?\.?|part|bk\.?|#)\s*(\d{1,3}(?:\.\d{1,2})?)\s*[-–:]*\s*(.+)$/i;
+  var LEAD_BARE = /^(\d{1,3}(?:\.\d)?)\s*[-–:.)]\s*(.+)$/;
+  function cleanBookName(fileName) {
+    var stem = String(fileName).replace(/\.[A-Za-z0-9]{1,5}$/, '');
+    var m = LEAD_BARE.exec(stem);
+    var s = stem.replace(/[_.]+/g, ' ').replace(/\s+/g, ' ').trim();
+    var num = '', title = s;
+    if (m) { num = m[1]; title = m[2].replace(/[_.]+/g, ' ').replace(/\s+/g, ' ').trim(); }
+    else if ((m = LEAD_PREFIXED.exec(s))) { num = m[1]; title = m[2].trim(); }
+    else if ((m = TRAIL_PREFIXED.exec(s)) || (m = TRAIL_HASH.exec(s)) || (m = TRAIL_BARE.exec(s))) {
+      num = m[2]; title = m[1].replace(/[\s,:(\[\-–]+$/, '').trim();
+    }
+    if (!title || /^(book|vol|volume|part|bk)$/i.test(title)) { title = s; num = ''; }
+    if (num) num = String(parseFloat(num));
+    return { title: title, num: num };
+  }
+
+  /* Open Library search (called from the browser, so the phone needs internet).
+     Resolves to [{title, author, year, genre}]. Rejects with a readable message. */
+  function searchOpenLibrary(query) {
+    var ctl = new AbortController();
+    var timer = setTimeout(function () { ctl.abort(); }, 8000);
+    var url = 'https://openlibrary.org/search.json?q=' + encodeURIComponent(query) +
+      '&fields=title,author_name,first_publish_year,subject,key&limit=8';
+    return fetch(url, { signal: ctl.signal }).then(function (r) {
+      if (!r.ok) throw new Error('Open Library answered ' + r.status + '.');
+      return r.json();
+    }).then(function (j) {
+      return (j.docs || []).map(function (x) {
+        return {
+          title: x.title || '',
+          author: (x.author_name && x.author_name[0]) || '',
+          year: x.first_publish_year || '',
+          genre: (x.subject && x.subject[0]) || ''
+        };
+      });
+    }, function (e) {
+      if (e && e.message && /^Open Library/.test(e.message)) throw e;
+      throw new Error('No internet on this connection. Fetching details needs a phone or computer that is online (not only on the reader’s hotspot).');
+    }).then(function (r) { clearTimeout(timer); return r; }, function (e) { clearTimeout(timer); throw e; });
+  }
+
+  window.ui = {
+    toast: toast, confirm: confirm, openModal: openModal, closeModal: closeModal,
+    folderPicker: folderPicker, ensureFolder: ensureFolder, joinPath: joinPath,
+    cleanBookName: cleanBookName, searchOpenLibrary: searchOpenLibrary
+  };
 })();

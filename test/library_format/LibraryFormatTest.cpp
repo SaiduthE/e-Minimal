@@ -30,7 +30,8 @@ TEST(LibraryFormat, StructSizesAreFrozen) {
   EXPECT_EQ(sizeof(ClixHeader), 64u);
   EXPECT_EQ(sizeof(ClixRecord), 128u);
   EXPECT_EQ(sizeof(ClixFolderHeader), 1u);
-  EXPECT_EQ(CLIX_FORMAT_VERSION, 2u);
+  EXPECT_EQ(CLIX_FORMAT_VERSION, 3u);
+  EXPECT_EQ(sizeof(ClixGroup), 96u);
 }
 
 TEST(LibraryFormat, RecordsTileSectorsExactly) {
@@ -90,7 +91,10 @@ TEST(LibraryFormat, SizeArithmeticMatchesTheSpecTable) {
   EXPECT_EQ(h.folderStart, 512u);
   EXPECT_EQ(h.recordStart, 2048u);
   EXPECT_EQ(h.permStart, 2048u + 25600u);
-  EXPECT_EQ(h.selfSize, 44672u);
+  // 200 u16 series numbers sit in the extra section between permutations and names.
+  EXPECT_EQ(h.extraStart, 28672u);
+  EXPECT_EQ(h.nameStart, 29184u);
+  EXPECT_EQ(h.selfSize, 45184u);
 }
 
 TEST(LibraryFormatValidation, AcceptsAWellFormedHeader) {

@@ -48,12 +48,17 @@ class Epub {
   std::string& getBasePath() { return contentBasePath; }
   bool load(bool buildIfMissing = true, bool skipLoadingCss = false);
   bool loadMetadata(std::string& title, std::string& author);
+  bool loadMetadata(std::string& title, std::string& author, std::string& series, std::string& seriesIndex,
+                    std::string& genre);
   bool clearCache() const;
   void setupCacheDir() const;
   const std::string& getCachePath() const;
   const std::string& getPath() const;
   const std::string& getTitle() const;
   const std::string& getAuthor() const;
+  const std::string& getSeries() const;
+  const std::string& getSeriesIndex() const;
+  const std::string& getGenre() const;
   const std::string& getLanguage() const;
   std::string getCoverBmpPath(bool cropped = false, bool originalThresholds = false) const;
   bool generateCoverBmp(bool cropped = false, bool originalThresholds = false) const;

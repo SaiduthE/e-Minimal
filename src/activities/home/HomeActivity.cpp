@@ -22,9 +22,11 @@
 #include "MappedInputManager.h"
 #include "OpdsServerStore.h"
 #include "RecentBooksStore.h"
+#include "activities/library/ManageBookActivity.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
 #include "util/FiveButtonInput.h"
+#include "util/LibraryIndexRefresh.h"
 
 namespace {
 // The e-Minimal home walks flat: Up/Down go current book -> grid row by row
@@ -62,6 +64,7 @@ void HomeActivity::loadRecentBooks(int maxBooks) {
     }
 
     recentBooks.push_back(book);
+    recentBooks.back().title = RecentBooksStore::displayTitle(book);
   }
 }
 
@@ -79,15 +82,9 @@ void HomeActivity::fillCoverGridFromLibrary() {
   }
   auto& index = reader->index;
   auto& record = reader->record;
-  if (!index.open(library::libraryIndexPath())) {
-    index.close();
-    GUI.drawPopup(renderer, tr(STR_LIBRARY_REBUILDING));
-    library::BuildStats stats;
-    if (!library::buildLibraryIndex("/", stats, SETTINGS.libraryUseMetadata != 0) ||
-        !index.open(library::libraryIndexPath())) {
-      LOG_ERR("HOME", "Cannot populate cover grid from library");
-      return;
-    }
+  if (!library::ensureLibraryIndexFresh(renderer, index)) {
+    LOG_ERR("HOME", "Cannot populate cover grid from library");
+    return;
   }
   for (uint16_t row = 0; row < index.bookCount() && recentBooks.size() < static_cast<size_t>(gridMaxBooks()); ++row) {
     RecentBook book;
@@ -202,7 +199,7 @@ void HomeActivity::loadRecentCovers(int coverHeight) {
           GUI.fillPopupProgress(renderer, popupRect, 10 + progress * (90 / recentBooks.size()));
           bool success = epub.generateThumbBmp(thumbHeight);
           if (!success) {
-            RECENT_BOOKS.updateBook(book.path, book.title, book.author, "");
+            RECENT_BOOKS.clearCover(book.path);
             book.coverBmpPath = "";
           }
           coverRendered = false;
@@ -219,7 +216,7 @@ void HomeActivity::loadRecentCovers(int coverHeight) {
             GUI.fillPopupProgress(renderer, popupRect, 10 + progress * (90 / recentBooks.size()));
             bool success = xtc.generateThumbBmp(thumbHeight);
             if (!success) {
-              RECENT_BOOKS.updateBook(book.path, book.title, book.author, "");
+              RECENT_BOOKS.clearCover(book.path);
               book.coverBmpPath = "";
             }
             coverRendered = false;
@@ -344,6 +341,14 @@ void HomeActivity::loop() {
         break;
     }
   };
+
+  // Hold Select on a book opens Manage book. wasLongPressed() fires mid-hold and
+  // swallows the release that follows, so it cannot also open the book.
+  if (selectorIndex < recentBooks.size() &&
+      mappedInput.wasLongPressed(MappedInputManager::Button::Confirm, COVER_GRID_JUMP_MS)) {
+    onManageBook(recentBooks[selectorIndex].path);
+    return;
+  }
 
   // Cover grid home splits navigation by button group (see below); the flat
   // next/previous cycle is for the classic list home, for the e-Minimal
@@ -600,6 +605,15 @@ void HomeActivity::render(RenderLock&&) {
 }
 
 void HomeActivity::onSelectBook(const std::string& path) { activityManager.goToReader(path); }
+
+void HomeActivity::onManageBook(const std::string& path) {
+  auto manage = makeUniqueNoThrow<ManageBookActivity>(renderer, mappedInput, path);
+  if (!manage) {
+    LOG_ERR("HOME", "OOM: manage book");
+    return;
+  }
+  startActivityForResult(std::move(manage), [this](const ActivityResult&) { requestUpdate(); });
+}
 
 void HomeActivity::onFileBrowserOpen() { activityManager.goToFileBrowser(); }
 

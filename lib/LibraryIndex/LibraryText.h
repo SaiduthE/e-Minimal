@@ -62,6 +62,15 @@ void foldInto(std::string_view text, std::string& out, bool stripArticle = false
 // number/non-letter. The Library renders 0 as its shared '#' group.
 uint32_t foldedGroupInitial(std::string_view folded);
 
+// Number-aware sort key for already-folded text, written to `out` (at most `cap`
+// bytes, no terminator; returns the length). Every digit run becomes one marker
+// byte, 0x30 + digit count after stripping leading zeros (capped), then those
+// digits, so memcmp orders "book 2" before "book 10" and treats "01" as "1".
+// The marker sits above space and apostrophe and below every letter, which
+// keeps numbers where plain digits already sorted. Output is a sort key only:
+// it is never stored in a record and never shown.
+size_t naturalSortKey(std::string_view folded, char* out, size_t cap);
+
 // Tidy a person's name for DISPLAY, without reordering it.
 //
 // Drops bracketed spans ("George Sand [Sand, George]"), everything after a
