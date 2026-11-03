@@ -42,7 +42,7 @@ class CrossPointState : public PersistableStore<CrossPointState> {
   // Hotspot. Pre-selected the next time the portal opens.
   uint8_t dashboardPortalMode = 0;
 
-  static const char* getFilePath() { return "/.crosspoint/state.json"; }
+  static const char* getFilePath() { return "/.e-minimal/state.json"; }
   void toJson(JsonDocument& doc) const;
   bool fromJson(JsonVariantConst doc);
 

@@ -225,7 +225,7 @@ void XtcReaderActivity::stopStreamTask() {
 }
 
 bool XtcReaderActivity::loadBook() {
-  auto loadedXtc = makeUniqueNoThrow<Xtc>(bookPath, "/.crosspoint");
+  auto loadedXtc = makeUniqueNoThrow<Xtc>(bookPath, "/.e-minimal");
   if (!loadedXtc) {
     LOG_ERR("XTR", "Failed to allocate XTC object");
     return false;

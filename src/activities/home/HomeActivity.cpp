@@ -108,14 +108,14 @@ void HomeActivity::resolveGridCoverPaths() {
     // Constructors only derive cache paths; no metadata parsing or image generation.
     // Keep these large objects off the task stack and release each before the next book.
     if (FsHelpers::hasEpubExtension(book.path)) {
-      auto epub = makeUniqueNoThrow<Epub>(book.path, "/.crosspoint");
+      auto epub = makeUniqueNoThrow<Epub>(book.path, "/.e-minimal");
       if (!epub) {
         LOG_ERR("HOME", "OOM: EPUB thumbnail path");
         continue;
       }
       book.coverBmpPath = epub->getThumbBmpPath();
     } else if (FsHelpers::hasXtcExtension(book.path)) {
-      auto xtc = makeUniqueNoThrow<Xtc>(book.path, "/.crosspoint");
+      auto xtc = makeUniqueNoThrow<Xtc>(book.path, "/.e-minimal");
       if (!xtc) {
         LOG_ERR("HOME", "OOM: XTC thumbnail path");
         continue;
@@ -130,7 +130,7 @@ void HomeActivity::loadGridCover(RecentBook& book, int height, bool& showingLoad
     return;
   // Only one parser lives at a time; EPUB/XTC objects exceed the stack budget.
   if (FsHelpers::hasEpubExtension(book.path)) {
-    auto epub = makeUniqueNoThrow<Epub>(book.path, "/.crosspoint");
+    auto epub = makeUniqueNoThrow<Epub>(book.path, "/.e-minimal");
     if (!epub) {
       LOG_ERR("HOME", "OOM: cover EPUB");
       return;
@@ -146,7 +146,7 @@ void HomeActivity::loadGridCover(RecentBook& book, int height, bool& showingLoad
       return;
     }
   } else if (FsHelpers::hasXtcExtension(book.path)) {
-    auto xtc = makeUniqueNoThrow<Xtc>(book.path, "/.crosspoint");
+    auto xtc = makeUniqueNoThrow<Xtc>(book.path, "/.e-minimal");
     if (!xtc) {
       LOG_ERR("HOME", "OOM: cover XTC");
       return;
@@ -187,7 +187,7 @@ void HomeActivity::loadRecentCovers(int coverHeight) {
       if (!Storage.exists(coverPath.c_str())) {
         // If epub, try to load the metadata for title/author and cover
         if (FsHelpers::hasEpubExtension(book.path)) {
-          Epub epub(book.path, "/.crosspoint");
+          Epub epub(book.path, "/.e-minimal");
           // Skip loading css since we only need metadata here
           epub.load(false, true);
 
@@ -206,7 +206,7 @@ void HomeActivity::loadRecentCovers(int coverHeight) {
           requestUpdate();
         } else if (FsHelpers::hasXtcExtension(book.path)) {
           // Handle XTC file
-          Xtc xtc(book.path, "/.crosspoint");
+          Xtc xtc(book.path, "/.e-minimal");
           if (xtc.load()) {
             // Try to generate thumbnail image for Continue Reading card
             if (!showingLoading) {

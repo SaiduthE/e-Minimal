@@ -33,21 +33,6 @@
           </div>
           <div id="wifi-container"></div>
           <div id="opds-container"></div>
-          <section class="card" id="section-firmware">
-            <h2>Firmware</h2>
-            <p class="empty" style="text-align:left">Install a new build over Wi-Fi. The reader asks for confirmation on its own screen before anything is installed.</p>
-            <div class="list">
-              <div class="row">
-                <label class="row-main" for="fwFile">Firmware file (.bin)</label>
-                <span class="row-control"><input type="file" id="fwFile" accept=".bin"></span>
-              </div>
-              <div class="row actions">
-                <button class="btn btn-sm" id="fwBtn" onclick="uploadFirmware()">Upload</button>
-              </div>
-            </div>
-            <div class="progress" id="fwProgress" hidden><span id="fwBar"></span></div>
-            <p class="row-meta" id="fwStatus"></p>
-          </section>
         </div>
       </div>
 
@@ -360,8 +345,7 @@
       container.innerHTML = html;
       renderSectionNav(sections.concat([
         { id: 'section-wifi', name: 'Wi-Fi networks' },
-        { id: 'section-opds', name: 'OPDS servers' },
-        { id: 'section-firmware', name: 'Firmware' }
+        { id: 'section-opds', name: 'OPDS servers' }
       ]));
       updateSettingsVisibility();
       document.getElementById('save-container').classList.remove('show');
@@ -654,46 +638,6 @@
     } catch (e) {
       showMessage('Could not remove server: ' + e.message, true);
     }
-  }
-
-  // --- Firmware push ---
-  // Streams the .bin to POST /api/firmware (multipart field "firmware"). XHR rather than fetch for upload progress.
-  function uploadFirmware() {
-    const file = document.getElementById('fwFile').files[0];
-    const status = document.getElementById('fwStatus');
-    if (!file) { showMessage('Choose a .bin file first', true); return; }
-    const btn = document.getElementById('fwBtn');
-    const progress = document.getElementById('fwProgress');
-    const bar = document.getElementById('fwBar');
-    const finish = function(text, isError) {
-      btn.disabled = false;
-      progress.hidden = true;
-      status.textContent = text;
-      showMessage(text, isError);
-    };
-    btn.disabled = true;
-    progress.hidden = false;
-    bar.style.width = '0';
-    status.textContent = 'Uploading…';
-
-    const form = new FormData();
-    form.append('firmware', file, file.name);
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', '/api/firmware');
-    xhr.upload.onprogress = function(e) {
-      if (e.lengthComputable) bar.style.width = Math.round(100 * e.loaded / e.total) + '%';
-    };
-    xhr.onload = function() {
-      if (xhr.status === 200) {
-        finish('Uploaded. Confirm on the reader to install.', false);
-      } else {
-        let msg = 'Upload failed';
-        try { msg = JSON.parse(xhr.responseText).error || msg; } catch (e) {}
-        finish(msg, true);
-      }
-    };
-    xhr.onerror = function() { finish('Upload failed: connection lost', true); };
-    xhr.send(form);
   }
 
   // Sequential, not concurrent: the device's web server handles one client

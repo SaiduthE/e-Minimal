@@ -33,7 +33,7 @@ for upstream detail not covered here.
   SdFat/`FsFile`/`SDCardManager` directly (SdFat isn't thread-safe; the HAL
   mutex prevents a FreeRTOS assert panic). `DESTRUCTOR_CLOSES_FILE=1`: don't
   `close()` locals, except before `Storage.remove()` or reopening the same
-  path; close member files in `onExit()`. Debounce `/.crosspoint/` writes.
+  path; close member files in `onExit()`. Debounce `/.e-minimal/` writes.
 - **Activities/tasks.** Activities are heap-allocated and deleted on exit.
   `vTaskDelete()` tasks in `onExit()` before destruction; free in reverse
   order. Task stacks (bytes): 2048 rendering, 4096 network/EPUB parsing.

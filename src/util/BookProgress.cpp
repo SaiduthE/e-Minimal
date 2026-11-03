@@ -20,7 +20,7 @@ int loadBookProgress(const std::string& path) {
   uint8_t data[10]{};
   if (FsHelpers::hasEpubExtension(path)) {
     // Metadata objects exceed the stack budget; only the featured book is loaded, once per entry.
-    auto epub = makeUniqueNoThrow<Epub>(path, "/.crosspoint");
+    auto epub = makeUniqueNoThrow<Epub>(path, "/.e-minimal");
     if (!epub) {
       LOG_ERR("HOME", "OOM: progress metadata");
       return -1;
@@ -40,7 +40,7 @@ int loadBookProgress(const std::string& path) {
     return std::clamp(static_cast<int>(epub->calculateProgress(spine, fraction) * 100 + 0.5f), 0, 100);
   }
   if (FsHelpers::hasXtcExtension(path)) {
-    auto xtc = makeUniqueNoThrow<Xtc>(path, "/.crosspoint");
+    auto xtc = makeUniqueNoThrow<Xtc>(path, "/.e-minimal");
     if (!xtc) {
       LOG_ERR("HOME", "OOM: XTC progress metadata");
       return -1;
@@ -55,7 +55,7 @@ int loadBookProgress(const std::string& path) {
     return xtc->calculateProgress(page);
   }
   if (FsHelpers::hasTxtExtension(path) || FsHelpers::hasMarkdownExtension(path)) {
-    Txt txt(path, "/.crosspoint");
+    Txt txt(path, "/.e-minimal");
     HalFile file;
     if (!Storage.openFileForRead("HOME", txt.getCachePath() + "/progress.bin", file) || file.read(data, 4) != 4)
       return -1;

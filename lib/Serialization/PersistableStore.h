@@ -46,7 +46,7 @@ class PersistableStoreBase {
   // instead of instantiating serializeJson/deserializeJson in their own TU —
   // that per-TU duplication is exactly what this class exists to prevent.
 
-  // Serializes doc and writes it to path (ensures /.crosspoint exists). Logs
+  // Serializes doc and writes it to path (ensures /.e-minimal exists). Logs
   // on failure. The bytes go to a sibling .tmp that is renamed into place, so
   // a reset mid-write leaves the previous file, never a truncated one. With
   // keepBackup the previous file is first rotated to .bak (only when it starts

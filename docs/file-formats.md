@@ -1,6 +1,8 @@
 # File Formats
 
-These formats describe the SD-card cache files under `/.crosspoint/epub_<hash>/`.
+These formats describe the SD-card cache files under `/.e-minimal/epub_<hash>/`.
+
+The folder was `/.crosspoint` before e-Minimal 1.1.0. The first boot on a card that has it renames the whole folder to `/.e-minimal` (`migrateLegacyDataDir` in `main.cpp`), so settings, caches and the library index carry over; the file layouts below are unchanged. A card with both folders keeps the old one untouched.
 All POD fields are written in the ESP32 little-endian representation used by
 `Serialization.h`; strings are length-prefixed UTF-8.
 
@@ -427,7 +429,7 @@ if (parsedSize != fileSize) {
 }
 ```
 
-## CLX1 — library index (`.crosspoint/library.idx`)
+## CLX1 — library index (`.e-minimal/library.idx`)
 
 Written by `lib/LibraryIndex/LibraryBuilder.cpp`, read by `LibraryIndexFile`. One
 file describing every book on the card, so the shelf can sort and search
@@ -484,7 +486,7 @@ with no series or genre appear in neither view. A series or genre longer than
 the staging fields (96 / 64 bytes) is cut at a UTF-8 boundary.
 
 A book's effective title, author, series, seriesNumber and genre are its user
-override (`/.crosspoint/meta/<hash>.json`, lib/BookMeta) where non-empty, else the
+override (`/.e-minimal/meta/<hash>.json`, lib/BookMeta) where non-empty, else the
 EPUB's own value, else the filename for the title. Overrides apply even when
 "Use Book Metadata" is off.
 
@@ -538,9 +540,9 @@ book identity. Metadata is reused only when the fingerprint, size, nonzero FAT
 timestamp, fold version, metadata mode, and expected extraction status agree.
 EPUBs with a zero timestamp or a previous extraction failure are parsed again.
 
-A book whose hash is listed in `/.crosspoint/meta/reenrich.bin` (appended by
+A book whose hash is listed in `/.e-minimal/meta/reenrich.bin` (appended by
 every override edit) is not reused even if its size and timestamp match. The
-builder reads that file and one listing of `/.crosspoint/meta/` before the walk
+builder reads that file and one listing of `/.e-minimal/meta/` before the walk
 into sorted hash sets, so a full rebuild finds overrides without a per-book
 `exists()`; the file is deleted after a successful build.
 
@@ -567,17 +569,17 @@ make a real book disappear.
 `selfSize` is the expected file size. Comparing it against the real one is a free
 truncation guard: a build cut short by a power failure cannot pass.
 
-## Highlights — `/.crosspoint/highlights/<book key>.hl`
+## Highlights — `/.e-minimal/highlights/<book key>.hl`
 
 Written by `HighlightStore` (`src/util/HighlightStore.cpp`). One file per book,
 kept sorted by spine index, then by start offset. It lives beside the book
-cache, not inside `/.crosspoint/epub_<hash>/`.
+cache, not inside `/.e-minimal/epub_<hash>/`.
 
 ### Book key
 
 The key is the one the bookmark file uses (`BookmarkUtil::getBookmarkPath`):
 the book path without its leading `/`, with `/` and `\` replaced by `_`, and the
-final extension removed. `/Books/Dune.epub` gives `/.crosspoint/highlights/Books_Dune.hl`.
+final extension removed. `/Books/Dune.epub` gives `/.e-minimal/highlights/Books_Dune.hl`.
 
 ### Layout
 

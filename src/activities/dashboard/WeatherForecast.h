@@ -41,7 +41,7 @@ struct WeatherForecast {
   uint8_t dayCount = 0;
 
   bool matches(float lat, float lon, bool wantFahrenheit) const;
-  // The on-card cache (/.crosspoint/weather.json), written after each fetch
+  // The on-card cache (/.e-minimal/weather.json), written after each fetch
   // so a reboot shows the last forecast at once.
   void toJson(JsonDocument& doc) const;
   bool fromJson(JsonVariantConst doc);
@@ -49,7 +49,7 @@ struct WeatherForecast {
 
 namespace weather {
 
-constexpr const char* CACHE_PATH = "/.crosspoint/weather.json";
+constexpr const char* CACHE_PATH = "/.e-minimal/weather.json";
 
 // False until something set the system clock (a forecast fetch does).
 bool clockValid();

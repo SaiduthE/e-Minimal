@@ -60,7 +60,7 @@ void ManageBookActivity::loadDetails() {
   std::string bookGenre;
   if (FsHelpers::hasEpubExtension(bookPath)) {
     // Epub exceeds the stack budget; it lives only for this block.
-    auto epub = makeUniqueNoThrow<Epub>(bookPath, "/.crosspoint");
+    auto epub = makeUniqueNoThrow<Epub>(bookPath, "/.e-minimal");
     if (!epub) {
       LOG_ERR("MANAGE", "OOM: epub metadata");
     } else if (epub->load(false, true)) {

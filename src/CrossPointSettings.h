@@ -469,7 +469,6 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   // Security (Global Settings > Security). Device-only: never exposed or writable through the web settings API.
   uint8_t webAccessCode = 1;          // sign-in code on the phone page (0 = Off, 1 = On)
   uint8_t webAccessLevel = 0;         // 0 Full, 1 Upload only, 2 Read only
-  uint8_t webFirmwareInstall = 0;     // accept a firmware image pushed over Wi-Fi
   uint8_t webDav = 0;                 // serve WebDAV during File Transfer
   uint8_t networkAnnounce = 1;        // mDNS name and UDP discovery on the network
   uint8_t hotspotPasswordMode = 0;    // 0 keep the saved passphrase, 1 new one each session
@@ -536,7 +535,7 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   // Unlocked for the same reason as statusBarSpec(); see the note above.
   ReaderRenderSpec readerRenderSpec(uint16_t viewportWidth, uint16_t viewportHeight) const;
 
-  static const char* getFilePath() { return "/.crosspoint/settings.json"; }
+  static const char* getFilePath() { return "/.e-minimal/settings.json"; }
   void toJson(JsonDocument& doc) const;
   bool fromJson(JsonVariantConst doc);
 

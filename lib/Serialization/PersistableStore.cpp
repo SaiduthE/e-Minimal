@@ -42,7 +42,7 @@ bool readDocAt(const char* path, JsonDocument& doc, bool& existed) {
 }  // namespace
 
 bool PersistableStoreBase::writeDocToFile(const char* path, const JsonDocument& doc, const bool keepBackup) {
-  Storage.mkdir("/.crosspoint");
+  Storage.mkdir("/.e-minimal");
   String json;
   serializeJson(doc, json);
   // The SD manager's writeFile() removes the old file before it creates the

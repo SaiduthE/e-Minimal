@@ -61,7 +61,7 @@ struct CustomLayout {
   bool fromJson(JsonObjectConst in);
 };
 
-// Settings for the Dashboard app, on SD at /.crosspoint/dashboards.json: the
+// Settings for the Dashboard app, on SD at /.e-minimal/dashboards.json: the
 // layouts, the one in use, and what the widgets show. The web interface's
 // Dashboards page writes it (/api/dashboards); the device reads it with
 // loadFromFile(). Without a file the three starting layouts are there. Which
@@ -99,7 +99,7 @@ class DashboardConfigStore : public PersistableStore<DashboardConfigStore> {
   std::string carouselFolder = DEFAULT_CAROUSEL_FOLDER;
   uint16_t carouselIntervalMinutes = DEFAULT_CAROUSEL_MINUTES;
 
-  static const char* getFilePath() { return "/.crosspoint/dashboards.json"; }
+  static const char* getFilePath() { return "/.e-minimal/dashboards.json"; }
   void toJson(JsonDocument& doc) const;
   bool fromJson(JsonVariantConst doc);
 

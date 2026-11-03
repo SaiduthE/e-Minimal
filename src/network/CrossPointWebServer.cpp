@@ -11,7 +11,6 @@
 #include <Logging.h>
 #include <Memory.h>
 #include <WiFi.h>
-#include <esp_ota_ops.h>
 #include <mbedtls/base64.h>
 
 #include <algorithm>
@@ -842,24 +841,6 @@ void CrossPointWebServer::begin() {
     PhonePage::sendStatic(*server, pdf_worker_minJs, pdf_worker_minJsCompressedSize, pdf_worker_minJsETag,
                           "application/javascript");
   });
-
-  // Firmware push from a PC (tools/ota_push.py); the reader asks for confirmation before installing.
-  // Off unless the reader allows it (Security settings); full access only.
-  server->on(
-      "/api/firmware", HTTP_POST,
-      [this] {
-        if (!guard(WebAccess::Modify, RouteKind::Api)) return;
-        if (!security.allowFirmware) {
-          sendJsonError(*server, 403, "Firmware install over Wi-Fi is off on the reader");
-          return;
-        }
-        handleFirmwareUploadDone();
-      },
-      [this] {
-        if (security.allowFirmware && check(WebAccess::Modify, RouteKind::Api, false) == Verdict::Ok) {
-          handleFirmwareUploadData();
-        }
-      });
 
   // Font management endpoints
   route("/fonts", HTTP_GET, WebAccess::Read, RouteKind::Page, [this] { handleFontsPage(); });
@@ -1954,7 +1935,7 @@ void CrossPointWebServer::handleGetBookMeta() const {
   if (FsHelpers::hasEpubExtension(path)) {
     if (ESP.getMaxAllocHeap() >= BOOK_META_MIN_HEAP) {
       // Scoped: the parsed Epub is released before the response is built, never kept across requests.
-      Epub epub(path.c_str(), "/.crosspoint");
+      Epub epub(path.c_str(), "/.e-minimal");
       if (!epub.loadMetadata(title, author, series, seriesIndex, genre)) {
         title.clear();
         author.clear();
@@ -2864,159 +2845,6 @@ void CrossPointWebServer::onWebSocketEvent(uint8_t num, WStype_t type, uint8_t* 
   }
 }
 
-// --- Firmware push ---
-
-namespace {
-constexpr const char* FIRMWARE_TEMP_PATH = "/.crosspoint/ota/firmware.part";
-constexpr const char* FIRMWARE_DIR = "/.crosspoint/ota";
-constexpr size_t FIRMWARE_MIN_SIZE = 64 * 1024;
-constexpr uint8_t ESP_IMAGE_MAGIC = 0xE9;
-}  // namespace
-
-bool CrossPointWebServer::takeStagedFirmware(size_t& size) {
-  if (stagedFirmwareSize == 0) return false;
-  size = stagedFirmwareSize;
-  stagedFirmwareSize = 0;
-  return true;
-}
-
-void CrossPointWebServer::handleFirmwareUploadData() {
-  HTTPUpload& up = server->upload();
-  FirmwareUploadState& fw = firmwareUpload;
-
-  switch (up.status) {
-    case UPLOAD_FILE_START: {
-      resetTaskWatchdogIfSubscribed();
-      fw.file = HalFile();
-      fw.size = 0;
-      fw.bufferPos = 0;
-      fw.started = true;
-      fw.ok = false;
-      fw.httpCode = 400;
-      fw.error = nullptr;
-
-      const esp_partition_t* slot = esp_ota_get_next_update_partition(nullptr);
-      if (upload.file.isOpen() || fontUpload.file.isOpen() || wsUploadInProgress) {
-        fw.httpCode = 409;
-        fw.error = "Another upload is in progress";
-      } else if (up.name != "firmware") {
-        fw.error = "Expected multipart field \"firmware\"";
-      } else if (stagedFirmwareSize != 0) {
-        fw.httpCode = 409;
-        fw.error = "A firmware image is already waiting for confirmation";
-      } else if (!slot) {
-        fw.httpCode = 500;
-        fw.error = "No OTA slot available";
-      } else if (!Storage.ensureDirectoryExists(FIRMWARE_DIR)) {
-        fw.httpCode = 500;
-        fw.error = "Could not create the staging folder on the SD card";
-      } else {
-        fw.limit = slot->size;
-        if (Storage.exists(FIRMWARE_TEMP_PATH)) Storage.remove(FIRMWARE_TEMP_PATH);
-        if (!Storage.openFileForWrite("WEB", FIRMWARE_TEMP_PATH, fw.file)) {
-          fw.httpCode = 500;
-          fw.error = "Could not create the staging file on the SD card";
-        }
-      }
-      if (fw.error) {
-        LOG_ERR("WEB", "[FW] rejected: %s", fw.error);
-      } else {
-        LOG_INF("WEB", "[FW] receiving firmware, slot limit %u bytes", static_cast<unsigned>(fw.limit));
-      }
-      break;
-    }
-
-    case UPLOAD_FILE_WRITE: {
-      if (fw.error || !fw.file) break;
-      resetTaskWatchdogIfSubscribed();
-      if (fw.size == 0 && up.currentSize > 0 && up.buf[0] != ESP_IMAGE_MAGIC) {
-        fw.error = "Not an ESP32 firmware image";
-        break;
-      }
-      if (fw.size + up.currentSize > fw.limit) {
-        fw.httpCode = 413;
-        fw.error = "Firmware is larger than the OTA slot";
-        break;
-      }
-      // Batch into the generic upload buffer (idle: checked at START) so SD writes are 4 KB.
-      uint8_t* buf = upload.buffer.data();
-      const uint8_t* src = up.buf;
-      size_t remaining = up.currentSize;
-      while (remaining > 0) {
-        const size_t chunk = std::min(remaining, UploadState::UPLOAD_BUFFER_SIZE - fw.bufferPos);
-        memcpy(buf + fw.bufferPos, src, chunk);
-        fw.bufferPos += chunk;
-        src += chunk;
-        remaining -= chunk;
-        if (fw.bufferPos == UploadState::UPLOAD_BUFFER_SIZE) {
-          if (fw.file.write(buf, fw.bufferPos) != fw.bufferPos) {
-            fw.httpCode = 507;
-            fw.error = "Could not write to the SD card (full?)";
-            break;
-          }
-          fw.bufferPos = 0;
-          resetTaskWatchdogIfSubscribed();
-        }
-      }
-      fw.size += up.currentSize;
-      break;
-    }
-
-    case UPLOAD_FILE_END: {
-      if (!fw.error && fw.file && fw.bufferPos > 0) {
-        if (fw.file.write(upload.buffer.data(), fw.bufferPos) != fw.bufferPos) {
-          fw.httpCode = 507;
-          fw.error = "Could not write to the SD card (full?)";
-        }
-      }
-      fw.bufferPos = 0;
-      if (fw.file.isOpen()) fw.file.close();
-      if (!fw.error && fw.size < FIRMWARE_MIN_SIZE) fw.error = "Firmware file is too small";
-      if (!fw.error) {
-        if (Storage.exists(FIRMWARE_STAGED_PATH)) Storage.remove(FIRMWARE_STAGED_PATH);
-        if (!Storage.rename(FIRMWARE_TEMP_PATH, FIRMWARE_STAGED_PATH)) {
-          fw.httpCode = 500;
-          fw.error = "Could not finalise the staged file";
-        }
-      }
-      if (fw.error) {
-        LOG_ERR("WEB", "[FW] upload failed: %s", fw.error);
-        if (Storage.exists(FIRMWARE_TEMP_PATH)) Storage.remove(FIRMWARE_TEMP_PATH);
-      } else {
-        fw.ok = true;
-        LOG_INF("WEB", "[FW] staged %u bytes at %s", static_cast<unsigned>(fw.size), FIRMWARE_STAGED_PATH);
-      }
-      break;
-    }
-
-    case UPLOAD_FILE_ABORTED: {
-      fw.bufferPos = 0;
-      if (fw.file.isOpen()) fw.file.close();
-      if (Storage.exists(FIRMWARE_TEMP_PATH)) Storage.remove(FIRMWARE_TEMP_PATH);
-      fw.ok = false;
-      fw.error = "Upload aborted";
-      LOG_ERR("WEB", "[FW] upload aborted");
-      break;
-    }
-  }
-}
-
-void CrossPointWebServer::handleFirmwareUploadDone() {
-  FirmwareUploadState& fw = firmwareUpload;
-  if (fw.started && fw.ok) {
-    fw.started = false;
-    fw.ok = false;
-    char json[48];
-    snprintf(json, sizeof(json), "{\"ok\":true,\"size\":%u}", static_cast<unsigned>(fw.size));
-    server->send(200, "application/json", json);
-    stagedFirmwareSize = fw.size;  // the activity prompts for confirmation once this response is out
-    return;
-  }
-  const int code = fw.started ? fw.httpCode : 400;
-  sendJsonError(*server, code, fw.error ? fw.error : "Expected a multipart upload with field \"firmware\"");
-  fw.started = false;
-}
-
 // --- Font management handlers ---
 
 void CrossPointWebServer::handleFontsPage() const {
@@ -3089,7 +2917,7 @@ void CrossPointWebServer::handleFontUploadData() {
       filename.replace(' ', '_');
       // Validate filename: rejects path traversal (../, /, \) and enforces
       // a .cpfont basename of alphanumeric + hyphen + underscore. Without
-      // this an attacker could supply "../../.crosspoint/settings.json" as
+      // this an attacker could supply "../../.e-minimal/settings.json" as
       // a "filename" and have it written outside the fonts directory.
       if (!FontInstaller::isValidCpfontFilename(filename.c_str())) {
         LOG_ERR("WEB", "Invalid font filename: %s", filename.c_str());

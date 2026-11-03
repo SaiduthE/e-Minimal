@@ -97,7 +97,7 @@ Box badgeBox(GfxRenderer& renderer) {
 // What lies under the badge, as the sleep screen left it on the glass: the IT8951
 // loses its memory in deep sleep, so the pixels under the badge are kept on the
 // SD card and the wake puts them back around the badge's rounded border.
-constexpr char WINDOW_FILE[] = "/.crosspoint/badge_window.bin";
+constexpr char WINDOW_FILE[] = "/.e-minimal/badge_window.bin";
 constexpr uint32_t WINDOW_MAGIC = 0x57444742;  // "BGDW"
 constexpr uint16_t WINDOW_VERSION = 1;
 

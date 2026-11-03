@@ -12,7 +12,7 @@ class Page;
 // contiguous range. Ranges use the visible-codepoint offsets of bookmarks
 // (TextBlock::wordVisibleOffset): [start, end) within one spine item.
 //
-// File: /.crosspoint/highlights/<book key>.hl, keyed like the bookmark file
+// File: /.e-minimal/highlights/<book key>.hl, keyed like the bookmark file
 // (BookmarkUtil::getBookmarkPath with a .hl extension). Layout, little endian:
 //   'H' 'L' version(u8 = 1) count(u16), then count x {spine u16, start u32, end u32, snippet[64]}.
 // Writes go to a .tmp file that is renamed over the old one.

@@ -3,13 +3,13 @@
 #include <cstdint>
 
 // User overrides for a book's own (EPUB) metadata, one JSON file per book under
-// /.crosspoint/meta/<16 hex of clixPathHash(path)>.json. An empty field means "not overridden".
+// /.e-minimal/meta/<16 hex of clixPathHash(path)>.json. An empty field means "not overridden".
 //
 // A BookOverride is ~400 bytes: callers must hold it in a member or on the heap
 // (makeUniqueNoThrow<BookOverride>()), never as a local in a deep call chain.
 //
 // Every mutation marks the library index dirty and appends the affected path hashes to
-// /.crosspoint/meta/reenrich.bin (8-byte little-endian uint64 each), so the index builder re-reads those
+// /.e-minimal/meta/reenrich.bin (8-byte little-endian uint64 each), so the index builder re-reads those
 // books even though their file size and mtime did not change.
 namespace bookmeta {
 

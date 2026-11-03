@@ -22,7 +22,6 @@ void WebSession::begin() {
 
   options.requireCode = SETTINGS.webAccessCode != 0;
   options.accessLevel = SETTINGS.webAccessLevel <= 2 ? SETTINGS.webAccessLevel : 0;
-  options.allowFirmware = SETTINGS.webFirmwareInstall != 0;
   options.webdav = SETTINGS.webDav != 0;
   options.discovery = SETTINGS.networkAnnounce != 0;
 

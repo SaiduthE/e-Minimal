@@ -16,7 +16,7 @@ namespace {
 
 // Normalized XHTML staged here for the file-driven parser; truncated on each
 // use, removed after the parse.
-constexpr const char* TMP_HTML_PATH = "/.crosspoint/dicthtml.tmp";
+constexpr const char* TMP_HTML_PATH = "/.e-minimal/dicthtml.tmp";
 
 // ENTRY gate: is there room to start a styled layout at all? Keeps enough
 // contiguous heap for the parser's 16KB SD-font advance scratch plus

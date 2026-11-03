@@ -20,14 +20,14 @@
 namespace library {
 namespace {
 
-constexpr char INDEX_PATH[] = "/.crosspoint/library.idx";
-constexpr char NEW_PATH[] = "/.crosspoint/library.new";
-constexpr char BACKUP_PATH[] = "/.crosspoint/library.bak";
-constexpr char STAGE_PATH[] = "/.crosspoint/library.stage";
-constexpr char DIRTY_PATH[] = "/.crosspoint/library.dirty";
-constexpr char CACHE_DIR[] = "/.crosspoint";
-constexpr char META_DIR[] = "/.crosspoint/meta";
-constexpr char REENRICH_PATH[] = "/.crosspoint/meta/reenrich.bin";
+constexpr char INDEX_PATH[] = "/.e-minimal/library.idx";
+constexpr char NEW_PATH[] = "/.e-minimal/library.new";
+constexpr char BACKUP_PATH[] = "/.e-minimal/library.bak";
+constexpr char STAGE_PATH[] = "/.e-minimal/library.stage";
+constexpr char DIRTY_PATH[] = "/.e-minimal/library.dirty";
+constexpr char CACHE_DIR[] = "/.e-minimal";
+constexpr char META_DIR[] = "/.e-minimal/meta";
+constexpr char REENRICH_PATH[] = "/.e-minimal/meta/reenrich.bin";
 // Sticky fallback when the marker could not be persisted (card unavailable at
 // write time): callers must still see the index as stale until a rebuild clears it.
 bool dirtyInMemory = false;
