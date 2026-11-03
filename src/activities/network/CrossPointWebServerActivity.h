@@ -70,11 +70,6 @@ class CrossPointWebServerActivity final : public Activity {
   void startAccessPoint();
   void startWebServer();
 
-  // A firmware image pushed over Wi-Fi sits staged on the SD card: the install screen asks on the device (info and
-  // a 3 s hold), then installs or discards.
-  void promptFirmwareInstall(size_t size);
-  void installStagedFirmware();
-
  public:
   // landingPath: appended to the page URL the QR and typed fallback show, e.g.
   // "files?edit=%2Fbooks%2Fa.epub" (already URL-encoded, no leading slash).

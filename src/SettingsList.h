@@ -477,9 +477,6 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
                           {StrId::STR_ACCESS_FULL, StrId::STR_ACCESS_UPLOAD_ONLY, StrId::STR_ACCESS_READ_ONLY},
                           "webAccessLevel")
             .withDeviceOnly(),
-        SettingInfo::Toggle(StrId::STR_WEB_FIRMWARE_INSTALL, &CrossPointSettings::webFirmwareInstall,
-                            "webFirmwareInstall")
-            .withDeviceOnly(),
         SettingInfo::Toggle(StrId::STR_WEBDAV, &CrossPointSettings::webDav, "webDav").withDeviceOnly(),
         SettingInfo::Toggle(StrId::STR_ANNOUNCE_ON_NETWORK, &CrossPointSettings::networkAnnounce, "networkAnnounce")
             .withDeviceOnly(),

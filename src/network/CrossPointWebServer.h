@@ -24,7 +24,6 @@ struct WebSecurityOptions {
   bool requireCode = true;     // access code gate on every route, WebDAV and WebSocket
   uint8_t accessLevel = 0;     // 0 Full, 1 Upload only (no delete/rename/move/settings/wifi/opds writes),
                                // 2 Read only (GET only; no uploads)
-  bool allowFirmware = false;  // POST /api/firmware; false -> 403
   bool webdav = false;         // register WebDAVHandler only when true
   bool discovery = true;       // gates the UDP discovery listener (the mDNS name is the activity's)
 };
@@ -89,12 +88,6 @@ class CrossPointWebServer {
 
   // Get the port number
   uint16_t getPort() const { return port; }
-
-  // Firmware pushed with POST /api/firmware waits here on the SD card until the reader confirms the install.
-  static constexpr const char* FIRMWARE_STAGED_PATH = "/.crosspoint/ota/firmware.bin";
-
-  // True once, right after a staged image finished uploading; `size` is its byte count.
-  bool takeStagedFirmware(size_t& size);
 
  private:
   std::unique_ptr<WebServer> server = nullptr;
@@ -175,21 +168,6 @@ class CrossPointWebServer {
   void handlePostDashboards();
   void handleGetTodo() const;
   void handlePostTodo();
-
-  // Firmware push (POST /api/firmware, multipart field "firmware")
-  void handleFirmwareUploadData();
-  void handleFirmwareUploadDone();
-  struct FirmwareUploadState {
-    HalFile file;
-    size_t size = 0;
-    size_t limit = 0;  // OTA slot size
-    size_t bufferPos = 0;
-    bool started = false;
-    bool ok = false;
-    int httpCode = 400;
-    const char* error = nullptr;
-  } firmwareUpload;
-  size_t stagedFirmwareSize = 0;  // 0 = nothing pending
 
   // Font management handlers
   void handleFontsPage() const;

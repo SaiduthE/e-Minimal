@@ -34,6 +34,7 @@
 #include "OtaUpdateActivity.h"
 #include "SdCardFontSystem.h"
 #include "SdFirmwareUpdateActivity.h"
+#include "activities/network/FirmwareInstallActivity.h"
 #include "SettingsList.h"
 #include "SilentRestart.h"
 #include "SleepScreenSettingsActivity.h"
@@ -158,6 +159,7 @@ void SettingsActivity::rebuildSettingsLists() {
     tabSettings[1].push_back(SettingInfo::Action(StrId::STR_CHECK_UPDATES, SettingAction::CheckForUpdates));
 #endif
     tabSettings[1].push_back(SettingInfo::Action(StrId::STR_SD_FIRMWARE_UPDATE, SettingAction::SdFirmwareUpdate));
+    tabSettings[1].push_back(SettingInfo::Action(StrId::STR_WEB_FIRMWARE_INSTALL, SettingAction::WifiFirmwareInstall));
     // After Time to Sleep and the other Power & Sleep rows.
     tabSettings[0].push_back(SettingInfo::Action(StrId::STR_SLEEP_SCREEN, SettingAction::SleepScreen));
     if (BoardConfig::isEMinimal78()) {
@@ -195,6 +197,8 @@ void SettingsActivity::rebuildSettingsLists() {
   if (!globalMoved) {
     systemSettings.push_back(SettingInfo::Action(StrId::STR_CHECK_UPDATES, SettingAction::CheckForUpdates));
     systemSettings.push_back(SettingInfo::Action(StrId::STR_SD_FIRMWARE_UPDATE, SettingAction::SdFirmwareUpdate));
+    systemSettings.push_back(
+        SettingInfo::Action(StrId::STR_WEB_FIRMWARE_INSTALL, SettingAction::WifiFirmwareInstall));
   }
   systemSettings.push_back(SettingInfo::Action(StrId::STR_KEYBOARD_LAYOUTS, SettingAction::KeyboardLayouts));
   if (!globalMoved) systemSettings.push_back(SettingInfo::Action(StrId::STR_ABOUT, SettingAction::About));
@@ -514,6 +518,9 @@ void SettingsActivity::toggleCurrentSetting() {
         break;
       case SettingAction::SdFirmwareUpdate:
         startActivityForResult(std::make_unique<SdFirmwareUpdateActivity>(renderer, mappedInput), resultHandler);
+        break;
+      case SettingAction::WifiFirmwareInstall:
+        startActivityForResult(std::make_unique<FirmwareInstallActivity>(renderer, mappedInput), resultHandler);
         break;
       case SettingAction::DownloadFonts:
         startActivityForResult(std::make_unique<FontDownloadActivity>(renderer, mappedInput),

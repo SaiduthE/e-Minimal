@@ -299,7 +299,24 @@ bool handleX4ProFrontlightDoubleClick() {
   return true;
 }
 
-constexpr char SLEEP_FRAME_FILE[] = "/.crosspoint/sleep_frame.bin";
+// Cards written before the rename keep their settings, caches and library index under /.crosspoint; carry that
+// folder over once. A card that already has /.e-minimal (an older build ran in between) keeps both untouched.
+static void migrateLegacyDataDir() {
+  constexpr char LEGACY_DIR[] = "/.crosspoint";
+  constexpr char DATA_DIR[] = "/.e-minimal";
+  if (!Storage.exists(LEGACY_DIR)) return;
+  if (Storage.exists(DATA_DIR)) {
+    LOG_INF("MAIN", "%s and %s both exist; leaving the old folder", LEGACY_DIR, DATA_DIR);
+    return;
+  }
+  if (Storage.rename(LEGACY_DIR, DATA_DIR)) {
+    LOG_INF("MAIN", "Renamed %s to %s", LEGACY_DIR, DATA_DIR);
+  } else {
+    LOG_ERR("MAIN", "Could not rename %s to %s; settings start fresh", LEGACY_DIR, DATA_DIR);
+  }
+}
+
+constexpr char SLEEP_FRAME_FILE[] = "/.e-minimal/sleep_frame.bin";
 
 static void saveSleepFrameBuffer() {
   HalFile file;
@@ -595,6 +612,7 @@ void setup() {
     return;
   }
 
+  migrateLegacyDataDir();
   HalSystem::checkPanic();
 
   APP_STATE.loadFromFile();

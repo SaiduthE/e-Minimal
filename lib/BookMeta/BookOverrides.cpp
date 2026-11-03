@@ -16,8 +16,8 @@
 namespace bookmeta {
 namespace {
 
-constexpr char META_DIR[] = "/.crosspoint/meta";
-constexpr char REENRICH_PATH[] = "/.crosspoint/meta/reenrich.bin";
+constexpr char META_DIR[] = "/.e-minimal/meta";
+constexpr char REENRICH_PATH[] = "/.e-minimal/meta/reenrich.bin";
 constexpr size_t HASH_NAME_LEN = 16;  // hex digits before ".json"
 
 uint64_t pathHash(const char* path) { return library::clixPathHash(path, strlen(path)); }

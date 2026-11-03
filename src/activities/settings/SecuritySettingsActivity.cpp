@@ -11,10 +11,10 @@
 
 namespace {
 constexpr SettingRowsActivity::Field FIELDS[] = {
-    &CrossPointSettings::webAccessCode,        &CrossPointSettings::webAccessLevel,
-    &CrossPointSettings::webFirmwareInstall,   &CrossPointSettings::webDav,
-    &CrossPointSettings::networkAnnounce,      &CrossPointSettings::hotspotPasswordMode,
-    &CrossPointSettings::fileTransferIdleStop, &CrossPointSettings::backgroundOpenWifi,
+    &CrossPointSettings::webAccessCode,     &CrossPointSettings::webAccessLevel,
+    &CrossPointSettings::webDav,            &CrossPointSettings::networkAnnounce,
+    &CrossPointSettings::hotspotPasswordMode, &CrossPointSettings::fileTransferIdleStop,
+    &CrossPointSettings::backgroundOpenWifi,
 };
 }  // namespace
 

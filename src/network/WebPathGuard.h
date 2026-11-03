@@ -6,7 +6,7 @@
 #include <cstring>
 
 // Which SD paths the web interface, WebDAV and the upload WebSocket may touch. One rule for all of them: a path is
-// protected when any segment (not just the last) is hidden, so /.crosspoint/wifi.json is refused as a whole.
+// protected when any segment (not just the last) is hidden, so /.e-minimal/wifi.json is refused as a whole.
 namespace web_path {
 
 inline bool isProtectedSegment(const char* seg, size_t len) {
@@ -14,7 +14,7 @@ inline bool isProtectedSegment(const char* seg, size_t len) {
     seg++;
     len--;
   }
-  if (len > 0 && seg[0] == '.') return true;  // ".", "..", .crosspoint
+  if (len > 0 && seg[0] == '.') return true;  // ".", "..", .e-minimal
   while (len > 0 && (seg[len - 1] == ' ' || seg[len - 1] == '.')) len--;
   if (len == 0) return false;
   // FAT also opens a long name through its 8.3 alias (CROSSP~1), which a name test cannot see.

@@ -687,7 +687,7 @@ To create a bookmark, hold **Confirm** for about half a second while inside a bo
 
 To open bookmarks, press **Confirm** while inside a book. Then navigate to the **Bookmarks** menu. Bookmarks can be opened by navigating to them and pressing **Confirm**, which will redirect you to that place in the book. You can delete bookmarks by holding **Confirm** for about 0.7 seconds, and then pressing **Confirm** again to confirm deletion, or **Back** to cancel.
 
-Bookmarks are stored in the `.crosspoint/bookmarks` folder in the JSON format.
+Bookmarks are stored in the `.e-minimal/bookmarks` folder in the JSON format.
 
 ## 6. Current Limitations & Roadmap
 
@@ -747,4 +747,4 @@ Press **Ctrl-C** or close the graph window to exit.
 
 If the device is stuck in a bootloop, press and release the Reset button. Then, press and hold on to the configured Back button and the Power Button to boot to the Home Screen.
 
-There can be issues with broken cache or config. In this case, delete the `.crosspoint` directory on your SD card (or consider deleting only `settings.json`, `state.json`, or `epub_*` cache directories in the `.crosspoint/` folder).
+There can be issues with broken cache or config. In this case, delete the `.e-minimal` directory on your SD card (or consider deleting only `settings.json`, `state.json`, or `epub_*` cache directories in the `.e-minimal/` folder).

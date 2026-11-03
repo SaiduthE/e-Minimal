@@ -30,13 +30,13 @@ bool isBookCacheDirectoryName(const char* name) {
 std::string bookCachePath(const std::string& path) {
   // The book classes only hash the path in their constructors (no file IO).
   if (FsHelpers::hasEpubExtension(path)) {
-    return Epub(path, "/.crosspoint").getCachePath();
+    return Epub(path, "/.e-minimal").getCachePath();
   }
   if (FsHelpers::hasXtcExtension(path)) {
-    return Xtc(path, "/.crosspoint").getCachePath();
+    return Xtc(path, "/.e-minimal").getCachePath();
   }
   if (FsHelpers::hasTxtExtension(path) || FsHelpers::hasMarkdownExtension(path)) {
-    return Txt(path, "/.crosspoint").getCachePath();
+    return Txt(path, "/.e-minimal").getCachePath();
   }
   return std::string();
 }
@@ -127,11 +127,11 @@ void moveBookCache(const char* oldPath, const char* newPath) {
 
 void clearBookCache(const std::string& path) {
   if (FsHelpers::hasEpubExtension(path)) {
-    Epub(path, "/.crosspoint").clearCache();
+    Epub(path, "/.e-minimal").clearCache();
   } else if (FsHelpers::hasXtcExtension(path)) {
-    Xtc(path, "/.crosspoint").clearCache();
+    Xtc(path, "/.e-minimal").clearCache();
   } else if (FsHelpers::hasTxtExtension(path) || FsHelpers::hasMarkdownExtension(path)) {
-    Txt(path, "/.crosspoint").clearCache();
+    Txt(path, "/.e-minimal").clearCache();
   } else {
     return;
   }

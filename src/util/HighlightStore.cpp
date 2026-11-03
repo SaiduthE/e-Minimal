@@ -45,7 +45,7 @@ std::string HighlightStore::pathForBook(const std::string& bookPath) {
   key.erase(0, key.find_last_of('/') + 1);
   const size_t dot = key.find_last_of('.');
   if (dot != std::string::npos) key.erase(dot);
-  return "/.crosspoint/highlights/" + key + ".hl";
+  return "/.e-minimal/highlights/" + key + ".hl";
 }
 
 bool HighlightStore::moveForBook(const std::string& oldBook, const std::string& newBook) {
@@ -116,7 +116,7 @@ bool HighlightStore::readFile() {
 
 bool HighlightStore::save() const {
   if (path.empty()) return false;
-  Storage.mkdir("/.crosspoint/highlights");
+  Storage.mkdir("/.e-minimal/highlights");
   const std::string tmp = path + ".tmp";
   {
     HalFile file;

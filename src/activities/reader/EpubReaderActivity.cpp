@@ -143,7 +143,7 @@ void moveFinishedBookToReadFolder(const std::string& srcPath, const std::string&
   }
   HighlightStore::moveForBook(srcPath, dstPath);
 
-  const std::string newCachePath = "/.crosspoint/epub_" + std::to_string(std::hash<std::string>{}(dstPath));
+  const std::string newCachePath = "/.e-minimal/epub_" + std::to_string(std::hash<std::string>{}(dstPath));
   if (!oldCachePath.empty() && Storage.exists(oldCachePath.c_str())) {
     if (!Storage.rename(oldCachePath.c_str(), newCachePath.c_str())) {
       LOG_ERR("ERS", "Failed to rename cache dir %s -> %s (non-fatal)", oldCachePath.c_str(), newCachePath.c_str());
@@ -184,7 +184,7 @@ EpubReaderActivity::~EpubReaderActivity() {
 }
 
 bool EpubReaderActivity::loadBook() {
-  auto loadedEpub = makeUniqueNoThrow<Epub>(bookPath, "/.crosspoint");
+  auto loadedEpub = makeUniqueNoThrow<Epub>(bookPath, "/.e-minimal");
   if (!loadedEpub) {
     LOG_ERR("ERS", "Failed to allocate EPUB object");
     return false;

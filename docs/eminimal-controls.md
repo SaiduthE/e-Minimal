@@ -180,8 +180,7 @@ read once per File Transfer / phone-page session (`WebSession::begin`).
   (in the QR as `?t=`) and a 6-digit code shown under the URL; a phone without
   the token types the code.
 - **Phone Access** (`webAccessLevel`): Full, Upload Only, Read Only.
-- **Install Firmware over Wi-Fi** (`webFirmwareInstall`, Off), **WebDAV**
-  (`webDav`, Off).
+- **WebDAV** (`webDav`, Off).
 - **Announce on Network** (`networkAnnounce`, On): mDNS `eminimal.local` and
   the UDP discovery listener.
 - **Hotspot Password** (`hotspotPasswordMode`): Keep the saved passphrase, or
@@ -192,13 +191,26 @@ read once per File Transfer / phone-page session (`WebSession::begin`).
 - **Background Wi-Fi on Open Networks** (`backgroundOpenWifi`, Never): the
   weather fetch (`SavedWifi`) skips networks with no password unless Allow.
 
+## Global Settings > Display & System > Install Firmware over Wi-Fi
+`FirmwareInstallActivity`: joins a saved network and serves only
+`FirmwareInstallServer` (`GET /api/status`, `POST /api/firmware`, UDP
+`eminimal?` on 8135), with no access code and none of File Transfer's pages. It
+shows the address and, with Announce on Network on, `eminimal.local` plus an
+`_eminimal-update._tcp` mDNS service. `e-Minimal-Notes/tools/ota_push.py` finds
+the reader by that UDP query (or `--host`), refuses an image whose version
+matches the running one (`--force` overrides), uploads it, and prints the
+image's SHA-256 prefix to compare with the reader's. The POST must carry the
+`X-Eminimal-Update` header, which a web page cannot add cross-site. The server
+only stages the image on the SD card; the install screen then asks on the
+device. The mode leaves by itself after 5 minutes with no request.
+
 A firmware image (SD Card Firmware Update, or one pushed over Wi-Fi) is
 confirmed on the device: version and build date from the image, the first 8 hex
 of its SHA-256, an unsigned-firmware note, and a 3 s hold on Confirm. Check for
 Updates is hidden on this board (OTA only knows upstream's assets).
 
 ## Apps and boot
-When the app last opened (`lastApp` in `/.crosspoint/state.json`) is the
+When the app last opened (`lastApp` in `/.e-minimal/state.json`) is the
 reader, the device boots and wakes into it as before: the book it slept in, or
 Home. After the Dashboard or Games it shows **Apps** instead: the power menu's
 three tiles with Sleep beneath, the cursor on the app last used, so Select
@@ -281,11 +293,11 @@ forecast with humidity and sunrise/sunset and the next four days; Select
 fetches now. Data comes from Open-Meteo over a saved WiFi network (join one
 once from File Transfer): on entry when the cache is stale, then daily at about
 05:00 local time, retrying hourly up to three times after a failure. The last
-forecast is cached (`/.crosspoint/weather.json`). A fetch also sets the
+forecast is cached (`/.e-minimal/weather.json`). A fetch also sets the
 system clock when nothing else has (to within ~8 minutes).
 
 **To-do.** The tile shows the open count and the first open tasks. Opened:
-the list (`/.crosspoint/todo.json`, up to 50 tasks of 80 characters), also
+the list (`/.e-minimal/todo.json`, up to 50 tasks of 80 characters), also
 managed on the web page. The first row adds a task through the usual text
 entry (reader keyboard or phone). Select on a task ticks it done or not done;
 hold Select on a task for Mark Done / Not Done, Edit Task, Delete and Clear

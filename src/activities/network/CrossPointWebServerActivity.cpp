@@ -16,7 +16,6 @@
 #if !FREEINK_NO_CALIBRE_WIRELESS
 #include "activities/network/CalibreConnectActivity.h"
 #endif
-#include "activities/settings/SdFirmwareUpdateActivity.h"
 #include "components/PhoneJoinPanel.h"
 #include "components/UITheme.h"
 #include "CrossPointSettings.h"
@@ -268,30 +267,6 @@ void CrossPointWebServerActivity::startWebServer() {
   }
 }
 
-void CrossPointWebServerActivity::promptFirmwareInstall(const size_t size) {
-  LOG_INF("WEBACT", "Staged firmware %u bytes, handing over to the install screen", static_cast<unsigned>(size));
-  installStagedFirmware();
-}
-
-void CrossPointWebServerActivity::installStagedFirmware() {
-  // Free the radio and the server first: the flash pass needs the heap and a quiet SD bus. The install activity
-  // restarts the device on success; on failure we restart here to get the Wi-Fi heap back.
-  state = WebServerActivityState::SHUTTING_DOWN;
-  webServer.reset();
-  portal.end();
-  MDNS.end();
-  if (!isApMode) WiFi.disconnect(false);
-  WiFi.mode(WIFI_OFF);
-  LOG_INF("WEBACT", "Installing staged firmware, free heap %d bytes", ESP.getFreeHeap());
-
-  startActivityForResult(std::make_unique<SdFirmwareUpdateActivity>(renderer, mappedInput, false,
-                                                                     CrossPointWebServer::FIRMWARE_STAGED_PATH),
-                         [](const ActivityResult&) {
-                           Storage.remove(CrossPointWebServer::FIRMWARE_STAGED_PATH);
-                           silentRestart();
-                         });
-}
-
 void CrossPointWebServerActivity::loop() {
   // Handle different states
   if (state == WebServerActivityState::SERVER_RUNNING) {
@@ -385,11 +360,6 @@ void CrossPointWebServerActivity::loop() {
         return;
       }
 
-      size_t stagedSize = 0;
-      if (webServer->takeStagedFirmware(stagedSize)) {
-        promptFirmwareInstall(stagedSize);
-        return;
-      }
     }
 
     // Also check outside the request-processing loop.

@@ -11,7 +11,7 @@ struct TodoItem {
   bool done = false;
 };
 
-// The dashboard's to-do list, on SD at /.crosspoint/todo.json. Only the
+// The dashboard's to-do list, on SD at /.e-minimal/todo.json. Only the
 // dashboard uses it: it loads on the dashboard's onEnter() and unload() hands
 // the heap back on onExit(), so the list costs nothing while reading.
 class TodoStore : public PersistableStore<TodoStore> {
@@ -25,7 +25,7 @@ class TodoStore : public PersistableStore<TodoStore> {
   static constexpr size_t MAX_ITEMS = 50;
   static constexpr size_t MAX_TEXT_LENGTH = 80;
 
-  static const char* getFilePath() { return "/.crosspoint/todo.json"; }
+  static const char* getFilePath() { return "/.e-minimal/todo.json"; }
   void toJson(JsonDocument& doc) const;
   bool fromJson(JsonVariantConst doc);
 

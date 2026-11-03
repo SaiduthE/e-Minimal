@@ -15,7 +15,7 @@ the IP address shown on the device screen.
 
 Set per session in the reader's Security settings; the activity gives the server a random session token (32 hex
 characters), the 6-digit code shown on the screen, and these options: code required (default on), access level,
-firmware install, WebDAV and discovery. A server started without them refuses everything.
+WebDAV and discovery. A server started without them refuses everything.
 
 **Signing in.** The QR code opens `http://<host>/?t=<token>`: the server sets the `ems` cookie
 (`SameSite=Strict`, `Path=/`, readable by page script so the WebSocket can send it) and redirects to the same URL
@@ -39,7 +39,7 @@ refused on download, listing, upload, mkdir, rename, move, delete, book details 
 |--------------|--------|
 | Read | every page and asset, `GET /api/status`, `/api/files`, `/api/folders`, `/download`, `/api/book-meta`, `/api/settings`, `/api/fonts`, `/api/dictionaries`, `/api/dashboards`, `/api/todo`; WebDAV `OPTIONS`, `PROPFIND`, `GET`, `HEAD` |
 | Upload | `POST /upload`, `/mkdir`, `/api/fonts/upload`; WebSocket upload; WebDAV `PUT` of a new file, `MKCOL`, `COPY`, `LOCK`, `UNLOCK` |
-| Modify | `POST /rename`, `/move`, `/delete`, `/api/book-meta`, `/api/settings`, `/api/fonts/delete`, `/api/dictionaries/select`, `/api/dictionaries/delete`, `/api/dashboards`, `/api/todo`; `GET` and `POST` of `/api/opds`, `/api/wifi` and their `delete`; `POST /api/firmware` (also needs the firmware setting on, else `403`); WebDAV `DELETE`, `MOVE`, `PUT` over an existing file |
+| Modify | `POST /rename`, `/move`, `/delete`, `/api/book-meta`, `/api/settings`, `/api/fonts/delete`, `/api/dictionaries/select`, `/api/dictionaries/delete`, `/api/dashboards`, `/api/todo`; `GET` and `POST` of `/api/opds`, `/api/wifi` and their `delete`; WebDAV `DELETE`, `MOVE`, `PUT` over an existing file |
 | none | `POST /api/login` (host and origin still checked) |
 
 ## HTTP Pages
@@ -293,7 +293,7 @@ Applied 2 setting(s)
 
 Every Dashboard setting lives here, behind the web UI's Dashboards page; the
 reader only launches the dashboard and shows QR codes that open that page.
-The settings are stored on the SD card in `/.crosspoint/dashboards.json`; a
+The settings are stored on the SD card in `/.e-minimal/dashboards.json`; a
 missing file means the defaults below. Which way the dashboard is turned is
 the device setting `dashboardOrientation` (`POST /api/settings`): `0`
 landscape with the keys on the left, `1` landscape with the keys on the right,
@@ -411,7 +411,7 @@ write answers `500`.
 
 ## To-do API
 
-The To-do tile's list, on the SD card in `/.crosspoint/todo.json`: up to 50
+The To-do tile's list, on the SD card in `/.e-minimal/todo.json`: up to 50
 tasks of up to 80 bytes of UTF-8 each. Each request reads the file, acts and
 saves it.
 

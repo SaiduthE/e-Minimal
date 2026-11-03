@@ -15,7 +15,7 @@ using namespace library;
 
 namespace {
 
-constexpr char INDEX[] = "/.crosspoint/library.idx";
+constexpr char INDEX[] = "/.e-minimal/library.idx";
 
 std::string numbered(const char* prefix, const unsigned value) {
   char text[32];
@@ -115,8 +115,8 @@ TEST_F(LibraryBuilderTest, StagingAndIndexWritesAreBatched) {
 
   ASSERT_TRUE(buildLibraryIndex("/", stats, false));
 
-  EXPECT_LT(fake::writesByPath["/.crosspoint/library.stage"], 64u);
-  EXPECT_LT(fake::writesByPath["/.crosspoint/library.new"], 32u);
+  EXPECT_LT(fake::writesByPath["/.e-minimal/library.stage"], 64u);
+  EXPECT_LT(fake::writesByPath["/.e-minimal/library.new"], 32u);
 }
 
 TEST_F(LibraryBuilderTest, ParentDuplicateTrackingSurvivesDirectoryRecursion) {
@@ -307,11 +307,11 @@ TEST_F(LibraryBuilderTest, ReadWriteCloseAndAllocationFailuresRetainPreviousInde
   EXPECT_EQ(fake::files[INDEX]->bytes, old);
   fake::failWrite = -1;
 
-  fake::failWritePath = "/.crosspoint/library.new";
+  fake::failWritePath = "/.e-minimal/library.new";
   EXPECT_FALSE(buildLibraryIndex("/", stats, true));
   EXPECT_EQ(fake::files[INDEX]->bytes, old);
 
-  fake::failClosePath = "/.crosspoint/library.new";
+  fake::failClosePath = "/.e-minimal/library.new";
   EXPECT_FALSE(buildLibraryIndex("/", stats, true));
   EXPECT_EQ(fake::files[INDEX]->bytes, old);
 
@@ -338,8 +338,8 @@ TEST_F(LibraryBuilderTest, TruncatedPersistedPathHashAbortsAndRetainsTheLiveInde
 
   EXPECT_FALSE(buildLibraryIndex("/", stats, true));
   EXPECT_EQ(fake::files[INDEX]->bytes, corrupted);
-  EXPECT_FALSE(Storage.exists("/.crosspoint/library.stage"));
-  EXPECT_FALSE(Storage.exists("/.crosspoint/library.stage.f"));
+  EXPECT_FALSE(Storage.exists("/.e-minimal/library.stage"));
+  EXPECT_FALSE(Storage.exists("/.e-minimal/library.stage.f"));
 }
 
 TEST_F(LibraryBuilderTest, LibrariesPastOldGateAndAtFormatCeilingKeepAllOrders) {

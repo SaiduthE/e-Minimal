@@ -24,7 +24,7 @@ constexpr uint8_t CACHE_VERSION = 3;          // Increment when cache format cha
 }  // namespace
 
 bool TxtReaderActivity::loadBook() {
-  txt = makeUniqueNoThrow<Txt>(bookPath, "/.crosspoint");
+  txt = makeUniqueNoThrow<Txt>(bookPath, "/.e-minimal");
   if (!txt) {
     LOG_ERR("TRS", "Failed to allocate TXT object");
     return false;

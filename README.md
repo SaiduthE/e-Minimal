@@ -244,10 +244,10 @@ CrossPoint Reader is pretty aggressive about caching data down to the SD card to
 ### Data caching
 
 The first time chapters of a book are loaded, they are cached to the SD card. Subsequent loads are served from the
-cache. This cache directory exists at `.crosspoint` on the SD card. The structure is as follows:
+cache. This cache directory exists at `.e-minimal` on the SD card. The structure is as follows:
 
 ```text
-.crosspoint/
+.e-minimal/
 ├── epub_<hash>/         # one directory per book, named by content hash
 │   ├── progress.bin     # reading position (chapter, page, etc.)
 │   ├── cover.bmp        # generated cover image
@@ -263,7 +263,7 @@ cache. This cache directory exists at `.crosspoint` on the SD card. The structur
 └── recent.json          # recent books list
 ```
 
-Removing `/.crosspoint` clears all cached metadata and forces a full regeneration on next open. Book deletes, overwrites, and moves done through the firmware or web UI clear or re-key matching caches; manual SD-card edits may leave stale cache directories behind.
+Removing `/.e-minimal` clears all cached metadata and forces a full regeneration on next open. Book deletes, overwrites, and moves done through the firmware or web UI clear or re-key matching caches; manual SD-card edits may leave stale cache directories behind.
 
 For more details on the internal file structures, see the [file formats document](./docs/file-formats.md).
 
