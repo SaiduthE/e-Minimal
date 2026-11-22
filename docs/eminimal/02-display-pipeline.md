@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Draft |
-| **Applies to** | Firmware commit `09b6f02f` (branch `master`), `freeink-sdk` submodule at `c774ac17` |
+| **Applies to** | Firmware commit `36f4315e` (branch `master`), `freeink-sdk` submodule at `ed11664c` |
 | **Build target** | `[env:eminimal]` in `platformio.ini` |
 | **Audience** | Firmware developers working on rendering, the display driver, power, or board bring-up |
 | **Related** | [01-system-overview.md](01-system-overview.md), [03-application-framework.md](03-application-framework.md), [04-dashboard-and-games.md](04-dashboard-and-games.md), [05-network-and-storage.md](05-network-and-storage.md), [06-build-flash-release.md](06-build-flash-release.md) |
@@ -90,7 +90,7 @@ Notes:
 
 - The SD card is on SDMMC (GPIO 12/11/13), not on this SPI bus. The display has the bus to itself (`BoardConfig.h`, `EMINIMAL_78` comment).
 - GPIO 33 to 37 are used by the module's octal PSRAM and must stay free (`BoardConfig.h`, `EMINIMAL_78` comment).
-- `HalDisplay::HalDisplay()` still passes the legacy `EPD_*` constants from `lib/hal/HalGPIO.h` to the facade constructor. They are ignored. `FreeInkDisplay::begin()` and `It8951Driver::begin()` read `BoardConfig::ACTIVE.display`.
+- `HalDisplay::HalDisplay()` still passes the legacy `EPD_*` constants from `lib/hal/HalGPIO.h` to the facade constructor. They are ignored. `It8951Driver::begin()` reads `BoardConfig::ACTIVE.display` (`FreeInkDisplay::begin()` reads it only for drivers that use the SDK's own bus, which this one does not).
 
 ### 2.2 SPI settings
 
@@ -113,7 +113,7 @@ The driver uses two SPI peripherals on the same SCLK and MOSI pads (`It8951Drive
 | SPI2 (`ARDUINO_SPI_HOST`) | Arduino global `SPI` object | Commands, arguments, register reads, preambles, read-back |
 | SPI3 (`DMA_SPI_HOST`) | ESP-IDF `spi_master`, DMA, half duplex, TX only | The pixel bytes of an image load |
 
-`It8951Driver::routeLoadPinsToDma()` re-points the two output pads at the other host through the GPIO matrix before and after each burst. CS stays low under the driver's control for the whole burst. MISO stays on SPI2. If DMA setup or a DMA transfer fails, the driver logs it and uses the polled Arduino path for the rest of the run (`_dmaFailed`). `-DIT8951_DMA_LOAD=0` compiles the DMA path out.
+`It8951Driver::routeLoadPinsToDma()` re-points the two output pads at the other host through the GPIO matrix before and after each burst. CS stays low under the driver's control for the whole burst. MISO stays on SPI2. If DMA setup fails (`_dmaDev` stays null; logged for a bus or device error, silent for a failed buffer allocation) or a DMA transfer fails (logged, latches `_dmaFailed`), the driver uses the polled Arduino path for the rest of the run. `-DIT8951_DMA_LOAD=0` compiles the DMA path out.
 
 ---
 
@@ -157,8 +157,8 @@ A read is one CS frame: `PRE_RD`, one dummy word that is discarded, then the dat
 | `CMD_MEM_BST_RD_T` | `0x0012` | address low, address high, word count low, word count high | `bitmapRowsMatch()` |
 | `CMD_MEM_BST_RD_S` | `0x0013` | none; data follows as a read | `bitmapRowsMatch()` |
 | `CMD_MEM_BST_END` | `0x0015` | none | `bitmapRowsMatch()` |
-| `CMD_LD_IMG_AREA` | `0x0021` | format word, x, y, w, h | all `loadImage*()` functions |
-| `CMD_LD_IMG_END` | `0x0022` | none | all `loadImage*()` functions |
+| `CMD_LD_IMG_AREA` | `0x0021` | format word, x, y, w, h | `loadImageArea()`, `sendBitmapRows()`, `loadImageGray()`, `loadImageGray4()`, `displayWindowGray4()` |
+| `CMD_LD_IMG_END` | `0x0022` | none | the same five functions |
 | `CMD_DPY_AREA` | `0x0034` | x, y, w, h, waveform mode | `displayArea()` |
 | `CMD_VCOM` | `0x0039` | `0x0001` (set), millivolts | `setVcom()` |
 | `CMD_DEV_INFO` | `0x0302` | none; then read 20 words | `getDeviceInfo()` |
@@ -225,7 +225,8 @@ Verification is skipped when `GET_DEV_INFO` did not read back plausibly (`_reads
 |---|---|---|
 | HRDY low for 3 s | Proceed anyway | `waitReady()` |
 | Refresh still busy after 3 s | Proceed anyway | `waitDisplayReady()` |
-| `GET_DEV_INFO` returns implausible size | Use profile geometry (1872 x 1404) and fallback buffer address `0x00124850` | `getDeviceInfo()` |
+| `GET_DEV_INFO` returns implausible size | Use profile geometry (1872 x 1404); skip load verification | `getDeviceInfo()` |
+| `GET_DEV_INFO` returns buffer address 0 | Use fallback buffer address `0x00124850` | `getDeviceInfo()` |
 | DMA init fails | Polled SPI for all loads | `initDmaLoad()` |
 | DMA transfer fails mid-burst | Finish the burst polled; polled from then on | `streamImageRows()` |
 | Bitmap load read-back mismatch | Resend slow, polled; then disable verification | `loadImageBitmap()` |
@@ -378,7 +379,7 @@ The driver reports `GrayscaleBase::Combined` because `combinedGray` is true (`It
 
 While the rows pass through internal RAM, the driver derives its `_base`, `_gLsb` and `_gMsb` from them (`kGray4Planes`), so the next B/W frame can still be diffed. With `updateFrameBuffer`, the 1bpp framebuffer also receives the page's B/W base (white only where the nibble is `0xF`).
 
-Users of the gray4 path: `EpubReaderActivity` (anti-aliased and image pages), `XtcReaderActivity` (`displayGray4Rows`), and `src/util/ChargeBadge.cpp` (window variants).
+Users of the gray4 path: `EpubReaderActivity` (anti-aliased and image pages), `XtcReaderActivity` (`displayGray4Rows`), the dashboard (`DashboardImage.cpp`, `TiledDashboardActivity.cpp`), and `src/util/ChargeBadge.cpp` (window variants).
 
 Grey output is unavailable while the display is inverted (night mode). `FreeInkDisplay::supportsGray4()` and `grayscaleCapabilities()` return "unsupported" in that state.
 
@@ -438,7 +439,7 @@ There is no dirty-rectangle API for B/W frames. The application redraws the whol
 `It8951Driver::display()`:
 
 1. If the controller memory is known to match `_base` (`_memMirrorsBase`), `diffBox()` compares the new frame with `_base` row by row. It returns the bounding rows and byte columns, and the count of changed bytes.
-2. No difference: nothing is loaded. No refresh runs either, unless a clear is owed (first paint, a full or half hint, or the periodic clear), in which case GC16 runs on what memory already holds.
+2. No difference: with a fast hint nothing is loaded and no refresh runs, unless the periodic clear is due, in which case GC16 runs on what memory already holds. A full or half hint reloads the whole frame and runs GC16 even when nothing differs.
 3. A difference: the changed rows are loaded at full width (`loadImageBand()`). The refresh rectangle is the bounding box.
 4. The new frame is copied into `_base`.
 
@@ -453,12 +454,12 @@ flowchart TD
     S["display(fb, mode)"] --> Q0{"mode is Full or Half,<br/>or first paint?"}
     Q0 -- yes --> GC["GC16, whole panel<br/>reset counters"]
     Q0 -- no --> Q1{"frame differs<br/>from _base?"}
-    Q1 -- no --> NOP["no load, no refresh"]
+    Q1 -- no --> NOP["no load, no refresh<br/>(GC16, whole panel, if the periodic clear is due)"]
     Q1 -- yes --> Q2{"grey pixels under<br/>the changed box?"}
     Q2 -- "yes, small box" --> GCB["GC16 on the box only"]
     Q2 -- "yes, large box" --> GC
     Q2 -- no --> Q3{"large change?"}
-    Q3 -- no --> A2["A2 on the box<br/>add box to dirty region"]
+    Q3 -- no --> A2["A2 on the box<br/>add box to dirty region<br/>(GC16, whole panel, if the periodic clear is due)"]
     Q3 -- yes --> Q4{"dirty region non-empty,<br/>or 8 frames since last clear?"}
     Q4 -- yes --> GC
     Q4 -- no --> DU["DU on the box<br/>count one frame"]
@@ -535,7 +536,7 @@ sequenceDiagram
     PM->>PM: powerDownRailsForSleep(): hold RST (40) low, hold power enable (39) low
     PM->>PM: esp_deep_sleep_start()
     Note over M,C: wake is a chip reset
-    M->>D: setupDisplayAndFonts() then display.begin()
+    M->>D: setupDisplayAndFonts() calls display.begin()
     D->>C: full init (section 3.9), wake scrub, first paint GC16
 ```
 
@@ -546,7 +547,7 @@ Points to note:
 - Because a power-enable pin is assigned, RST is held low through deep sleep. `begin()` releases both GPIO holds before driving the pins (`It8951Driver::begin()`, `resetController()`).
 - The controller's frame memory is lost in deep sleep. After wake, `_memMirrorsBase` is false and the first paint reloads the whole frame.
 - **Wake scrub.** On a deep-sleep wake, INIT alone left a faint shadow of the sleep image. The driver therefore loads a white frame and runs GC16 after the INIT (`It8951WakeScrub::WhiteGc16`).
-- **Keep-glass wake.** `display.keepGlassOnNextBegin()` skips both INIT and the scrub. It is used for dashboard timer wakes and for the charging-badge wake, which repaint over what the glass already shows (`setup()` and `handleChargeWake()` in `src/main.cpp`). The charging badge then uses `displayWindowGray4()` to redraw only its square (`src/util/ChargeBadge.cpp`).
+- **Keep-glass wake.** `display.keepGlassOnNextBegin()` skips both INIT and the scrub. It is used for deep-sleep wakes of a sleep entered from the Dashboard (`isDashboardWake`) and for the charging-badge wake, which repaint over what the glass already shows (`setup()` and `handleChargeWake()` in `src/main.cpp`). The charging badge then uses `displayWindowGray4()` to redraw only its square (`src/util/ChargeBadge.cpp`).
 
 ### 9.4 VCOM
 
@@ -754,7 +755,7 @@ These signatures are taken from the comments in `EMinimal78It8951Config.cpp` and
 - **Rule out DMA.** Build with `-DIT8951_DMA_LOAD=0`. All loads then use polled SPI.
 - **Rule out the fast clock.** Set `loadSpiHz` to 0. Bursts then run at `spiHz`.
 - **Rule out bitmap mode.** Set `loadDepth` to `It8951LoadDepth::Bpp4`. All frames then load as 4bpp.
-- **Rule out diffing.** Request `HALF_REFRESH` (for example with the manual refresh key). That path reloads as needed and runs GC16.
+- **Rule out diffing.** Request `HALF_REFRESH` (for example with the manual refresh key). That path reloads the whole frame and runs GC16 on the whole panel.
 - **Rule out standby.** Set `parkWhenIdle` to false.
 - **See the driver's decisions.** With `IT8951_PROBE_DEBUG`, `display()` prints the mode, the chosen waveform, the counter, and the box, large, grey and dirty flags for each call.
 

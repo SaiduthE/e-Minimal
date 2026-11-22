@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Draft |
-| **Applies to** | branch `master`, commit `09b6f02f` |
+| **Applies to** | branch `master`, commit `36f4315e` |
 | **Audience** | Firmware developers and reviewers who are new to this fork |
 | **Related** | [02-display-pipeline.md](02-display-pipeline.md), [03-application-framework.md](03-application-framework.md), [04-dashboard-and-games.md](04-dashboard-and-games.md), [05-network-and-storage.md](05-network-and-storage.md), [06-build-flash-release.md](06-build-flash-release.md) |
 
@@ -133,7 +133,7 @@ All values are from the `EMINIMAL_78` profile unless noted.
 | Battery ADC | 8 | Divider, multiplier 2.0; kept as a bench cross-check |
 | Charge status | 47 | Open drain, low while charging |
 | USB detect | 9 | High when a cable is in; also an `ext0` wake source |
-| Fuel gauge I2C | 41, 42 | MAX17048 at address 0x36, 100 kHz |
+| Fuel gauge I2C | 41 (SDA), 42 (SCL) | MAX17048 at address 0x36, 100 kHz |
 | Native USB | 19, 20 | USB-Serial-JTAG console and flashing (`platformio.ini` comment) |
 
 ### 3.3 Peripherals and capabilities
@@ -200,6 +200,7 @@ flowchart TB
     L3 --> L2
     L2 --> HAL
     L3 --> HAL
+    L4 --> HAL
     HAL --> SDK
     SDK --> HW
 ```
@@ -339,7 +340,7 @@ the first activity.
 | 15 | Load OPDS servers, reload the theme, bind the button navigator | `OPDS_STORE.loadFromFile()`, `UITheme::reload()` |
 | 16 | Initialise the frontlight driver (absent on this board) | `Frontlight.begin()` |
 | 17 | Handle a charge-badge wake. This path may draw the badge and return to deep sleep without continuing | `handleChargeWake()` |
-| 18 | Act on the wake reason. An unverified power-key wake returns to deep sleep. A USB-power cold boot stays awake on e-Minimal | `switch (wakeupReason)` |
+| 18 | Act on the wake reason. An unverified power-key wake returns to deep sleep, unless the short power-press setting is Sleep. A USB-power cold boot stays awake on e-Minimal | `switch (wakeupReason)` |
 | 19 | Choose the boot presentation: `Splash`, `Silent`, or `SplashlessWake` | `enum class BootResume` |
 | 20 | Initialise display, renderer, render task, and fonts | `setupDisplayAndFonts()` |
 | 21 | Apply the device orientation | `ui_orientation::apply()` |
@@ -436,8 +437,8 @@ following, in order. Several steps return early.
       50 ms in 10 ms slices and stop early when a key contact closes.
 
 `idleLightSleep()` enters ESP light sleep only when the reader or a Dashboard
-screen is on top, no render is pending, no key is down, no USB host is
-attached, Wi-Fi is off, and no power-probe window is running. It takes the
+screen is on top, no render is pending, no key is down, no USB cable or
+serial host is attached, Wi-Fi is off, and no power-probe window is running. It takes the
 `RenderLock` first so a repaint is never frozen halfway.
 
 Deep sleep is entered through `enterDeepSleep()`. It saves state, closes the
@@ -470,20 +471,20 @@ exist. This document does not enumerate them.
 
 ```mermaid
 sequenceDiagram
-    participant Loop as Loop task
+    participant LT as Loop task
     participant AM as ActivityManager
     participant RT as Render task
     participant Act as Current activity
     participant Disp as HalDisplay
 
-    Loop->>AM: requestUpdate()
+    LT->>AM: requestUpdate()
     AM->>RT: task notification
     RT->>RT: take RenderLock (renderingMutex)
     RT->>Act: render(RenderLock)
     Act->>Disp: draw, displayBuffer()
     Disp-->>Act: refresh complete
     RT->>RT: release RenderLock
-    RT-->>Loop: notify waiter, if requestUpdateAndWait() was used
+    RT-->>LT: notify waiter, if requestUpdateAndWait() was used
 ```
 
 Rules that follow from the implementation in `src/activities/ActivityManager.cpp`:
@@ -656,14 +657,11 @@ documented in the repository. See [Open questions](#12-open-questions).
    upstream, and the fork history is linear on top of the merge base. Whether
    upstream is brought in by rebase or by merge, and how often, is not written
    down in the repository.
-2. **Fuel-gauge pin roles.** The profile lists GPIO 41 and 42 for the gauge
-   I2C bus. Which is SDA and which is SCL was not confirmed against the
-   `BatteryGaugeConfig` field order.
-3. **Internal heap size.** No figure for total or typical free internal heap on
+2. **Internal heap size.** No figure for total or typical free internal heap on
    this target was found in the source. The 10 s `MEM` log line reports it at
    run time.
-4. **Framework-created tasks.** The set, stack sizes, and core affinity of
+3. **Framework-created tasks.** The set, stack sizes, and core affinity of
    Wi-Fi, lwIP, and timer tasks come from the prebuilt Arduino core and were
    not inspected.
-5. **Arduino loop task core and priority.** These are Arduino core defaults and
+4. **Arduino loop task core and priority.** These are Arduino core defaults and
    are not set in this repository.

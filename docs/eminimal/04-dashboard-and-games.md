@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Draft |
-| **Applies to** | commit `09b6f02f` (branch `master`, build target `[env:eminimal]`) |
+| **Applies to** | commit `36f4315e` (branch `master`, build target `[env:eminimal]`) |
 | **Audience** | Firmware developers extending or maintaining the Dashboard app and Game Night |
 | **Scope** | How the two fork-specific apps are built and how they plug into the rest of the firmware |
 | **Related** | [01-system-overview.md](01-system-overview.md), [02-display-pipeline.md](02-display-pipeline.md), [03-application-framework.md](03-application-framework.md), [05-network-and-storage.md](05-network-and-storage.md), [06-build-flash-release.md](06-build-flash-release.md) |
@@ -54,7 +54,7 @@ The firmware has three top-level apps, identified by `AppId` (`READER`, `DASHBOA
 Both apps follow the same three design rules:
 
 1. **The panel is the shared surface, the phone is the input device.** Configuration (Dashboard) and private play (Games) happen in a phone browser against an HTTP server on the device.
-2. **Wi-Fi is a transient, heap-expensive mode.** Each app releases the SD font caches before the radio comes up and performs a silent restart when it leaves, to return a defragmented heap to the reader (`DashboardHomeActivity::onExit`, `DashboardPortalActivity::onExit`, `GameNightActivity::onExit`).
+2. **Wi-Fi is a transient, heap-expensive mode.** The dashboard portal and Game Night release the SD font caches before the radio comes up (the weather fetch does not), and each app performs a silent restart when it leaves, to return a defragmented heap to the reader (`DashboardHomeActivity::onExit`, `DashboardPortalActivity::onExit`, `GameNightActivity::onExit`).
 3. **No dedicated server task.** HTTP is pumped from the activity's `loop()` on the main loop task. The only other task involved is the render task, and all shared state is guarded by `RenderLock`.
 
 The activity model, input mapping and the power menu are described in [03-application-framework.md](03-application-framework.md). Refresh modes and the 16-level grey target are described in [02-display-pipeline.md](02-display-pipeline.md).
@@ -183,7 +183,7 @@ flowchart TB
 |---|---|---|
 | Power menu / app switcher tile | `PowerMenuActivity::activateApp` -> `ActivityManager::goToApp(AppId::DASHBOARD)` -> `goToDashboard()` | `DashboardHomeActivity` menu |
 | App launcher at boot | `main.cpp` boot routing: `lastApp != READER` and Back not held -> `ActivityManager::goToAppLauncher()` (`PowerMenuActivity::Mode::LAUNCHER`) | Launcher with the last app pre-selected. The dashboard is not reopened automatically |
-| Wake from a Dashboard deep sleep | `main.cpp`: `isDashboardWake` -> `goToDashboard(APP_STATE.dashboardViewOpen, isDashboardTimerWake \|\| chargeDashboardRepaint)` | `DashboardHomeActivity` with `resumeView`; it immediately pushes `TiledDashboardActivity` without painting its own menu |
+| Wake from a Dashboard deep sleep | `main.cpp`: `isDashboardWake` and Back not held -> `goToDashboard(APP_STATE.dashboardViewOpen, isDashboardTimerWake \|\| chargeDashboardRepaint)` | `DashboardHomeActivity` with `resumeView`; it immediately pushes `TiledDashboardActivity` without painting its own menu |
 | Silent restart after Wi-Fi use | `main.cpp`: `BootResume::Silent && lastApp == DASHBOARD` -> `goToDashboard()` | `DashboardHomeActivity` menu |
 
 There is no dashboard entry on the reader's Home screen; `goToDashboard` is only called from `ActivityManager` and `main.cpp`.
@@ -221,7 +221,7 @@ There is no separate "preset" type. The three starting layouts (Wide top, Grid, 
 
 ### 2.5 Timed refresh, standby and deep sleep
 
-`TimedDashboardActivity` is the base of the three screens that change on their own: `TiledDashboardActivity`, `WeatherDashboardActivity` and `CarouselDashboardActivity`. Subclasses implement four hooks.
+`TimedDashboardActivity` is the base of the three screens that change on their own: `TiledDashboardActivity`, `WeatherDashboardActivity` and `CarouselDashboardActivity`. Subclasses implement these hooks; `nextUpdateMs()`, `update()` and `draw()` are pure virtual, the others have defaults.
 
 | Hook | Contract |
 |---|---|
@@ -239,7 +239,7 @@ The base class marks `loop()` and `render()` as `final`. It counts repaint reque
 |---|---|---|---|
 | Awake | Entry, key, or any wake | Normal loop | - |
 | Light-sleep standby | `IDLE_BEFORE_STANDBY_MS` (30 s) without a key and no repaint pending | `HalPowerManager::lightSleep(ms)` called while holding a `RenderLock`, so the render task cannot be frozen mid-refresh | Timer (next update or deep-sleep deadline) or any key |
-| Deep sleep | User idle time reaches `SETTINGS.getSleepTimeoutMs()` | `activityManager.requestDeepSleep()` | Timer armed for the next widget update, or the power key |
+| Deep sleep | User idle time reaches `SETTINGS.getSleepTimeoutMs()` | `activityManager.requestDeepSleep()` | Timer armed for the next widget update, the power key, or (charge badge enabled) the USB-detect line (`HalPowerManager::startDeepSleep`) |
 
 Details that matter when changing this code:
 
@@ -258,7 +258,7 @@ Details that matter when changing this code:
 
 It then calls `activityManager.goToSleep(fromTimeout, /*keepScreen=*/fromDashboard)`, so the sleep screen is not drawn over the dashboard, and `powerManager.startDeepSleep(gpio, timerWakeMs)` arms the timer.
 
-On the next boot, `main.cpp` detects `isDashboardWake` (`ESP_RST_DEEPSLEEP` and `lastSleepFromDashboard`), calls `display.keepGlassOnNextBegin()`, and routes to `goToDashboard(dashboardViewOpen, timerWake)`. With `timerWake` set, `TiledDashboardActivity` starts with the focus frame hidden; once the due update is painted, `TimedDashboardActivity::loop` calls `requestDeepSleep()` again without waiting for the idle timers.
+On the next boot, `main.cpp` detects `isDashboardWake` (`ESP_RST_DEEPSLEEP` and `lastSleepFromDashboard`), calls `display.keepGlassOnNextBegin()`, and routes to `goToDashboard(dashboardViewOpen, timerWake)`. With `timerWake` set, the `TiledDashboardActivity` constructor hides the focus frame, but `onEnter` sets `showFocus = true` again, so the frame is painted (see [Open questions](#5-open-questions)); once the outstanding repaints are done, `TimedDashboardActivity::loop` calls `requestDeepSleep()` again without waiting for the idle timers.
 
 **Update schedule of the tiled dashboard** (`TiledDashboardActivity::nextUpdateMs`, `update`)
 
@@ -347,14 +347,15 @@ sequenceDiagram
 
 - The date tile and the schedules use the system clock. `weather::clockValid()` treats any time after 2024-01-01 as set.
 - If the clock is not valid after a successful fetch, `WeatherService::fetch` sets it with `settimeofday` from the forecast's `current.time` plus 450 s (the middle of the 15-minute slot). The date tile therefore triggers a weather fetch even when no weather tile is placed (`TiledDashboardActivity::wantsWeather`).
-- Local time is derived from the forecast's `utcOffset` (`dashboard_tiles::localNow`, `weather::localAt`), not from a configured time zone.
-- `TodoDashboardActivity::refreshDate` uses a different source, `halClock.localTime()` (the hardware RTC through `HalClock`). NTP sync (`HalClock::syncFromNTP`) is invoked from `WifiSelectionActivity`, not from the dashboard.
+- Local time is derived from the forecast's `utcOffset` (`dashboard_tiles::localNow`, `weather::localAt`), not from a configured time zone; without a valid forecast `localNow` falls back to `localtime_r`.
+- `TodoDashboardActivity::refreshDate` uses a different source, `halClock.localTime()` (the hardware RTC through `HalClock`, converted with the POSIX time zone set by `HalClock::setTimezone`). NTP sync (`HalClock::syncFromNTP`) is invoked from `WifiSelectionActivity` (which the dashboard portal's Join a Network path opens) and `ClockSyncActivity`, not from the weather fetch.
+- The two sources are not kept consistent. The forecast only sets the system clock (`settimeofday`); it never writes the hardware RTC. `syncFromNTP` is the only writer of the hardware RTC, and no code copies the hardware RTC into the system clock.
 
 #### Images
 
 - **Source.** Files in `DashboardConfigStore::carouselFolder` (default `/carousel`) accepted by `dashboard_image::isImage`: not hidden, extension `.bmp`, `.png`, `.jpg` or `.jpeg`.
 - **List.** `CarouselImages::load` reads up to `MAX_IMAGES` = 500 names, sorted with `FsHelpers::sortFileList`. The current index is `APP_STATE.carouselIndex` (persisted in `state.json`).
-- **Upload.** Pictures arrive through the general file-transfer web UI; see [05-network-and-storage.md](05-network-and-storage.md).
+- **Upload.** Pictures arrive through the web UI's Pictures page (`/pictures`, `src/network/html/PicturesPage.html`), which converts them on the phone and sends them over the file-transfer upload path, or through the Files page; see [05-network-and-storage.md](05-network-and-storage.md).
 
 ### 2.7 Rendering and image handling
 
@@ -420,7 +421,7 @@ Both stores derive from `PersistableStore<T>` and implement `getFilePath()`, `to
 |---|---|---|---|---|
 | GET | `/dashboards` | Read | `handleDashboardsPage` | The Dashboards page |
 | GET | `/api/dashboards` | Read | `handleGetDashboards` | `layout.active`, `orientation`, `grid` limits, `layouts[]`, `weather`, `carousel` with min/max |
-| POST | `/api/dashboards` | Modify | `handlePostDashboards` -> `applyDashboardChanges` | Any of `layout.active`, `saveLayout` (a layout object in the `CustomLayout` JSON form; `id` absent or 0 creates one, and the answer carries the saved `id`), `deleteLayout` (id), `restoreDefaults` (bool), `weather` (`lat`, `lon`, `place`, `units`, `clearLocation`), `carousel` (`folder`, `intervalMinutes`). A rejected field is named in the error and the in-memory store is rolled back from a `DashboardSnapshot` |
+| POST | `/api/dashboards` | Modify | `handlePostDashboards` -> `applyDashboardChanges` | Any of `layout.active`, `saveLayout` (a layout object in the `CustomLayout` JSON form; `id` absent or 0 creates one, a non-zero `id` must name an existing layout, the saved layout becomes the active one, and the answer carries the saved `id`), `deleteLayout` (id), `restoreDefaults` (bool), `weather` (`lat`, `lon`, `place`, `units`, `clearLocation`, `hasLocation`), `carousel` (`folder`, `intervalMinutes`). Answers `{"ok":true}` plus `id` and `restored` where they apply. A rejected field is named in a 400 error and the in-memory store is rolled back from a `DashboardSnapshot` |
 | GET | `/api/todo` | Read | `handleGetTodo` | `items[]`, `max`, `maxText` |
 | POST | `/api/todo` | Modify | `handlePostTodo` | `{"op": "add" \| "edit" \| "toggle" \| "delete" \| "clearDone", "text": "...", "index": n}`; answers with the updated list |
 
@@ -434,7 +435,7 @@ The example adds a hypothetical `BATTERY` widget. Each step names the existing c
 4. **Data and loading.** If the widget has state, add a member to `TiledDashboardActivity` and load it in `loadWidgets()` guarded by `shows(WidgetId::BATTERY)`. Copy data that the render task reads under a `RenderLock`, as `TodoSnapshot::load` does.
 5. **Schedule.** If the widget changes over time, add its due time to `nextUpdateMs()` with `consider(...)` and handle it in `update()`, setting `changed = true`. Times are `millis()` values. If the schedule must survive deep sleep, keep a wall-clock due time in RTC memory as `CarouselImages` does.
 6. **Full-screen view (optional).** Add a case to `TiledDashboardActivity::openFocused`. Derive the view from `TimedDashboardActivity` if it updates on a timer, or use `IdleStandby` otherwise. Override `isDashboardActivity()` to return true so that sleep keeps the screen.
-7. **Widgets list.** Extend `dashboard_widgets::COUNT`, the `WIDGETS` and `SECTIONS` arrays, `Status`, `readStatus` and `widgetName` in `WidgetsActivity.*`, and add a `Section` plus fragment in `DashboardPortalActivity::pagePath`.
+7. **Widgets list.** Extend `dashboard_widgets::COUNT`, the `WIDGETS` and `SECTIONS` arrays, `Status` (with `readyCount`), `readStatus`, `widgetName` and the `switch` in `refreshRows` in `WidgetsActivity.*`, and add a `Section` plus fragment in `DashboardPortalActivity::pagePath`.
 8. **Layout thumbnails.** `LayoutPickerActivity::drawTiles` names the widget in each thumbnail tile through `dashboard_widgets::widgetName`; step 7 covers it.
 9. **Web editor.** Add the widget to the layout editor's palette and, if it has settings, a section in `src/network/html/DashboardsPage.html`. Extend `applyDashboardChanges` and `handleGetDashboards` for new settings fields, and add them to `DashboardSnapshot` so that a rejected POST rolls back.
 10. **Strings.** Add the names to `lib/I18n/translations/english.yaml`; `scripts/gen_i18n.py` regenerates the keys at build time (see [06-build-flash-release.md](06-build-flash-release.md)).
@@ -575,7 +576,7 @@ flowchart LR
 4. `startServer`: constructs `GameServer(session)` and calls `begin()`. State becomes `RUNNING`.
 5. `onExit`: destroys the server, ends the portal, and performs `silentRestart()` (or `silentRestartToReader()`) if Wi-Fi was on. The boot router then lands on `goToGames()` (`BootResume::Silent && lastApp == GAMES` in `src/main.cpp`).
 
-**Access point and captive portal.** `PhonePortal::begin` starts a soft AP, a `DNSServer` that answers every name with the AP address, and mDNS. `GameNightActivity` passes no passphrase in its `PhonePortal::Config`; `PhonePortal::begin` then generates a random 8-character WPA2 passphrase for that session ("never raise an open network"). The join QR produced by `PhonePortal::joinQrPayload` carries it. `GameServer::handleNotFound` answers every non-`/api/` path with a 302 to `/`, which is what makes a phone's connectivity probe open the page. See [Open questions](#5-open-questions) for a documentation mismatch on this point.
+**Access point and captive portal.** `PhonePortal::begin` starts a soft AP, a `DNSServer` that answers every name with the AP address, and, when the config carries a hostname, mDNS (`MDNS.begin` only; no service record is advertised). `GameNightActivity` passes no passphrase in its `PhonePortal::Config`; `PhonePortal::begin` then generates a random 8-character WPA2 passphrase for that session ("never raise an open network"). The join QR produced by `PhonePortal::joinQrPayload` carries it. `GameServer::handleNotFound` answers every non-`/api/` path with a 302 to `/`, which is what makes a phone's connectivity probe open the page. See [Open questions](#5-open-questions) for a documentation mismatch on this point.
 
 **Player identity and seats**
 
@@ -651,7 +652,7 @@ stateDiagram-v2
 | any | other, not under `/api/` | - | `handleNotFound` | 302 `Location: /` |
 | any | other, under `/api/` | - | `handleNotFound` | 404 `{"error":"Unknown endpoint"}` |
 
-All JSON responses carry `Cache-Control: no-store`. An action that the rules refuse still returns 200 with unchanged state.
+State documents and `join` replies carry `Cache-Control: no-store`; the 403 and 404 error bodies do not. An action that the rules refuse still returns 200 with unchanged state.
 
 **Verbs** (`VERBS` table in `GameServer.cpp`, `Verb` enum in `PartyGames.h`)
 
@@ -754,7 +755,7 @@ sequenceDiagram
   GN->>GN: version 43 != paintedVersion, 700 ms since last paint
   GN->>RT: requestUpdate()
   RT->>S: games::statusFor(), games::drawBoard() under RenderLock
-  RT->>EPD: displayBuffer() fast; FULL_REFRESH every 8th paint
+  RT->>EPD: displayBuffer() fast, FULL_REFRESH every 8th paint
   B->>GS: GET /api/game/state?t=TB (next 1.2 s poll)
   GS->>S: writeStateJson(seat 5)
   GS-->>B: state v=43, B's own private fields
@@ -910,10 +911,10 @@ The power menu has two modes: `Mode::POWER_MENU`, opened over the current activi
 | `app.css` | Shared stylesheet | Shared stylesheet (a second embedded copy) |
 | HTTP server | `CrossPointWebServer` with `WebSession` access control | `GameServer`, no access control beyond seat tokens |
 | Station mode alternative | Yes (`WifiSelectionActivity`) | No; access point only |
-| Heap preparation | `FontCacheManager::releaseSdFontCaches()` | Same |
+| Heap preparation | `FontCacheManager::releaseSdFontCaches()` (portal only, not the weather fetch) | Same |
 | Exit | Silent restart if the radio was used | Silent restart if Wi-Fi was on |
 
-Both servers bind port 80, so only one can run at a time. The activity model guarantees this: each server is owned by one activity and destroyed in its `onExit`.
+Both servers bind port 80, so only one can run at a time. The activity model guarantees this: each server is owned by one activity and stopped (`DashboardPortalActivity`) or destroyed (`GameNightActivity`) in its `onExit`.
 
 ### 4.3 Settings and persisted flags
 
@@ -948,10 +949,9 @@ No dedicated compile-time switch for the Dashboard or for Games was found. `lib/
 
 Items below could not be determined from the code at this commit, or are inconsistencies that a maintainer should resolve.
 
-1. **Access point security wording.** `docs/party-games.md` and the class comment in `GameNightActivity.h` describe the Game Night network as "open". `PhonePortal::begin` never starts an open network: without a configured passphrase it generates a random WPA2 passphrase per session, and the join QR carries it. The code is taken as authoritative here; the prose elsewhere appears to predate that change.
+1. **Access point security wording.** `docs/party-games.md`, the class comment in `GameNightActivity.h` and the comment in `GameNightActivity::startAccessPoint` describe the Game Night network as "open". The code does not: `PhonePortal::begin` never starts an open network. Without a configured passphrase it generates a random WPA2 passphrase per session and passes it to `WiFi.softAP`; the join QR carries it and `PhoneJoinPanel` prints it as the typed fallback. The prose elsewhere appears to predate that change and should be corrected.
 2. **Power figures.** No current or energy measurements for light-sleep standby, deep sleep, a weather fetch or a dashboard refresh are present in the source. Section 2.5 describes the policy only.
 3. **Per-tile partial refresh.** The grid is aligned so that "a tile can refresh on its own" (`DashboardConfigStore.h`, `DashboardGrid.h`), but `TiledDashboardActivity::draw` repaints the whole frame and calls `displayBuffer` / `displayGray4Buffer` once. Whether the driver limits the physical update to changed blocks is a display-pipeline question; see [02-display-pipeline.md](02-display-pipeline.md).
 4. **Other build targets.** The Dashboard and Games sources and the power-menu tiles are not guarded by `FREEINK_DEVICE_EMINIMAL`. Whether they are reachable or usable on the other environments in `platformio.ini` was not verified.
-5. **`saveLayout` details.** `applySaveLayout` (`src/network/CrossPointWebServer.cpp`) was read only as far as its `id` handling and error paths; any side effects beyond saving the layout (for example activating a newly created one) are not documented here.
-6. **Two clock sources.** The date tile uses the system clock with the forecast's UTC offset, while `TodoDashboardActivity::refreshDate` uses `HalClock` (hardware RTC, POSIX time zone). Whether the two are kept consistent when the forecast sets the system clock is not established.
-7. **Game Night and `networkAnnounce`.** `GameNightActivity` passes the mDNS hostname unconditionally, while the dashboard portal honours `SETTINGS.networkAnnounce`. It is unclear whether this difference is intended.
+5. **Game Night and `networkAnnounce`.** `GameNightActivity` passes the mDNS hostname unconditionally, so `eminimal.local` is announced on the Game Night access point whatever the setting says, while the dashboard portal honours `SETTINGS.networkAnnounce`. It is unclear whether this difference is intended.
+6. **Focus frame after a timer wake.** The comment on the `TiledDashboardActivity` constructor says a timer wake "repaints without the focus frame", and the constructor clears `showFocus`. `TiledDashboardActivity::onEnter` then sets `showFocus = true` unconditionally, so the frame is painted before the device sleeps again. Which of the two is intended is not established.

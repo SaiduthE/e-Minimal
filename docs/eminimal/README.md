@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Draft |
-| **Applies to** | branch `master`, written against commit `09b6f02f` |
+| **Status** | Draft, fact-checked against the source on 2026-11-22 |
+| **Applies to** | branch `master`, written against commit `36f4315e` |
 | **Audience** | Firmware developers and contributors |
 
 e-Minimal is a fork of [CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-reader) for a

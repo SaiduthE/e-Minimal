@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Draft |
-| **Applies to** | commit `09b6f02f`, branch `master`, build target `[env:eminimal]` |
+| **Applies to** | commit `36f4315e`, branch `master`, build target `[env:eminimal]` |
 | **Audience** | Firmware contributors, reviewers, and anyone auditing what the device exposes over Wi-Fi or writes to the SD card |
 | **Scope** | Everything under `src/network`, the firmware update paths, the SD card access layer, and every persistent store |
 | **Related** | [01-system-overview.md](01-system-overview.md), [02-display-pipeline.md](02-display-pipeline.md), [03-application-framework.md](03-application-framework.md), [04-dashboard-and-games.md](04-dashboard-and-games.md), [06-build-flash-release.md](06-build-flash-release.md) |
@@ -37,7 +37,7 @@ All paths in this document are relative to the repository root. A claim is follo
 The device has one radio and one removable storage medium. Both are used on demand.
 
 - **Wi-Fi is off while reading.** The radio is brought up only inside a network screen (File Transfer, Wi-Fi setup, Game Night, phone text entry, firmware install, OPDS, the Weather widget's daily fetch). Leaving that screen turns the radio off and, in most cases, restarts the firmware silently to recover heap (`src/network/NetworkLink.h`, `src/SilentRestart.h`).
-- **Every HTTP server listens on port 80 and only one runs at a time.** There are five: `CrossPointWebServer`, `WifiSetupServer`, `TextEntryServer`, `GameServer`, `FirmwareInstallServer`. Each is owned by one activity (`src/network/TextEntryServer.h`, class comment).
+- **Every HTTP server listens on port 80 and only one runs at a time.** There are five: `CrossPointWebServer`, `WifiSetupServer`, `TextEntryServer`, `GameServer`, `FirmwareInstallServer`. Each instance is owned by one activity (`src/network/TextEntryServer.h`, class comment).
 - **All user data lives on the SD card.** The `[env:eminimal]` partition table has no SPIFFS partition (`partitions_eminimal.csv`). Settings, credentials, caches and the library index are files under `/.e-minimal` on the card.
 - **Persistent stores are JSON**, written through one base class with temp-file-then-rename and a `.bak` fallback (`lib/Serialization/PersistableStore.h`). Book caches and the library index are binary (`lib/Serialization/Serialization.h`, `lib/LibraryIndex/LibraryFormat.h`).
 - **Firmware updates on this board come from the SD card**, either from a file the user copied or from an image pushed over Wi-Fi and staged on the card. Both paths validate the image and require confirmation on the device (`src/network/FirmwareFlasher.h`, `src/activities/settings/SdFirmwareUpdateActivity.cpp`).
@@ -68,7 +68,8 @@ Two upstream features are compiled out of this target by `platformio.ini` (`[env
 | File Transfer, Create Hotspot | AP | `CrossPointWebServerActivity::startAccessPoint` via `PhonePortal` | Same |
 | Wi-Fi setup from a phone | AP+STA | `WifiSelectionActivity` owning `WifiPhoneSetup` | Portal dropped; a joined station survives for the caller |
 | Phone text entry | STA if already joined, else AP | `PhoneTextEntryActivity::start` | Radio returned to the state it was found in; no restart |
-| Game Night | AP | `GameNightActivity::startAccessPoint` | Portal dropped in `onExit` |
+| Dashboards / Dictionaries page | STA or AP | `DashboardPortalActivity` (`src/activities/dashboard/DashboardPortalActivity.cpp`) | `silentRestart()` or `silentRestartToSettings()` in `onExit` when the radio was used |
+| Game Night | AP | `GameNightActivity::startAccessPoint` | Portal dropped, then `silentRestart()` or `silentRestartToReader()` in `onExit` when Wi-Fi was on |
 | Install Firmware over Wi-Fi | STA | `FirmwareInstallActivity::onEnter` | `silentRestart()` in `onExit` |
 | Weather widget fetch | STA | `WeatherService::fetch` via `saved_wifi::connect` | `saved_wifi::disconnect()` after each fetch; `DashboardHomeActivity::onExit` restarts if `saved_wifi::usedSinceBoot()` |
 | OPDS browser | STA | `OpdsBookBrowserActivity` | See [03-application-framework.md](03-application-framework.md) |
@@ -77,7 +78,7 @@ Two upstream features are compiled out of this target by `platformio.ini` (`[env
 
 `WifiCredentialStore` (`src/WifiCredentialStore.h`) holds up to eight networks (`MAX_NETWORKS`) and the SSID that connected last. It is saved to `/.e-minimal/wifi.json`. Passwords are XOR-obfuscated with a key derived from `esp_efuse_mac_get_default()` and base64-encoded (`lib/Serialization/ObfuscationUtils.cpp`); the class comment states this is not cryptographically secure. Each entry also stores `password_len` and `password_crc32`; an entry whose decoded password fails either check is discarded and the file is resaved (`WifiCredentialStore::fromJson`).
 
-The SDK's own NVS credential storage is disabled with `WiFi.persistent(false)` wherever the firmware joins a network (`saved_wifi::prepareStation`, `WifiPhoneSetup::startAttempt`, `PhoneTextEntryActivity::start`).
+The SDK's own NVS credential storage is disabled with `WiFi.persistent(false)` before every `WiFi.begin` call (`WifiSelectionActivity::attemptConnection`, `saved_wifi::prepareStation`, `WifiPhoneSetup::startAttempt`) and in `PhoneTextEntryActivity::start` and `DashboardPortalActivity::startHotspot`.
 
 ### 2.4 Unattended joins: `SavedWifi`
 
@@ -87,7 +88,7 @@ The SDK's own NVS credential storage is disabled with `WiFi.persistent(false)` w
 2. Otherwise scan, keep the saved networks that are in range, sort by RSSI, and try each.
 3. Each attempt waits up to `perNetworkTimeoutMs` (default 10 s) and stops early on `WL_CONNECT_FAILED`.
 
-Open networks are skipped unless `SETTINGS.backgroundOpenWifi` is set. The scan result is also checked: a network that is open on the air is skipped even when its name is saved with a password (`saved_wifi::connect`, comment "an impostor"). The station hostname is `eMinimal-<MAC>`.
+Open networks are skipped unless `SETTINGS.backgroundOpenWifi` is set. In step 2 the scan result is also checked: a network that is open on the air is skipped even when its name is saved with a password (`saved_wifi::connect`, comment "an impostor"). Step 1 joins the last-connected network without a scan, so that check does not run there. The station hostname is `eMinimal-<MAC>`.
 
 ### 2.5 Phone-assisted setup: `WifiPhoneSetup` and `WifiSetupServer`
 
@@ -123,7 +124,7 @@ The credential is saved by the activity, not by `WifiPhoneSetup` (`WifiSelection
 - `HttpDownloader` disables modem sleep for the duration of each transfer and restores `WIFI_PS_MIN_MODEM` afterwards (`WifiPowerSaveGuard` in `src/network/HttpDownloader.cpp`). `OtaUpdater::installUpdate` does the same.
 - Activities that serve HTTP return `preventAutoSleep() == true` while the server runs (`CrossPointWebServerActivity.h`, `FirmwareInstallActivity.h`).
 - Idle timeouts turn the radio off without user action: File Transfer after the configured Auto-stop time (`WebSession::idleExpired`, Off / 5 / 15 / 30 min), firmware install after 5 min (`FirmwareInstallActivity::IDLE_STOP_MS`), phone text entry after 5 min (`PHONE_IDLE_MS`).
-- Wi-Fi and a server need roughly 45 KB of heap (comment in `FirmwareInstallActivity::onEnter`). Network activities release the SD-font caches first (`FontCacheManager::releaseSdFontCaches`) and restart afterwards because the radio leaves the heap fragmented (`src/network/SavedWifi.h`, comment on `disconnect`).
+- Wi-Fi alone needs roughly 45 KB of heap, and the server comes on top (comment in `FirmwareInstallActivity::onEnter`). Network activities release the SD-font caches first (`FontCacheManager::releaseSdFontCaches`) and restart afterwards because the radio leaves the heap fragmented (`src/network/SavedWifi.h`, comment on `disconnect`).
 
 ---
 
@@ -148,7 +149,7 @@ Portal users and their configuration:
 
 | Feature | SSID | Passphrase | Max clients | Mode |
 |---|---|---|---|---|
-| File Transfer hotspot | `eMinimal` | shared | 4 | AP |
+| File Transfer hotspot; Dashboards / Dictionaries page hotspot | `eMinimal` | shared | 4 | AP |
 | Wi-Fi phone setup | `eMinimal` | shared | 2 | AP+STA |
 | Phone text entry | `eMinimal` | shared | 2 | AP, or AP+STA if the radio was already on |
 | Game Night | `eMinimal Games` | random per session | `party::MAX_PLAYERS` | AP |
@@ -170,7 +171,7 @@ Summary of every listener:
 
 | Server | Transport and port | Runs during | Link | Authentication |
 |---|---|---|---|---|
-| `CrossPointWebServer` | HTTP 80, WebSocket 81, UDP 8134 | File Transfer | STA or AP | Session token / 6-digit code (default on), access level |
+| `CrossPointWebServer` | HTTP 80, WebSocket 81, UDP 8134 | File Transfer; Dashboards / Dictionaries page (`DashboardPortalActivity`) | STA or AP | Session token / 6-digit code (default on), access level |
 | `WebDAVHandler` | HTTP 80 (same server) | File Transfer, when Security > WebDAV is on | STA or AP | HTTP Basic with the code as password |
 | `WifiSetupServer` | HTTP 80 | Wi-Fi phone setup | AP+STA | None beyond the WPA2 hotspot |
 | `TextEntryServer` | HTTP 80 | Phone text entry | STA or AP | None beyond the link |
@@ -182,7 +183,7 @@ Summary of every listener:
 
 **Purpose.** The file manager, settings, fonts, dictionaries, dashboards and pictures pages, their JSON APIs, and uploads (`src/network/CrossPointWebServer.h`). User-level documentation is in [../webserver.md](../webserver.md); the full endpoint reference with request and response bodies is in [../webserver-endpoints.md](../webserver-endpoints.md); page design rules are in [../web-ui.md](../web-ui.md). This section summarises and records where the code differs.
 
-**When it runs.** Created in `CrossPointWebServerActivity::startWebServer` after a station join or after the hotspot is up. `begin()` refuses to start without a connected station or a running AP. The activity calls `handleClient()` in batches of up to 500 iterations per loop (`MAX_ITERATIONS`).
+**When it runs.** Created in `CrossPointWebServerActivity::startWebServer` after a station join or after the hotspot is up. `DashboardPortalActivity::startServer` creates the same server, with its own `WebSession`, for the Dashboards and Dictionaries pages. `begin()` refuses to start without a connected station or a running AP. The activity calls `handleClient()` in batches of up to 500 iterations per loop (`MAX_ITERATIONS`).
 
 **Access model.** `WebSession::begin` (`src/util/WebSession.cpp`) creates the per-session credentials after Wi-Fi is up:
 
@@ -226,9 +227,9 @@ The multipart data callback re-runs `check` before each chunk is written (`route
 | GET / POST | `/api/opds`, `/api/opds/delete` | Modify (reads included) | OPDS server list |
 | GET / POST | `/api/wifi`, `/api/wifi/delete` | Modify (reads included) | Saved Wi-Fi networks |
 
-**WebSocket upload (port 81).** Text frame `START:<token>:<filename>:<size>:<path>`, then binary frames, with `READY`, `PROGRESS:`, `DONE` or `ERROR:` replies (`onWebSocketEvent`). The handshake applies the same Host and Origin rules (`wsHandshakeHeader`). `START` checks the token, the access level, `FsHelpers::isSafePathComponent` on the file name, and `web_path::isProtected` on the path. An upload with no frame for 30 s (`WS_IDLE_MS`) is aborted and its partial file removed.
+**WebSocket upload (port 81).** Text frame `START:<token>:<filename>:<size>:<path>`, then binary frames, with `READY`, `PROGRESS:`, `DONE` or `ERROR:` replies (`onWebSocketEvent`). The handshake applies the same Host and Origin rules to the headers that are present (`wsHandshakeHeader`); no header is mandatory, so a handshake that sends no `Host` header is not refused at this step. `START` checks the token, the access level, `FsHelpers::isSafePathComponent` on the file name, and `web_path::isProtected` on the path. An upload with no frame for 30 s (`WS_IDLE_MS`) is aborted and its partial file removed.
 
-**UDP discovery (port 8134).** When `security.discovery` is on, the payload `hello` is answered with `crosspoint (on <hostname>);81` (`handleClient`).
+**UDP discovery (port 8134).** When `security.discovery` is on, the payload `hello` is answered with `crosspoint (on <hostname>);81` (`handleClient`). The `UDP_PORTS[]` array declared at the top of `CrossPointWebServer.cpp` is not referenced anywhere; only `LOCAL_UDP_PORT` (8134) is used.
 
 **Memory and concurrency.**
 
@@ -236,10 +237,10 @@ The multipart data callback re-runs `check` before each chunk is written (`route
 - HTTP uploads are buffered in a 4 KiB vector (`UploadState::UPLOAD_BUFFER_SIZE`) before each SD write. Downloads stream through a 4 KiB stack buffer.
 - WebSocket upload state is file-scope (`wsUploadFile`, `wsUploadInProgress`, ...). One upload runs at a time; a second `START` is refused.
 - The serving task is deliberately not subscribed to the task watchdog (comment at the end of `begin()`).
-- `/api/book-meta` refuses to open an EPUB below 60 KiB free heap (`BOOK_META_MIN_HEAP`).
+- `GET /api/book-meta` does not open the EPUB when the largest free heap block is below 60 KiB (`BOOK_META_MIN_HEAP`, `ESP.getMaxAllocHeap()`); it still answers, with the title taken from the file name.
 - `PersistableStoreBase::storeMutex` serialises concurrent saves from the web path and the main task (`lib/Serialization/PersistableStore.h`).
 
-**Side effects on the library.** A completed upload clears that book's cache (`clearBookCache`) and, for `.epub`, `.txt`, `.md`, `.xtc` and `.xtch`, marks the library index dirty (`isLibraryBookFile`, `library::markLibraryIndexDirty`). Rename and move carry the book's cache, bookmarks, recent entry and open-book pointer to the new path (`moveBookStateInFolder` and the helper above it). An HTTP upload refuses to overwrite an existing file.
+**Side effects on the library.** A completed upload clears that book's cache (`clearBookCache`) and, for `.epub`, `.txt`, `.md`, `.xtc` and `.xtch`, marks the library index dirty (`isLibraryBookFile`, `library::markLibraryIndexDirty`). Rename carries the book's cache, bookmarks, recent entry and open-book pointer to the new path (`moveBookStateInFolder` and the helper above it). Move (`handleMove`) clears the book's cache instead and carries only its metadata override (`bookmeta::move`). HTTP and WebSocket uploads refuse to overwrite an existing file.
 
 ### 4.2 `WebDAVHandler`
 
@@ -255,7 +256,7 @@ The multipart data callback re-runs `check` before each chunk is written (`route
 | `PUT` of a new file, `MKCOL`, `COPY`, `LOCK`, `UNLOCK` | Upload |
 | `PUT` over an existing file, `DELETE`, `MOVE` | Modify |
 
-`PUT` decides its level when the body starts (`_putNeeded`) and writes to `<path>.davtmp` before renaming into place. Paths are filtered with `web_path::isProtected`.
+`PUT` decides its level when the body starts (`_putNeeded`) and writes to `<path>.davtmp` before renaming into place. `GET`, `HEAD`, `PUT`, `DELETE`, `MKCOL`, `MOVE` and `COPY` filter their paths with `web_path::isProtected`. `handlePropfind` does not apply it to the requested path, only to the names of the children it lists: a `PROPFIND` of `/.e-minimal` returns the names and sizes of its entries that do not start with a dot, and a `PROPFIND` of a file inside it returns that file's size. File contents stay unreachable. `LOCK` and `UNLOCK` are dummies that touch no file.
 
 ### 4.3 `WebPathGuard`
 
@@ -447,13 +448,13 @@ sequenceDiagram
     Act->>Upd: start with stagedPath
     Upd->>Fl: validateImageFile(path, slot size)
     Fl-->>Upd: OK, or an error result
-    Upd->>User: version, build date, SHA-256 prefix; hold Confirm
+    Upd->>User: version, build date, SHA-256 prefix, then hold Confirm for 3 s
     User->>Upd: confirm
     Upd->>Fl: flashFromSdPath(path)
     Fl->>Fl: validateImageFile again
     Fl->>Fl: erase 64 KiB blocks and write 4 KiB chunks to the inactive slot
     Fl->>Boot: switchTo(dest)
-    Boot->>Boot: write new otadata entry (seq + 1, state NEW)
+    Boot->>Boot: write new otadata entry (next seq for the slot, state NEW)
     Upd->>SD: remove staged file
     Upd->>Upd: ESP.restart()
 ```
@@ -491,15 +492,14 @@ Facts from the code:
 - **Before the switch.** Any validation, read, erase or write failure returns before `switchTo` is called. `otadata` is unchanged, so the next boot uses the slot that was already running. The inactive slot may hold a partial image.
 - **After the switch.** The new entry is written with state `NEW`. The previous entry stays in the other `otadata` sector.
 - **No explicit rollback calls.** Nothing under `src/` or `lib/` calls `esp_ota_mark_app_valid_cancel_rollback` or `esp_ota_mark_app_invalid_rollback_and_reboot`.
-- **User-initiated recovery.** The Up + Power recovery hold reaches the SD firmware picker without loading settings or the normal UI (section 7.4), provided the installed image boots far enough to run `setup()`.
-
-Whether the bootloader in this build performs automatic rollback of a `NEW` image that fails to boot is not determined here; see [Open questions](#15-open-questions).
+- **User-initiated recovery.** The Up + Power recovery hold reaches the SD firmware picker instead of the normal Home or reader routing (section 7.4), provided the installed image boots far enough to run `setup()`. The stores, `SETTINGS` included, are still loaded first.
+- **Automatic rollback is enabled in the SDK configuration, with a short window.** `[env:eminimal]` has no `custom_sdkconfig`, so it links the framework's prebuilt ESP32-S3 libraries and bootloader; the `sdkconfig.default` and `sdkconfig.defaults` files in the repository root are for `esp32c3` and do not apply. In the framework package checked (Arduino core 3.3.11, `esp32s3/qio_opi/include/sdkconfig.h`) `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE` is set. With it, the ESP-IDF bootloader turns the `NEW` entry into `PENDING_VERIFY` on the first boot, and the Arduino core's `initArduino()` (`cores/esp32/esp32-hal-misc.c`) calls `esp_ota_mark_app_valid_cancel_rollback()` before `setup()` runs, unless the application overrides the weak `verifyRollbackLater()` or `verifyOta()` hooks. Nothing under `src/` or `lib/` overrides them. An image that resets before `initArduino()` is therefore rolled back on the next boot; an image that gets that far is marked valid, and a later crash in `setup()` or the UI does not roll back. This was read from the sources and not exercised on a device; see [Open questions](#15-open-questions).
 
 ### 7.7 `OtaUpdater` (upstream release check)
 
 `OtaUpdater` (`src/network/OtaUpdater.cpp`) queries `https://api.github.com/repos/crosspoint-reader/crosspoint-reader/releases/latest`, looks for an asset named `crosspoint-<tag>-<board>.bin`, compares three-part versions against `CROSSPOINT_VERSION`, and streams the image through `esp_ota_begin` / `esp_ota_write` / `esp_ota_end` / `esp_ota_set_boot_partition`. It checks `chip_id` and the board tag while streaming and calls `esp_ota_abort` on a mismatch.
 
-The class is compiled into the e-Minimal image, but the "Check for Updates" action is omitted from the Global Settings list for this board with `#if !FREEINK_DEVICE_EMINIMAL` (`SettingsActivity.cpp`, comment "OtaUpdater only knows upstream's release assets; e-Minimal updates from the SD card").
+The class is compiled into the e-Minimal image, but the "Check for Updates" action is omitted from the Global Settings list for this board with `#if !FREEINK_DEVICE_EMINIMAL` (`SettingsActivity.cpp`, comment "OtaUpdater only knows upstream's release assets; e-Minimal updates from the SD card"). The second list in the same file adds the action only when `globalMoved` is false, and `globalMoved` is `BoardConfig::isEMinimal78()`, which is true on this board. `SettingAction::CheckForUpdates` is the only place `OtaUpdateActivity` is created, so the updater cannot be started from the e-Minimal UI.
 
 ### 7.8 `FirmwareIdentity.h`
 
@@ -550,7 +550,7 @@ Additional facts:
 
 ### 8.3 Path traversal protection
 
-- HTTP file routes, WebDAV and the WebSocket all use `web_path::isProtected` (section 4.3). `..` is refused because it starts with a dot.
+- HTTP file routes, WebDAV and the WebSocket all use `web_path::isProtected` (section 4.3), with one exception: WebDAV `PROPFIND` does not check the requested path, so it lists names and sizes inside a protected folder (section 4.2). `FsHelpers::normalisePath` runs first and collapses every `..` component separated by `/`; it cannot climb above the root. A `..` that survives (for example after a backslash) is refused because it starts with a dot.
 - Upload and rename names are additionally checked with `FsHelpers::isSafePathComponent` or `isProtectedItemName`; new folder names are checked for characters FAT does not allow (`handleCreateFolder`).
 - Font uploads validate the family name (`FontInstaller::isValidFamilyName`), the file name (`FontInstaller::isValidCpfontFilename`) and the first eight bytes of the file (`handleFontUploadData`).
 - Dictionary deletion accepts only the roots `/dictionaries` and `/.dictionaries` (`handleDictionaryDelete`).
@@ -573,7 +573,7 @@ Additional facts:
 
 - Wi-Fi and OPDS passwords are obfuscated, not encrypted (section 2.3). The key is the device MAC address.
 - The hotspot passphrase is stored in `settings.json` (`phoneTextPassphrase`).
-- All of these are on the removable SD card. `web_path::isProtected` keeps `/.e-minimal` out of reach of the web interface; USB Drive mode exposes the whole card as a mass-storage device (`HalStorage::beginUsbDrive`).
+- All of these are on the removable SD card. `web_path::isProtected` keeps the contents of `/.e-minimal` out of reach of the web interface (WebDAV `PROPFIND` can still list file names and sizes there, section 4.2); USB Drive mode exposes the whole card as a mass-storage device (`HalStorage::beginUsbDrive`).
 
 ---
 
@@ -707,7 +707,7 @@ A reset during the write leaves the previous file in place.
 
 **Versioning.** The JSON stores carry no version number. Compatibility is by tolerant parsing: missing keys keep the in-memory default, and legacy keys are migrated in `fromJson` followed by `requestResave()`.
 
-**Concurrency.** `storeMutex` is held across serialise and write. Read paths do not take it, by design (class comment).
+**Concurrency.** `storeMutex` is held across serialise and write. `loadFromFile` takes it too. In-memory readers of a store do not, by design (class comment).
 
 ### 11.2 Store table
 
@@ -715,7 +715,7 @@ A reset during the write leaves the previous file in place.
 |---|---|---|---|---|---|
 | `CrossPointSettings` (`SETTINGS`) | `/.e-minimal/settings.json` | JSON | No version field. Legacy sleep-timeout enum mapped to minutes; plaintext obfuscated fields upgraded and resaved (`CrossPointSettings::fromJson`) | Settings screens, `POST /api/settings`, `PhonePortal::sharedPassphrase` | `.tmp` + `.bak`; defaults when no file |
 | `CrossPointState` (`APP_STATE`) | `/.e-minimal/state.json` | JSON | Legacy `lastSleepImage` folded into the recent-sleep ring | Sleep, app and book changes; web rename of the open book | Same |
-| `RecentBooksStore` (`RECENT_BOOKS`) | `/.e-minimal/recent.json` | JSON | None found | Opening a book; web rename and move; pruning missing books. Limit 10 | Same |
+| `RecentBooksStore` (`RECENT_BOOKS`) | `/.e-minimal/recent.json` | JSON | None found | Opening a book; web rename; pruning missing books. Limit 10 | Same |
 | `DashboardConfigStore` (`DASHBOARD_CONFIG`) | `/.e-minimal/dashboards.json` | JSON | `migratePresets` converts the earlier preset A/B/C shape; resaved | `POST /api/dashboards`, on-device layout choices | Same; three default layouts when no file |
 | `TodoStore` (`TODO_STORE`) | `/.e-minimal/todo.json` | JSON | None found | `POST /api/todo`, dashboard edits. Limits 50 items, 80 bytes each | Same; loaded and unloaded around each use |
 | `WifiCredentialStore` (`WIFI_STORE`) | `/.e-minimal/wifi.json` | JSON, obfuscated passwords | Adds `password_len` and `password_crc32` to older files; plaintext `password` accepted and upgraded | Joining a network, `POST /api/wifi`, last-connected changes. Limit 8 | Same; corrupted entries dropped and file resaved |
@@ -833,7 +833,7 @@ flowchart LR
 
 Reading the diagram:
 
-1. A request passes the access checks, then the path guard, before any file is opened.
+1. A request passes the access checks, then the path guard, before any file is opened (WebDAV `PROPFIND` is the exception, section 4.2).
 2. Uploaded books are written directly to their destination path on the card.
 3. A completed upload clears any stale cache for that path and writes the `library.dirty` marker.
 4. The Library rebuilds `library.idx` the next time it is entered. The reader builds `epub_<hash>/` on first open.
@@ -844,7 +844,7 @@ Reading the diagram:
 
 ## 14. Differences from the existing docs
 
-| Document | Statement | Code at `09b6f02f` |
+| Document | Statement | Code at `36f4315e` |
 |---|---|---|
 | [../webserver.md](../webserver.md), Security Notes | "There is no authentication"; "Anyone on the same network can access the web interface" | Session token, 6-digit code and access levels, on by default (`CrossPointWebServer::check`) |
 | [../webserver.md](../webserver.md), Security Notes; [../webserver-endpoints.md](../webserver-endpoints.md), Access Point Mode | Hotspot is an open network named `CrossPoint-Reader` | WPA2 network named `eMinimal` (`PhonePortal`) |
@@ -863,12 +863,10 @@ The Access Control section of [../webserver-endpoints.md](../webserver-endpoints
 
 ## 15. Open questions
 
-1. **Automatic rollback.** `sdkconfig.defaults` contains `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y`, and `ota_boot::switchTo` writes `ota_state = ESP_OTA_IMG_NEW`. No code in `src/` or `lib/` marks an image valid or invalid. `[env:eminimal]` does not extend `[firmware_tuned]`, so whether that sdkconfig file applies to the bootloader this target ships, and how the Arduino core handles the pending-verify state, was not determined.
+1. **Automatic rollback on hardware.** Section 7.6 gives the rollback behaviour as read from the framework sources and its prebuilt configuration. It was not confirmed on a device, and the bootloader on a device is whatever the last USB flash wrote, which may come from a different framework version.
 2. **"Recovery hatch".** `partitions_eminimal.csv` says "`ota_0` also holds the recovery hatch". The only recovery path found is the Up + Power hold in `setup()`, which is part of whichever image is running. What is specific to `ota_0` was not determined.
 3. **Push tool.** `tools/ota_push.py` is named in `FirmwareInstallServer.h` and `FirmwareInstallActivity.h` but is not in this repository. Its behaviour (version comparison, hash display) is described only in [../eminimal-controls.md](../eminimal-controls.md).
 4. **SD driver internals.** `SDCard` (mount, SDMMC host setup, error recovery) lives in `freeink-sdk` and was not examined beyond the `HalStorage` wrapper.
 5. **Execution context of the web server.** `PersistableStore.h` refers to "the web server task", while `CrossPointWebServerActivity::loop` calls `handleClient()` directly. Which task runs activity loops is covered in [03-application-framework.md](03-application-framework.md) and was not re-verified here.
 6. **Per-book files.** The formats and versioning of `meta/`, `bookmarks/` and `highlights/` were not examined in detail.
-7. **`UDP_PORTS` constant.** `CrossPointWebServer.cpp` declares `UDP_PORTS[]` with five port numbers; only `LOCAL_UDP_PORT` (8134) was seen in use.
-8. **`OtaUpdater` reachability.** The Global Settings list omits "Check for Updates" on this board. `SettingsActivity.cpp` has a second list that adds it when `globalMoved` is false; whether that branch is reachable on e-Minimal was not determined.
-9. **Per-store write sites.** The "Written" column in section 11.2 lists the call sites that were read. There are about one hundred `saveToFile()` calls under `src/`; the list is not exhaustive.
+7. **Per-store write sites.** The "Written" column in section 11.2 lists the call sites that were read. There are about one hundred `saveToFile()` calls under `src/`; the list is not exhaustive.

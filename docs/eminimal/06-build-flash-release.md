@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Draft |
-| **Applies to** | branch `master`, commit `09b6f02f` |
+| **Applies to** | branch `master`, commit `36f4315e` |
 | **Audience** | Developers who build, flash, test, or release the firmware |
 | **Related** | [01-system-overview.md](01-system-overview.md), [02-display-pipeline.md](02-display-pipeline.md), [03-application-framework.md](03-application-framework.md), [04-dashboard-and-games.md](04-dashboard-and-games.md), [05-network-and-storage.md](05-network-and-storage.md) |
 
@@ -187,7 +187,7 @@ Base build flags that matter for every target:
 | `-DCROSSPOINT_BASE_VERSION="<crosspoint.version>"` | Upstream release the build is based on, shown in About |
 | `-DFIRMWARE_PRODUCT_NAME="e-Minimal"` | Name shown to the user |
 | `-DFIRMWARE_PRODUCT_VERSION="<eminimal.version>"` | Version shown to the user |
-| `-DFIRMWARE_PRODUCT_HOSTNAME="eminimal"` | mDNS host name |
+| `-DFIRMWARE_PRODUCT_HOSTNAME="eminimal"` | mDNS host name for Calibre mode. Unused in this build, which excludes that activity; the mDNS name in use is `PhonePortal::SHARED_HOSTNAME` (`src/network/PhonePortal.h`), also `eminimal` |
 | `-DENABLE_SERIAL_LOG`, `-DLOG_LEVEL=2` | Serial logging on, at debug level (`lib/Logging/Logging.h`: 0 errors, 1 info, 2 debug) |
 | `-DIT8951_TIMING_LOG` | One timing line per display refresh. Marked bench-only in the comment |
 | `-DUSE_BLOCK_DEVICE_INTERFACE=1` | SdFat mounts on the native SDMMC block device |
@@ -315,7 +315,7 @@ environment is configured.
 | Order | Script | Stage | What it does | Effect on `eminimal` |
 |---|---|---|---|---|
 | 1 | `scripts/patch_pioarduino_cache.py` | pre | Patches the pioarduino builder so that its custom-core cache check is per chip. Restores or invalidates the cached custom core when `custom_sdkconfig` changes | No custom sdkconfig is requested, so no core rebuild is triggered |
-| 2 | `scripts/patch_wolfssl.py` | pre | Appends overrides to `user_settings.h` in each `.pio/libdeps/*/Arduino-wolfSSL`: re-enables DH, defines `HAVE_FFDHE_2048`, sets `FP_MAX_BITS` to 8192 | Applies |
+| 2 | `scripts/patch_wolfssl.py` | pre | Appends overrides to `user_settings.h` in each `.pio/libdeps/*/Arduino-wolfSSL/src`: re-enables DH, defines `HAVE_FFDHE_2048`, sets `FP_MAX_BITS` to 8192 | Applies |
 | 3 | `scripts/build_html.py` | pre | Walks `src/` for `.html`, `.js`, and `.css`. Minifies HTML, gzips each file, and writes `<Name>Html.generated.h`, `<Name>Js.generated.h`, or `<Name>Css.generated.h` beside the source, with the byte array, sizes, and an ETag | Applies. Generates the web UI under `src/network/html/` |
 | 4 | `scripts/gen_i18n.py` | pre | Reads `lib/I18n/translations/*.yaml` and writes `lib/I18n/I18nKeys.h`, `I18nStrings.h`, and `I18nStrings.cpp`. Honours `custom_i18n_builtin_langs` | Applies with English only |
 | 5 | `scripts/git_branch.py` | pre | Injects `CROSSPOINT_VERSION` with branch and short SHA for the `default` and `sticky` environments | No effect. `eminimal` sets its version in `platformio.ini` |
@@ -483,7 +483,7 @@ They flow into the build as preprocessor definitions and are combined in
 | `FIRMWARE_NAME_TEXT` | `e-Minimal` | Product name in the UI |
 | `FIRMWARE_DISPLAY_VERSION` | `e-Minimal v1.1.0` | Version shown to the user |
 | `FIRMWARE_ABOUT_VERSION` | `e-Minimal v1.1.0 (CrossPoint 1.6.5)` | The About screen's firmware row |
-| `FIRMWARE_HOSTNAME` | `eminimal` | mDNS host name |
+| `FIRMWARE_HOSTNAME` | `eminimal` | mDNS host name for Calibre mode; not referenced in this build (see 5.2) |
 
 Unlike the `default` and `sticky` development builds, the `eminimal` version
 string carries no branch name or commit hash (`scripts/git_branch.py` applies
@@ -534,7 +534,7 @@ sequenceDiagram
     Srv->>SD: write staged image
     Srv-->>PC: result
     UI->>SD: validate image (size, magic, segments, checksum, SHA, chip, board tag)
-    UI->>UI: show version, date, hash; wait for 3 s hold
+    UI->>UI: show version, date, hash, then wait for 3 s hold
     UI->>Fl: flashFromSdPath()
     Fl->>Fl: erase and write the inactive OTA slot
     Fl->>Boot: ota_boot::switchTo()

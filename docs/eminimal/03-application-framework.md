@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Draft |
-| **Applies to** | commit `09b6f02f` (branch `master`, build target `[env:eminimal]`) |
+| **Applies to** | commit `36f4315e` (branch `master`, build target `[env:eminimal]`) |
 | **Audience** | Firmware developers adding or changing screens, input handling, settings or persisted state |
 | **Scope** | Everything between the HAL and a screen: activities, navigation, input mapping, stores, UI components, sleep and idle |
 | **Related** | [01-system-overview.md](01-system-overview.md), [02-display-pipeline.md](02-display-pipeline.md), [04-dashboard-and-games.md](04-dashboard-and-games.md), [05-network-and-storage.md](05-network-and-storage.md), [06-build-flash-release.md](06-build-flash-release.md) |
@@ -183,7 +183,7 @@ Facts that follow from `ActivityManager::loop()`:
 - Pending actions are processed in a `while` loop. An `onEnter()` or a result handler may request another transition, which is applied in the same pass.
 - If the very first activity is launched while `currentActivity` is null, `replaceActivity()` enters it immediately.
 
-`Activity::onEnter()` and `Activity::onExit()` only log. Subclasses call the base first in `onEnter()` and last in `onExit()`.
+`Activity::onEnter()` and `Activity::onExit()` only log. Subclasses call the base first in `onEnter()`. In `onExit()` most existing activities also call the base first (for example `ReaderActivity::onExit()`), while `AGENTS.md` shows it last; because the base only logs, the order has no effect.
 
 ### 2.3 Navigation API
 
@@ -195,7 +195,7 @@ Facts that follow from `ActivityManager::loop()`:
 | `setResult(r)` then `finish()` | Record result, request pop | Returning from a sub-screen |
 | `Activity::onGoHome()`, `Activity::onSelectBook(path)` | Static shims for `goHome()` / `goToReader()` | Legacy call sites (marked TODO in `Activity.h`) |
 
-`goToApp()` and the `goTo*` wrappers for app roots call `ActivityManager::noteApp()`, which records `APP_STATE.lastApp` and `APP_STATE.resumeBookOnReturn` and saves the state file only when the app changes.
+The wrappers for app roots (`goHome()`, `goToReader()`, `goToDashboard()`, `goToGames()`, `goToGameNight()`), which `goToApp()` delegates to, call `ActivityManager::noteApp()`, which records `APP_STATE.lastApp` and `APP_STATE.resumeBookOnReturn` and saves the state file only when the app changes.
 
 `goToReader()` dispatches by file type: BMP and PNG paths open `BmpViewerActivity`; everything else goes through `ReaderActivity::create()`, which picks `EpubReaderActivity`, `TxtReaderActivity` or `XtcReaderActivity`.
 
@@ -203,7 +203,7 @@ Root-screen wrappers added by this fork allocate with `makeUniqueNoThrow` and lo
 
 ### 2.4 Returning results
 
-`ActivityResult::data` is a `std::variant` (`ResultVariant` in `ActivityResult.h`). The alternatives at this commit are `WifiResult`, `KeyboardResult`, `MenuResult`, `ChapterResult`, `PercentResult`, `IntervalResult`, `PageResult`, `ProgressChangeResult`, `NetworkModeResult`, `FootnoteResult`, `FilePathResult` and `HighlightResult`.
+`ActivityResult::data` is a `std::variant` (`ResultVariant` in `ActivityResult.h`). The alternatives at this commit are `std::monostate` (the default, no value), `WifiResult`, `KeyboardResult`, `MenuResult`, `ChapterResult`, `PercentResult`, `IntervalResult`, `PageResult`, `ProgressChangeResult`, `NetworkModeResult`, `FootnoteResult`, `FilePathResult` and `HighlightResult`.
 
 A child returns a value with `setResult(KeyboardResult{text}); finish();`. A child that calls `finish()` without `setResult()` returns a default `ActivityResult`. Callers check `result.isCancelled` and then `std::get_if<T>(&result.data)`. `ActivityManager::openPowerMenu()` shows the pattern.
 
@@ -217,7 +217,7 @@ A new result type requires a new struct and a new alternative in `ResultVariant`
 | `requestUpdate(true)` | Notifies the render task immediately. Does not wait. |
 | `requestUpdateAndWait()` | Notifies and blocks the caller until the render completes. Asserts if called from the render task, while holding a `RenderLock`, or while another task is already waiting. |
 
-`ActivityManager::renderIdle()` reports whether a render is requested, queued or running. It combines `requestedUpdate` with `renderPending`, which is set in `notifyRender()` and cleared once the render task holds the lock. The reader uses it to drop page turns pressed during a draw (`ReaderActivity::pageDrawBusy()`), and the idle light sleep uses it to avoid freezing a repaint (`idleLightSleep()` in `src/main.cpp`).
+`ActivityManager::renderIdle()` returns true when no render is requested, queued or running. It combines `requestedUpdate` with `renderPending`, which is set in `notifyRender()` and cleared once the render task holds the lock. The reader uses it to drop page turns pressed during a draw (`ReaderActivity::pageDrawBusy()`), and the idle light sleep uses it to avoid freezing a repaint (`idleLightSleep()` in `src/main.cpp`).
 
 ### 2.6 Render synchronisation
 
@@ -291,7 +291,7 @@ Activity `name` strings are used for a few identity checks in `ActivityManager` 
 | Activity | Purpose | Reached from |
 |---|---|---|
 | `HomeActivity` | Reader app home: current book, cover grid, bottom tabs | `goHome()` |
-| `FileBrowserActivity` | SD card folder browser | `goToFileBrowser()`; Home; reader Back (long or short, by setting); `SdFirmwareUpdateActivity` |
+| `FileBrowserActivity` | SD card folder browser with rename and delete; in `Mode::PickFirmware` it lists only `.bin` files and returns the path | `goToFileBrowser()`; Home; reader Back (long or short, by setting); `BmpViewerActivity`; `SdFirmwareUpdateActivity` (pushed as the picker) |
 | `CrashActivity` | Shows panic information after a crash reboot | `goToCrashReport()` in `setup()` |
 
 ### 3.4 `library`
@@ -307,14 +307,14 @@ Activity `name` strings are used for a few identity checks in `ActivityManager` 
 |---|---|---|
 | `ReaderActivity` | Abstract base: page turns, Back navigation, end-of-book options, forced refresh | `ReaderActivity::create()` |
 | `EpubReaderActivity`, `TxtReaderActivity`, `XtcReaderActivity` | Format readers | `goToReader()` |
-| `EpubReaderMenuActivity`, `XtcReaderMenuActivity` | Reader menu | Select in the reader |
+| `EpubReaderMenuActivity`, `XtcReaderMenuActivity` | Reader menu | Select in the reader. `TxtReaderActivity` has no menu and no sub-screens: it does not override `handleFormatInput()` |
 | `ReaderHoldMenuActivity` | Hold-Select popup: Highlight / Dictionary / Bookmark | Hold Select in the EPUB reader |
 | `EpubReaderChapterSelectionActivity`, `XtcReaderChapterSelectionActivity` | Table of contents | Reader menu |
 | `EpubReaderPercentSelectionActivity` | Go to percent | Reader menu |
 | `EpubReaderBookmarksActivity`, `EpubReaderHighlightsActivity`, `EpubReaderFootnotesActivity` | Lists that jump within the book | Reader menu |
 | `HighlightSelectActivity` | Two-step range picker on the page | Hold-Select action |
 | `DictionaryWordSelectActivity`, `DictionaryDefinitionActivity`, `DictionaryChooserActivity` | Word picker, definition viewer, dictionary list | Hold-Select action or reader menu |
-| `QrDisplayActivity` | Shows a QR code | EPUB reader |
+| `QrDisplayActivity` | Shows the current section's text as a QR code | EPUB reader menu (`DISPLAY_QR`) |
 | `KOReaderSyncActivity` | KOReader progress sync | Excluded from `[env:eminimal]` by `build_src_filter` and `FREEINK_NO_KOSYNC` |
 
 ### 3.6 `browser`
@@ -365,9 +365,9 @@ See [04-dashboard-and-games.md](04-dashboard-and-games.md) for internals.
 | `ManageDictionariesActivity` | Dictionary list and management | Settings > Reader |
 | `FontDownloadActivity` | Download SD font families | Settings |
 | `OpdsServerListActivity`, `OpdsSettingsActivity` | OPDS servers | Settings; `goToBrowser()` |
-| `ClearCacheActivity`, `AboutActivity` | Maintenance, device info | Settings |
+| `ClearCacheActivity`, `AboutActivity` | Removes the book cache folders under `/.e-minimal/` after a confirmation; device info | Settings; About is in Global Settings on this board |
 | `SdFirmwareUpdateActivity` | Firmware update from an image on the SD card | Global Settings; recovery boot; `FirmwareInstallActivity` |
-| `OtaUpdateActivity` | Network update check | Not offered on this target: the row is under `#if !FREEINK_DEVICE_EMINIMAL` in `SettingsActivity::rebuildSettingsLists()` |
+| `OtaUpdateActivity` | Network update check | Not offered on this target: in `SettingsActivity::rebuildSettingsLists()` the Global row is under `#if !FREEINK_DEVICE_EMINIMAL` and the Reader-scope row under `if (!globalMoved)` |
 | `KOReaderSettingsActivity`, `KOReaderAuthActivity` | KOReader account | Excluded from `[env:eminimal]` |
 
 ### 3.10 `util`
@@ -376,8 +376,8 @@ See [04-dashboard-and-games.md](04-dashboard-and-games.md) for internals.
 |---|---|---|
 | `TextEntryActivity` | Chooses device keyboard or phone entry; returns `KeyboardResult` | Any text field |
 | `KeyboardEntryActivity`, `PhoneTextEntryActivity` | The two text-entry methods | `TextEntryActivity`; Wi-Fi password |
-| `ConfirmationActivity` | Yes/No prompt | Destructive actions |
-| `IntervalSelectionActivity` | Slider dialog returning `IntervalResult` | Time to Sleep in Settings |
+| `ConfirmationActivity` | Cancel/Confirm popup; the answer is `isCancelled` | Destructive actions (delete, reset) in Library, File Browser, Book Details, Manage Dictionaries, Security and font management |
+| `IntervalSelectionActivity` | Slider dialog returning `IntervalResult` | Time to Sleep in Reader-scope Settings (`openSleepTimeoutPicker()`). Not reached on this board: Time to Sleep is in Global Settings, which uses a preset popup (`openSleepPresetPopup()`) |
 | `FullScreenMessageActivity` | One centred message | `goToFullScreenMessage()` (SD card error) |
 | `BmpViewerActivity` | Image viewer | `goToReader()` for BMP/PNG |
 | `FrontlightPanelActivity` | Control-centre sheet | Light-panel gesture in `ActivityManager::loop()`; requires a frontlight, which this board lacks |
@@ -451,7 +451,7 @@ flowchart LR
     Hal --> Main[main.cpp loop: power key, screenshot chord, idle timer]
 ```
 
-`MappedInputManager::update()` is called once per pass at the top of `loop()` in `src/main.cpp`. It calls `gpio.update()`.
+`MappedInputManager::update()` is called once per pass at the top of `loop()` in `src/main.cpp`. It calls `gpio.update()`. `InputManager` (`freeink-sdk/libs/hardware/InputManager/`) debounces: a changed raw state is committed only after it has held for more than `DEBOUNCE_DELAY` (5 ms), so a press needs two consecutive polls that agree.
 
 ### 4.2 Physical keys on e-Minimal
 
@@ -496,12 +496,12 @@ Button hints follow the same mapping: `mapLabels(back, confirm, previous, next)`
 
 Two patterns are in use:
 
-1. **Act on release, classify by held time.** Example: `ReaderUtils::handleBackNavigation()` compares `getHeldTime()` with `GO_BACK_OR_HOME_MS` (1000 ms).
+1. **Act on release, classify by held time.** Example: `ReaderUtils::handleBackNavigation()` compares `getHeldTime()` with `GO_BACK_OR_HOME_MS` (1000 ms). It also fires at the threshold through `wasLongPressed()`, so a long hold acts without waiting for the release.
 2. **`wasLongPressed()`** for an action that fires while the key is still down.
 
 `ButtonNavigator` (`src/util/ButtonNavigator.h`) wraps list navigation. `onNextRelease` / `onPreviousRelease` step once. `onNextContinuous` / `onPreviousContinuous` repeat while held; defaults are 500 ms to start and 500 ms between repeats. A release that follows a continuous run does not also step.
 
-Hold thresholds are local constants, for example `SKIP_HOLD_MS` 700 and `BOOKMARK_HOLD_MS` 400 in `src/activities/reader/ReaderUtils.h`, and `ACTIONS_HOLD_MS` 700 in several list screens. User-facing behaviour per screen is in [../eminimal-controls.md](../eminimal-controls.md).
+Hold thresholds are local constants, for example `SKIP_HOLD_MS` 700 and `BOOKMARK_HOLD_MS` 400 in `src/activities/reader/ReaderUtils.h`, and `ACTIONS_HOLD_MS` 700 in `TodoDashboardActivity.cpp` and `ManageDictionariesActivity.cpp`. User-facing behaviour per screen is in [../eminimal-controls.md](../eminimal-controls.md).
 
 ### 4.5 The power key
 
@@ -513,6 +513,8 @@ The power key is handled in `loop()` in `src/main.cpp`, before `activityManager.
 | Power and Down both pressed | Screenshot via `ScreenshotUtil::takeScreenshot()` under a `RenderLock`. Physical keys; ignores the key map. |
 | Short release, `SETTINGS.shortPwrBtn == FORCE_REFRESH` | `activityManager.handleForcedRefresh()`, else a promoted half refresh. |
 | Within 2 s of `setup()` (`allowSleepAt`) or before the wake hold is released (`powerReleasedSinceWake`, `wakePowerReleasePending`) | Ignored, so the wake gesture cannot act in the app. |
+
+The other `shortPwrBtn` values are consumed elsewhere: `PAGE_TURN` in `ReaderUtils::detectPageTurn()` and `FOOTNOTES` in `EpubReaderActivity::loop()`. `PWR_CONFIRM` is touch-only (`MappedInputManager::wasPowerConfirmClick()`, compiled under `FREEINK_CAP_TOUCH`) and is not offered here. `SLEEP` has no short-press action in the e-Minimal branch of `loop()`; in `setup()` it lets a single click wake the device without the hold.
 
 `openPowerMenu()` is a no-op when there is no current activity, when the power menu is already on top, or when a transition is pending.
 
@@ -568,7 +570,7 @@ On-disk formats and the `/.e-minimal/` layout are described in [05-network-and-s
 | `CrossPointState` (`APP_STATE`) | `state.json` | Runtime state: `openEpubPath`, `lastApp`, `resumeBookOnReturn`, sleep flags, `showBootScreen`, `readerActivityLoadCount`, recent sleep images, `carouselIndex`, `dashboardPortalMode` | `setup()` | `enterDeepSleep()`, `ActivityManager::noteApp()`, boot routing in `setup()`, readers |
 | `RecentBooksStore` (`RECENT_BOOKS`) | `recent.json` | Up to `MAX_RECENT_BOOKS` (10) entries: path, title, author, cover path | `setup()` | On add, update, remove |
 | `OpdsServerStore` (`OPDS_STORE`) | `opds.json` | Up to 8 OPDS servers; passwords obfuscated on disk | `setup()`; reloaded in `OpdsServerListActivity` | On add, update, remove |
-| `WifiCredentialStore` (`WIFI_STORE`) | `wifi.json` | Saved networks and last connected SSID; own mutex for in-memory strings | On demand (`WifiSelectionActivity.cpp`) | On credential change |
+| `WifiCredentialStore` (`WIFI_STORE`) | `wifi.json` | Saved networks and last connected SSID; own mutex for in-memory strings | On demand: `WifiSelectionActivity::onEnter()` and `saved_wifi::hasSavedNetworks()` (`src/network/SavedWifi.cpp`, used by the Weather fetch) | On credential change |
 | `DashboardConfigStore` (`DASHBOARD_CONFIG`) | `dashboards.json` | Dashboard layouts, active layout, widget settings | By dashboard screens on entry; first by `card_folders::ensure()` at boot | By the web API and `LayoutPickerActivity` |
 | `TodoStore` (`TODO_STORE`) | `todo.json` | To-do items (50 items, 80 characters) | `load()` on dashboard entry, `unload()` on exit | Caller, outside any render lock |
 | `KOReaderCredentialStore` | `koreader.json` | KOReader account | Not built on this target (`FREEINK_NO_KOSYNC`) | n/a |
@@ -636,8 +638,8 @@ Individual metrics can be patched at run time from the serial console (`CMD:METR
 | `UIScaleSpec` | `UIScale.h` | Font slots for FreeInkUI: small `UI_10`, body and title `UI_12` |
 | `OptionPopup` | `OptionPopup.h` | Modal option list drawn over a screen |
 | `UiSliderDialog` | `UiSliderDialog.h` | Shared slider dialog used by interval and percent selection |
-| `EMinimalHomeUi`, `CoverGridHomeUi`, `HomeCoverCache` | same names | Cover-grid home page; `EMinimalHomeUi` is the 7.8" four-key variant |
-| `PhoneJoinPanel` | `PhoneJoinPanel.*` | Shared panel for phone-join screens |
+| `EMinimalHomeUi`, `CoverGridHomeUi`, `HomeCoverCache` | same names | Cover-grid home page; `EMinimalHomeUi` is the 7.8" four-key variant; `HomeCoverCache` decodes the cover thumbnails and keeps PSRAM snapshots of the painted regions |
+| `PhoneJoinPanel` | `PhoneJoinPanel.*` | Shared card for phone-join screens (`PhoneJoinPanel::draw()`): up to two numbered QR codes (join the network, open the page) with the typed fallback, a headline and a status line |
 | Icons | `icons/*.h` | Bitmap icon tables |
 
 All files are under `src/components/`.
@@ -1033,21 +1035,16 @@ These rules come from the repository's `AGENTS.md` and `CLAUDE.md`. Only those t
 | "Go Home" behaviour | Described | No such row exists |
 | Apps launcher | Tiles "with Sleep beneath" | Tiles with all three rows (`MENU_ITEM_COUNT` applies in both modes) |
 | Source line references | `LibraryListActivity.cpp:727-738` | Those lines now hold unrelated search code |
+| Source line references | `SettingsActivity.cpp:492` for the Time to Sleep step | That line now creates `WifiSelectionActivity`; the step of 5 is in `SettingsActivity::openSleepTimeoutPicker()` |
 
 The power menu header is "Quick Menu" (`STR_POWER_MENU`) and the launcher header is "Apps" (`STR_APP_LAUNCHER`), as the controls document states.
 
 ### 10.3 `AGENTS.md`
 
-`AGENTS.md` is kept identical to upstream and describes the upstream reference hardware. Its "Activity Lifecycle" section shows `exitActivity()` / `enterNewActivity()` free functions in `main.cpp`; these no longer exist. Its button-mapping section describes seven keys with fixed Up/Down. Its task stack figures (2048 and 4096 bytes) are guidance for activity-created tasks, not the render task.
+`AGENTS.md` is kept identical to upstream and describes the upstream reference hardware. Its "Activity Lifecycle" section shows `exitActivity()` / `enterNewActivity()` free functions in `main.cpp`; these no longer exist. Its button-mapping section describes fixed Up/Down side buttons and four remappable front buttons. Its task stack figures (2048 and 4096 bytes) are guidance for activity-created tasks, not the render task.
 
 ---
 
 ## 11. Open questions
 
-1. **Debounce timing.** `InputManager` in the SDK was not read. The 5 ms debounce and the "two consecutive polls" rule are taken from comments in `src/main.cpp`.
-2. **Other `shortPwrBtn` actions.** Only `FORCE_REFRESH` and `SLEEP` handling were traced in `main.cpp`. Where `PWR_CONFIRM` and page-turn values are consumed on a non-touch board was not determined.
-3. **`PhoneJoinPanel` and `HomeCoverCache`.** Their roles are inferred from names and callers; the files carry no summary comment.
-4. **`WifiCredentialStore` load sites.** Only the load in `WifiSelectionActivity.cpp` was confirmed. Background Wi-Fi code under `src/network/` may load it too.
-5. **One-line descriptions.** Entries for `CrashActivity`, `FileBrowserActivity`, `ClearCacheActivity`, `QrDisplayActivity` and `ConfirmationActivity` are based on names and call sites, not on a full read of each file.
-6. **`SettingsActivity.cpp:492`** cited in the controls document was not checked against the current file.
-7. **`TxtReaderActivity` sub-screens.** No menu activity is constructed from `TxtReaderActivity.cpp`; whether it has an in-reader menu by other means was not determined.
+1. **Mermaid rendering.** The diagrams were checked by reading their source, not by rendering them on GitHub.
