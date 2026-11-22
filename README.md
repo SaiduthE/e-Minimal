@@ -1,315 +1,106 @@
 # e-Minimal firmware
 
-> **This repository is a fork of [CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-reader).**
-> It adapts CrossPoint to the e-Minimal reader: an ESP32-S3 (N16R8) driving a 7.8" 1872x1404 e-ink panel
-> through an IT8951 controller, with five keys and a microSD card. It adds a dashboard, party games played
-> from phones, and firmware install over Wi-Fi.
->
-> - Build target: `pio run -e eminimal`
-> - Developer documentation for the fork: [docs/eminimal/](docs/eminimal/README.md)
-> - Licence and attribution: [LICENSE](LICENSE), [NOTICE.md](NOTICE.md)
-> - Not affiliated with or endorsed by the CrossPoint Reader project, Xteink or Waveshare.
->
-> Everything below this banner, and `GOVERNANCE.md`, `SCOPE.md`, `ROADMAP.md` and `AGENTS.md`, is the
-> upstream project's text, kept so the fork can be synced. It describes CrossPoint, not this fork.
+Open-source firmware for **e-Minimal**, a home-built 7.8" e-ink reader based on an ESP32-S3.
 
----
+It is a fork of [CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-reader), the community
+e-reader firmware. CrossPoint supplies the reading engine, the user interface and the web tools. This fork
+adds support for the e-Minimal hardware and a few features of its own.
 
-# CrossPoint Reader
+> Not affiliated with or endorsed by the CrossPoint Reader project, Xteink or Waveshare.
 
-[![Fund contributors](https://img.shields.io/badge/%F0%9F%91%91_Fund_contributors-royalty.dev-BB953A?style=for-the-badge&labelColor=1a1a1a)](https://app.royalty.dev/crosspoint-reader/crosspoint-reader)
+## What it does
 
-CrossPoint is open-source e-reader firmware - community-built, fully hackable, free forever. It's maintained by a growing community of developers and readers who believe your device should do what you want - not what a manufacturer decided for you.
+**From CrossPoint**
 
-### Now running on:
-- **ESP32C3-based** Xteink X4 and X3.
-- **ESP32S3-based** Xteink X4Pro and X4Classic, Seeed reTerminal Sticky, M5PaperMono
+- Reads EPUB 2/3, XTC/XTCH, TXT and Markdown from a microSD card, with hyphenation, kerning, bookmarks,
+  footnotes, dictionary lookup and custom fonts.
+- A library with covers, recent books, series and genre views.
+- File transfer from a phone or computer over Wi-Fi (web page, WebDAV), and OPDS catalogues.
 
-Check [our Devices page](https://crosspointreader.com/devices) for the full list.
+**Added by this fork**
 
-![CrossPoint Reader running on Xteink device](./docs/images/cover.jpg)
+- **The e-Minimal board**: ESP32-S3 with a 1872 x 1404 panel driven through an IT8951 controller, including
+  an IT8951 driver with partial updates and automatic waveform selection.
+- **Five-key control**: four keys under the screen plus a power key, with a power menu and an app switcher.
+- **Dashboard**: a screen of tiles (date, weather, to-do list, pictures) that refreshes on a timer and
+  sleeps between updates.
+- **Game Night**: party games where the reader is the shared board and each player's phone is a private
+  hand, joined by scanning a QR code. No internet needed.
+- **Phone-assisted setup**: Wi-Fi setup and text entry from a phone, since the device has no keyboard.
+- **Firmware install over Wi-Fi or from the SD card**, with a confirmation on the device.
+- **Web access control**: an access code and access levels for the file-transfer pages.
 
-> If you're planning to buy an Xteink device, consider purchasing an **X3/X4 Developer Edition** through https://crosspointreader.com. CrossPoint receives a small share of each sale, helping fund development costs.
+## Hardware
 
-## What can CrossPoint do?
+The firmware targets the parts below. The custom circuit board and the case of the finished device are not
+published; the firmware runs the same on a development board wired as shown.
 
-- **Reader engine**: EPUB 2/3 rendering with embedded-style option, image handling, hyphenation, kerning, adaptive table layouts, native CJK ruby annotations, chapter navigation, footnotes, bookmarks, dictionary lookups ([StarDict](docs/dictionary.md)), go-to-percent, auto page turn, orientation control, focus reading, KOReader progress sync and more.
+| Part | Used here |
+|---|---|
+| MCU | ESP32-S3-WROOM-1 **N16R8** (16 MB flash, 8 MB octal PSRAM), for example an ESP32-S3-DevKitC-1 |
+| Display | 7.8" e-ink panel, 1872 x 1404, with an IT8951 controller board (SPI) |
+| Storage | microSD on the SDMMC pins (1-bit) |
+| Keys | Five push buttons to ground |
+| Battery (optional) | LiPo with a MAX17048 fuel gauge on I2C |
 
-- **Various formats**: native handling for `.epub`, `.xtc/.xtch`, `.txt`, and `.bmp`.
+| Signal | GPIO | | Signal | GPIO |
+|---|---|---|---|---|
+| Display SCLK | 14 | | Key Back | 7 |
+| Display MOSI | 16 | | Key Confirm | 6 |
+| Display MISO | 17 | | Key Up | 4 |
+| Display CS | 18 | | Key Down | 5 |
+| Display HRDY (busy) | 38 | | Key Power | 15 |
+| Display reset | 40 | | SD CLK / CMD / D0 | 12 / 11 / 13 |
+| Display power enable | 39 | | SD power switch | 21 |
+| Fuel gauge SDA / SCL | 41 / 42 | | USB detect | 9 |
 
-- **Touch reading**: follow EPUB links and look up words in the dictionary on touch-enabled devices.
+GPIO 33 to 37 are used by the PSRAM and must stay free. The full table with notes is in
+[docs/eminimal/01-system-overview.md](docs/eminimal/01-system-overview.md).
 
-- **Screenshots.**
+## Build and flash
 
-- **Custom fonts**: install your favorite fonts on the SD card.
+You need [PlatformIO](https://platformio.org/) and git.
 
-- **Tilt page turn (X3 and Sticky)**.
-
-- **USB Drive mode (X4Pro)**: access the SD card as USB mass storage.
-
-- **Library workflow**: indexed title/author search, recently-added and alphabetical views, multilingual grouping, folder browser, recent books, and SD-cache management.
-
-- **Wireless workflows**:
-  
-  - File transfer web UI
-  - EPUB Optimizer
-  - Web settings UI/API (edit many device settings from browser)
-  - WebSocket fast uploads
-  - WebDAV handler
-  - AP mode (hotspot) and STA mode (join existing Wi-Fi), both with QR helpers
-  - Calibre wireless connect flow
-  - OPDS browser with saved servers (up to 8), search, pagination, and direct download
-  - OTA update checks and installs from GitHub releases
-
-- **Customization**: night mode, multiple themes (Classic, Lyra, Lyra Extended, RoundedRaff), sleep screen modes including transparent overlays, front/side button remapping, status bar controls, power-button behavior, refresh cadence, and more.
-
-- **Localization**: 34 UI languages and counting, including CJK font fallback and RTL support.
-
-### Coming soon:
-
-- More themes.
-
-- Web plugins.
-
-- Bluetooth pageturner.
-
-- Much more! stay tuned.
-
----
-
-## USB-locked devices (Xteink Unlocker)
-
-Some Xteink units purchased from third-party stores (e.g. AliExpress) ship with USB flashing locked from the factory.
-If your device is locked, you will need to use the **Xteink Unlocker** tool available at
-https://crosspointreader.com/#unlock-tool before you can flash CrossPoint.
-
-**You do not need this tool if you bought your device directly from xteink.com.** Those units are not locked.
-
-**Not sure if your device is locked?** Power it on, connect the USB-C cable, and try flashing via the web flasher first (see
-[Install firmware](#install-firmware) below). If the browser's serial device picker does not show your device, try a different
-USB port or browser before assuming the device is locked. Only reach for the unlocker if the device still doesn't appear.
-
-> ### ⚠️ WARNING: READ THIS BEFORE USING THE UNLOCKER ⚠️
-> 
-> **The only officially supported firmwares in the unlock tool are CrossPoint and CrossInk.**
-> 
-> Flashing any other firmware on a USB-locked device may **permanently brick the device** or leave it **permanently
-> stuck on that firmware with no recovery path**. Once USB flashing is re-locked, your only way back is via OTA, and if
-> the firmware you flashed doesn't support OTA, **there is no way out**.
-
-## Install firmware
-
-### Web installer (recommended)
-
-1. Connect your device to your computer via USB-C and wake/unlock the device
-2. Go to https://crosspointreader.com/#flash-tools, select your device (X3, X4, Xteink X4Pro, Seeed reTerminal Sticky, or M5PaperMono), and choose an official CrossPoint release.
-
-### Web installer (specific version)
-
-1. Connect your device to your computer via USB-C and wake/unlock the device
-2. Download the firmware file for your device from [Releases](https://github.com/crosspoint-reader/crosspoint-reader/releases), or compile yourself.
-3. Go to https://crosspointreader.com/#flash-tools, select your device, click "Custom .bin" and upload the firmware file.
-
-### Revert to Official Firmware
-
-To revert to the official firmware, you can also flash the latest official firmware using https://crosspointreader.com/#flash-tools.
-
-### Command line
-
-1. Install [`esptool`](https://github.com/espressif/esptool):
-
-```bash
-pip install esptool
+```sh
+git clone --recursive https://github.com/SaiduthE/e-Minimal.git
+cd e-Minimal
+pio run -e eminimal              # build
+pio run -e eminimal -t upload    # build and flash over USB
+pio device monitor -e eminimal   # serial console
 ```
 
-2. Download the firmware file for your device from the [releases page](https://github.com/crosspoint-reader/crosspoint-reader/releases).
-3. Connect your device via USB-C.
-4. Find the device port. On Linux, run `dmesg` after connecting. On macOS:
-
-```bash
-log stream --predicate 'subsystem == "com.apple.iokit"' --info
-```
-
-5. Flash an X3 or X4:
-
-```bash
-esptool.py --chip esp32c3 --port /dev/ttyACM0 --baud 921600 write_flash 0x10000 /path/to/firmware.bin
-```
-
-   Flash an Xteink X4Pro, Seeed reTerminal Sticky, or M5PaperMono:
-
-```bash
-esptool.py --chip esp32s3 --port /dev/ttyACM0 --baud 921600 write_flash 0x10000 /path/to/firmware.bin
-```
-
-### Manual
-
-See [Development quick start](#development-quick-start) below.
-
----
-
-## Custom SD-card fonts
-
-On devices with external RAM enabled in CrossPoint, copy `.ttf`, `.otf`, or `.ttc` files to the SD card and select them as reader fonts. Put one file in `/fonts/` or `/.fonts/`, or put one family's files in a subfolder. See the [SD card font guide](./docs/sd-card-fonts.md) for the folder layout and styles.
-
-On other devices, convert the font to `.cpfont` first. `.cpfont` files also work on devices with external RAM enabled and have better performance. No firmware reflash is needed to add fonts.
-
-To make `.cpfont` files:
-
-1. Go to https://crosspointreader.com/fonts and open the "SD-card font builder" form.
-2. Upload up to four styles (regular, bold, italic, bold-italic), set the family name, point sizes, and Unicode range.
-3. Download the generated `.cpfont` files.
-4. Copy them to your SD card under `/fonts/YourFont/` (or `/.fonts/YourFont/` to hide the folder).
-5. Select the font on the device from the font settings.
-
-Conversion runs the firmware repo's `lib/EpdFont/scripts/fontconvert_sdcard.py` script unmodified, so output matches a local host build.
-
----
+Always pass `-e eminimal`. The default environment builds upstream's firmware for a different chip.
+Details, partitions and troubleshooting are in
+[docs/eminimal/06-build-flash-release.md](docs/eminimal/06-build-flash-release.md).
 
 ## Documentation
 
-- [User Guide](./USER_GUIDE.md)
-- [Web server usage](./docs/webserver.md)
-- [Web server endpoints](./docs/webserver-endpoints.md)
-- [Party games](./docs/party-games.md) - Game Night: phones join the reader by QR and the panel becomes the shared board
-- [Project scope](./SCOPE.md)
-- [Contributing docs](./docs/contributing/README.md)
-- [Touch and UI development](./docs/contributing/touch-and-ui.md) - how to build new screens on the FreeInkUI activity bases (UiListActivity and friends), plus build envs for the non-Xteink touch devices
+| For | Read |
+|---|---|
+| Using the device | [USER_GUIDE.md](USER_GUIDE.md), [docs/eminimal-controls.md](docs/eminimal-controls.md), [docs/party-games.md](docs/party-games.md) |
+| Understanding the code | [docs/eminimal/](docs/eminimal/README.md): system overview, display pipeline, application framework, dashboard and games, network and storage, build and release |
+| Contributing | [CONTRIBUTING.md](CONTRIBUTING.md) |
 
----
+## Repository layout
 
-## Development quick start
+| Path | Contents |
+|---|---|
+| `src/` | The application: activities (screens), stores, network servers |
+| `lib/` | Libraries: EPUB engine, renderer, fonts, HAL, party-game engines |
+| `freeink-sdk/` | Submodule: display, input, storage and board support (a fork of FreeInk SDK) |
+| `docs/eminimal/` | Developer documentation for this fork |
+| `docs/` | Upstream's user and format documentation |
+| `scripts/` | Build-time generators (web pages, fonts, translations) |
+| `test/` | Host unit tests |
 
-### Prerequisites
+## Relationship to upstream
 
-- [pioarduino PlatformIO Core](https://github.com/pioarduino/platformio-core) or [VS Code + pioarduino IDE](https://github.com/pioarduino/pioarduino-vscode-ide)
-- Python 3.8+
-- `clang-format` 21
-- USB-C cable supporting data transfer
+The fork is based on CrossPoint's `develop` branch and keeps upstream's files in place so changes can be
+brought across. `GOVERNANCE.md`, `SCOPE.md`, `ROADMAP.md` and `AGENTS.md` are upstream's documents and
+describe the upstream project, not this fork. Fixes that are not specific to e-Minimal are better sent to
+[CrossPoint](https://github.com/crosspoint-reader/crosspoint-reader) directly.
 
-### Setup
+## Licence
 
-```bash
-git clone --recursive https://github.com/crosspoint-reader/crosspoint-reader
-cd crosspoint-reader
-
-# if cloned without --recursive:
-git submodule update --init --recursive
-```
-
-### Nix/NixOS
-
-Nix/NixOS users can enter the development shell with either `nix develop` (flakes) or `nix-shell`:
-
-```bash
-nix develop -f nix
-# or
-nix-shell nix
-```
-
-To flash a connected ESP32-C3 device, enable PlatformIO's udev rules in your NixOS configuration:
-
-```nix
-services.udev.packages = with pkgs; [ platformio-core.udev ];
-```
-
-After rebuilding the system configuration, reconnect the device or reload udev rules.
-
-### Build / flash / monitor
-
-```bash
-pio run --target upload
-```
-
-### Contributor pre-PR checks
-
-```bash
-./bin/clang-format-fix
-pio check -e default
-pio run -e default
-```
-
-### Debugging
-
-After flashing the new features, it’s recommended to capture detailed logs from the serial port.
-
-First, make sure all required Python packages are installed:
-
-```python
-python3 -m pip install pyserial colorama matplotlib
-```
-
-After that run the script:
-
-```sh
-# For Linux
-# This was tested on Debian and should work on most Linux systems.
-python3 scripts/debugging_monitor.py
-
-# For macOS
-python3 scripts/debugging_monitor.py /dev/cu.usbmodem2101
-```
-
-Minor adjustments may be required for Windows.
-
----
-
-## Internals
-
-CrossPoint Reader is pretty aggressive about caching data down to the SD card to minimise RAM usage. The ESP32-C3 only has ~380KB of usable RAM, so we have to be careful. A lot of the decisions made in the design of the firmware were based on this constraint.
-
-### Data caching
-
-The first time chapters of a book are loaded, they are cached to the SD card. Subsequent loads are served from the
-cache. This cache directory exists at `.e-minimal` on the SD card. The structure is as follows:
-
-```text
-.e-minimal/
-├── epub_<hash>/         # one directory per book, named by content hash
-│   ├── progress.bin     # reading position (chapter, page, etc.)
-│   ├── cover.bmp        # generated cover image
-│   ├── book.bin         # metadata: title, author, spine, TOC
-│   ├── css_rules.cache  # parsed CSS rule cache
-│   ├── img_*            # rendered image cache files
-│   └── sections/        # per-chapter layout cache
-│       ├── 0.bin
-│       ├── 1.bin
-│       └── ...
-├── settings.json        # device settings
-├── state.json           # resume/runtime state
-└── recent.json          # recent books list
-```
-
-Removing `/.e-minimal` clears all cached metadata and forces a full regeneration on next open. Book deletes, overwrites, and moves done through the firmware or web UI clear or re-key matching caches; manual SD-card edits may leave stale cache directories behind.
-
-For more details on the internal file structures, see the [file formats document](./docs/file-formats.md).
-
----
-
-## Contributing
-
-Contributions are welcome. If you're new to the codebase, start with the [contributing docs](./docs/contributing/README.md). For things to work on, check the [ideas discussion board](https://github.com/crosspoint-reader/crosspoint-reader/discussions/categories/ideas) — leave a comment before starting so we don't duplicate effort.
-
-Everyone here is a volunteer, so please be respectful and patient. For governance and community expectations, see [GOVERNANCE.md](./GOVERNANCE.md).
-
----
-
-## Community forks
-
-One of the best things about open source is that anyone can take the code in a different direction. If you need something outside CrossPoint's [scope](./SCOPE.md), check out the community forks:
-
-- [CrossInk](https://github.com/uxjulia/CrossInk) — UX focused with minimal reading stats and broader customizations for the reading experience.
-
-- [papyrix-reader](https://github.com/bigbag/papyrix-reader) — Adds FB2 and MD format support. Actively maintained with Arabic script support. Custom themes.
-
-- [inx](https://github.com/obijuankenobiii/inx) — Completely reimagines the user interface with tabbed navigation.
-
-- [Witch(hunt) Reader](https://github.com/jpirnay/witchhunt-reader) — More faithful CSS styling and background work for slightly snappier interaction. Weather information panel. Markdown support.
-
-**Note:** Many of these features will make their way into CrossPoint over time. Each project chooses its own priorities and tradeoffs.
-
-Want to build your own device? Be sure to check out the [de-link](https://github.com/iandchasse/de-link) project or [OnePage Reader](https://github.com/MoveCall/onepage-reader).
-
----
-
-CrossPoint Reader is **not affiliated with Xteink or any device manufacturer**.
+MIT. See [LICENSE](LICENSE) and [NOTICE.md](NOTICE.md) for attribution and third-party components.
+The hardware design files of the device are not part of this repository and are not published.

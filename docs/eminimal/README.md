@@ -24,6 +24,7 @@ and file formats. Where the fork's code differs from them, the documents below s
 | 4 | [Dashboard and games](04-dashboard-and-games.md) | How the dashboard and Game Night are built and integrated; how to add a widget or a game |
 | 5 | [Network and storage](05-network-and-storage.md) | Wi-Fi, web servers and endpoints, firmware update, security facts, SD card layout, persistent stores |
 | 6 | [Build, flash and release](06-build-flash-release.md) | Build environments, partitions, build scripts, tests, release path |
+| | [Technical debt and known gaps](TECH_DEBT.md) | Unfinished features (OTA from releases), security gaps, known defects, stale documents |
 
 ## Reading order
 

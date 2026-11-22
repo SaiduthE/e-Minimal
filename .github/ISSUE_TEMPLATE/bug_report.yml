@@ -14,6 +14,7 @@ body:
       label: Device
       description: Which device does this happen on? Pick "Other" for boards CrossPoint does not release firmware for — those are maintained in their own port repositories.
       options:
+        - e-Minimal (ESP32-S3 + IT8951)
         - Xteink X3
         - Xteink X4
         - Xteink X4 Classic

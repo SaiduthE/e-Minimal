@@ -8,7 +8,7 @@ Copyright (c) 2025 CrossPoint Reader organization. The fork's changes are distri
 licence (see `LICENSE`).
 
 The fork is not affiliated with or endorsed by the CrossPoint Reader project, Xteink or Waveshare.
-`GOVERNANCE.md`, `SCOPE.md`, `ROADMAP.md`, `AGENTS.md` and most of `README.md` and `USER_GUIDE.md` are the
+`GOVERNANCE.md`, `SCOPE.md`, `ROADMAP.md`, `AGENTS.md` and most of `USER_GUIDE.md` are the
 upstream project's documents and describe the upstream project.
 
 ## What is open source and what is not
