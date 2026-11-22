@@ -95,6 +95,7 @@ class PageTextPicker {
     int x, y, w, h;
   };
 
+  // cppcheck-suppress unusedPrivateFunction
   int cursorPos() const { return currentStage == Stage::Line ? rowIndex : wordIndex; }
   // Word range [begin, end) the cursor covers in the current stage.
   void cursorRange(int& begin, int& end) const;

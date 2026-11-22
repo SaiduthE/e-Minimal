@@ -623,6 +623,7 @@ uint16_t LibraryListActivity::viewGroupForRow(const uint16_t row) {
   uint16_t found = NONE;
   if (cachedGroup != NONE && row >= cachedGroupEnd && index.readGroup(kind, cachedGroup + 1, group) &&
       row >= group.start && row < group.start + group.count) {
+    // cppcheck-suppress redundantInitialization
     found = static_cast<uint16_t>(cachedGroup + 1);
   } else {
     found = index.groupForRow(kind, row);

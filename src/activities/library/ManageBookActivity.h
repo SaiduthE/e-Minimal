@@ -40,6 +40,7 @@ class ManageBookActivity final : public Activity {
 
   void loadDetails();
   int rowCount() const { return hasOverride ? 2 : 1; }
+  // cppcheck-suppress functionStatic
   Row rowAt(const int index) const { return index == 0 ? Row::EditOnPhone : Row::ClearOverrides; }
   void activateRow(Row row);
   void openEditOnPhone();

@@ -112,6 +112,7 @@ void ManageDictionariesActivity::reload(const int preferred, const char* focusNa
     int target = std::clamp(preferred, 0, std::max(count - 1, 0));
     if (focusName) {
       for (size_t i = 0; i < dictionaries.size(); ++i) {
+        // cppcheck-suppress useStlAlgorithm
         if (dictionaries[i].name == focusName) {
           target = static_cast<int>(i);
           break;

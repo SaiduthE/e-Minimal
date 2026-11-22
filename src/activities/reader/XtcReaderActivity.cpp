@@ -171,6 +171,7 @@ void streamTaskMain(void* arg) {
 // A panel-sized XTH page in portrait maps onto the frame buffer byte for byte
 // (see the 2-bit path in renderPage()).
 bool xthMapsOntoFrame(const GfxRenderer& renderer, const uint16_t pageWidth, const uint16_t pageHeight) {
+  // cppcheck-suppress constVariablePointer
   uint8_t* const fb = renderer.getFrameBuffer();
   return fb && renderer.getOrientation() == GfxRenderer::Orientation::Portrait && renderer.getWriteTarget() == fb &&
          pageHeight % 8 == 0 && pageHeight == renderer.getDisplayWidth() && pageWidth == renderer.getDisplayHeight() &&

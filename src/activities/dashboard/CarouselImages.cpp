@@ -23,6 +23,7 @@ RTC_DATA_ATTR time_t changeDueAt = 0;
 void CarouselImages::load() {
   DASHBOARD_CONFIG.loadFromFile();
   std::vector<std::string> found;
+  // cppcheck-suppress shadowFunction
   const std::string folder = DASHBOARD_CONFIG.carouselFolder;
 
   auto dir = Storage.open(folder.c_str());

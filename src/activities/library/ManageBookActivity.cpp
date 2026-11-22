@@ -81,6 +81,7 @@ void ManageBookActivity::loadDetails() {
     hasOverride = bookmeta::load(bookPath.c_str(), *ov);
     if (!hasOverride) memset(ov.get(), 0, sizeof(*ov));
   }
+  // cppcheck-suppress constParameterReference
   const auto pick = [&ov](const char* overrideValue, std::string& bookValue, Field& out) {
     out.edited = ov && overrideValue[0] != '\0';
     out.value = out.edited ? overrideValue : bookValue;

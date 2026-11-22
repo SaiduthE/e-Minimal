@@ -65,7 +65,7 @@ void drawSwatch(const GfxRenderer& renderer, const Rect& box, const uint8_t styl
 const char* seatName(const GameSession& session, const uint8_t seat) {
   static char fallback[12];
   if (session.isSeated(seat)) return session.player(seat).name;
-  snprintf(fallback, sizeof(fallback), "Seat %u", seat + 1);
+  snprintf(fallback, sizeof(fallback), "Seat %d", seat + 1);
   return fallback;
 }
 
@@ -171,7 +171,7 @@ void drawUndercover(const GfxRenderer& renderer, const GameSession& session, con
     renderer.drawRect(box.x, box.y, box.width, box.height, out ? 1 : 2, true);
 
     char label[40];
-    snprintf(label, sizeof(label), "%u  %s", seat + 1, session.player(seat).name);
+    snprintf(label, sizeof(label), "%d  %s", seat + 1, session.player(seat).name);
     renderer.drawText(UI_10_FONT_ID, box.x + px(10), box.y + (box.height - lineHeight) / 2, label, true,
                       out ? EpdFontFamily::ITALIC : EpdFontFamily::REGULAR);
 
@@ -283,7 +283,7 @@ void drawFleetGrid(const GfxRenderer& renderer, const Battleship& game, const ui
     char label[3];
     snprintf(label, sizeof(label), "%c", static_cast<char>('A' + i));
     centerText(renderer, SMALL_FONT_ID, Rect(gridLeft + i * cell, gridTop - titleHeight, cell, titleHeight), label);
-    snprintf(label, sizeof(label), "%u", i + 1);
+    snprintf(label, sizeof(label), "%d", i + 1);
     const int width = renderer.getTextWidth(SMALL_FONT_ID, label);
     renderer.drawText(SMALL_FONT_ID, gridLeft - width - px(3),
                       gridTop + i * cell + (cell - renderer.getLineHeight(SMALL_FONT_ID)) / 2, label);
@@ -939,7 +939,7 @@ void drawSeatList(const GfxRenderer& renderer, const GameSession& session, const
     // Seat, name (MAX_NAME_LEN), then up to three tags; the test tag is translated.
     char label[64];
     const bool test = session.isTestSeat(seat);
-    snprintf(label, sizeof(label), "%u  %s%s%s%s%s", seat + 1, session.player(seat).name,
+    snprintf(label, sizeof(label), "%d  %s%s%s%s%s", seat + 1, session.player(seat).name,
              session.isHost(seat) ? "  (host)" : "", session.isAway(seat, nowMs) ? "  (away)" : "", test ? "  " : "",
              test ? tr(STR_GAMES_TEST_TAG) : "");
     renderer.drawText(UI_10_FONT_ID, content.x, y, label);

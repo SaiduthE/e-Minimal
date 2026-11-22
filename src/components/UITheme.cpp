@@ -271,6 +271,7 @@ constexpr MetricField kMetricFields[] = {
 bool UITheme::setMetric(const char* name, const int value) {
   getMetrics();  // make sure the live copy exists before patching it
   for (const auto& f : kMetricFields) {
+    // cppcheck-suppress useStlAlgorithm
     if (strcmp(f.name, name) == 0) {
       adjustedMetrics.*(f.field) = value;
       return true;

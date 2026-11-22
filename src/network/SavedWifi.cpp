@@ -113,6 +113,7 @@ bool connect(const unsigned long perNetworkTimeoutMs) {
   WiFi.scanDelete();
   std::sort(candidates.begin(), candidates.end(),
             [](const Candidate& a, const Candidate& b) { return a.rssi > b.rssi; });
+  // cppcheck-suppress useStlAlgorithm
   for (const auto& candidate : candidates) {
     if (tryNetwork(candidate.credential, perNetworkTimeoutMs)) return true;
   }

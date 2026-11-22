@@ -48,6 +48,7 @@ uint8_t styleBit(const EpdFontFamily::Style style) {
 
 }  // namespace
 
+// cppcheck-suppress constParameterReference
 bool PageTextPicker::build(GfxRenderer& renderer, const Page& page, const int fontIdIn, const int marginLeft,
                            const int marginTop, const bool skipShortWords) {
   fontId = fontIdIn;
@@ -123,6 +124,7 @@ bool PageTextPicker::build(GfxRenderer& renderer, const Page& page, const int fo
   return !words.empty();
 }
 
+// cppcheck-suppress constParameterReference
 void PageTextPicker::allocSnapshot(GfxRenderer& renderer) {
   // A whole-line box spans the screen width: 1bpp, so (width + slack) / 8
   // bytes per row (+1 for the byte rounding) times the box height + slack.
@@ -262,6 +264,7 @@ PageTextPicker::Box PageTextPicker::boxFor(const int begin, const int end) const
   return box;
 }
 
+// cppcheck-suppress constParameterReference
 void PageTextPicker::prewarmCursorGlyphs(GfxRenderer& renderer) const {
   // The full path's PrewarmScope cleared the glyph cache on exit; batch-load
   // just the highlighted words' glyphs before drawing them white-on-black.
@@ -274,6 +277,7 @@ void PageTextPicker::prewarmCursorGlyphs(GfxRenderer& renderer) const {
   }
 }
 
+// cppcheck-suppress constParameterReference
 bool PageTextPicker::drawCursor(GfxRenderer& renderer) {
   if (words.empty()) return false;
   int begin;
