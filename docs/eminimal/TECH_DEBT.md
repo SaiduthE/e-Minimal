@@ -54,3 +54,5 @@ reading the source and have not been reproduced on a device. Remove an item in t
 | H2 | No procedure is written down for bringing upstream changes into the fork. | Document it (rebase or merge, how conflicts in shared files are handled) in `06-build-flash-release.md`. |
 | H3 | The party games use the names of commercial games. | Decide whether to rename them. |
 | H4 | The origin of the word list is not recorded. | `lib/PartyGames/WordBank.cpp`: state the source and its licence. |
+| H5 | 22 inline `cppcheck-suppress` comments were added to fork code to make the static check pass (const references, raw loops, one unused private function `PageTextPicker::cursorPos`). | Search for `cppcheck-suppress` under `src/`; fix each finding properly and remove the comment. Each fix needs a build and, for reader and dashboard code, a check on a device. |
+| H6 | The release workflows are upstream's: `release.yml` checks the tag against the CrossPoint version and builds only upstream boards, and the pull-request firmware comment omits the e-Minimal build. | See F1 and F2; add `firmware-eminimal.bin` to `.github/workflows/pr-firmware-links.yml`. |
