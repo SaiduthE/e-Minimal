@@ -26,9 +26,8 @@ void WebSession::begin() {
   options.discovery = SETTINGS.networkAnnounce != 0;
 
   const uint8_t stop = SETTINGS.fileTransferIdleStop;
-  idleLimitMs = stop < sizeof(IDLE_STOP_MINUTES) / sizeof(IDLE_STOP_MINUTES[0])
-                    ? IDLE_STOP_MINUTES[stop] * 60UL * 1000UL
-                    : 0;
+  idleLimitMs =
+      stop < sizeof(IDLE_STOP_MINUTES) / sizeof(IDLE_STOP_MINUTES[0]) ? IDLE_STOP_MINUTES[stop] * 60UL * 1000UL : 0;
   startedMs = millis();
 }
 

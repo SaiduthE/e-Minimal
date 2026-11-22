@@ -122,8 +122,7 @@ bool HighlightStore::save() const {
     HalFile file;
     if (!Storage.openFileForWrite("HLS", tmp, file)) return false;
     const uint8_t header[HEADER_BYTES] = {static_cast<uint8_t>(MAGIC_0), static_cast<uint8_t>(MAGIC_1), FORMAT_VERSION,
-                                          static_cast<uint8_t>(count & 0xFF),
-                                          static_cast<uint8_t>(count >> 8)};
+                                          static_cast<uint8_t>(count & 0xFF), static_cast<uint8_t>(count >> 8)};
     bool ok = file.write(header, HEADER_BYTES) == HEADER_BYTES;
     uint8_t record[RECORD_BYTES];
     for (size_t i = 0; ok && i < count; i++) {
@@ -233,6 +232,7 @@ bool HighlightStore::pageHasHighlight(const Page& page, const Highlight* ranges,
   return false;
 }
 
+// cppcheck-suppress constParameterReference
 void HighlightStore::paintBand(GfxRenderer& renderer, const int x, const int y, const int width, const int height) {
   if (renderer.getGray4Target()) {
     renderer.fillRectGray4(x, y, width, height, BAND_GRAY4_LEVEL);
@@ -266,8 +266,8 @@ void HighlightStore::paintPage(GfxRenderer& renderer, const Page& page, const in
       for (; i < words && wordHighlighted(ranges, n, block->wordVisibleOffset(i), block->wordVisibleEnd(i)); i++) {
         const int x = line->xPos + block->wordXpos(i) + marginLeft;
         left = std::min(left, x);
-        right = std::max(
-            right, x + renderer.getTextAdvanceX(fontId, block->wordText(i), block->wordStyle(i), tracking));
+        right =
+            std::max(right, x + renderer.getTextAdvanceX(fontId, block->wordText(i), block->wordStyle(i), tracking));
       }
       paintBand(renderer, left, y, right - left, lineHeight);
     }

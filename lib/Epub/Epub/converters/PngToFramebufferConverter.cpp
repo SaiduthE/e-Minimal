@@ -340,8 +340,8 @@ int pngHistogramCallback(PNGDRAW* pDraw) {
   if (visibleSrcY % ctx->histogramRowStep != 0) return 1;
 
   const uint32_t transparentColor = ctx->decoder ? ctx->decoder->getTransparentColor() : 0;
-  convertLineToGray(pDraw->pPixels, ctx->grayLineBuffer, ctx->srcWidth, pDraw->iPixelType, pDraw->iBpp,
-                    pDraw->pPalette, pDraw->iHasAlpha, transparentColor, ctx->alphaLineBuffer);
+  convertLineToGray(pDraw->pPixels, ctx->grayLineBuffer, ctx->srcWidth, pDraw->iPixelType, pDraw->iBpp, pDraw->pPalette,
+                    pDraw->iHasAlpha, transparentColor, ctx->alphaLineBuffer);
 
   const int end = ctx->cropLeft + ctx->visibleWidth;
   for (int x = ctx->cropLeft; x < end; x += ctx->histogramColStep) {

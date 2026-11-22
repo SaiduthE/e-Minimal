@@ -15,13 +15,14 @@ constexpr int QR_MAX_SIDE = 560;
 constexpr int QR_MIN_SIDE = 120;
 
 // Draws centred, wrapping only if it must; returns the height it took.
-int drawWrapped(const GfxRenderer& renderer, const Rect& bounds, const int fontId, const char* text,
-                const int maxLines, const EpdFontFamily::Style style = EpdFontFamily::REGULAR) {
+int drawWrapped(const GfxRenderer& renderer, const Rect& bounds, const int fontId, const char* text, const int maxLines,
+                const EpdFontFamily::Style style = EpdFontFamily::REGULAR) {
   if (!text || *text == '\0') return 0;
   const int lineHeight = renderer.getLineHeight(fontId);
   int lines = 1;
   if (renderer.getTextWidth(fontId, text, style) > bounds.width) {
-    lines = std::min(maxLines, static_cast<int>(renderer.wrappedText(fontId, text, bounds.width, maxLines, style).size()));
+    lines =
+        std::min(maxLines, static_cast<int>(renderer.wrappedText(fontId, text, bounds.width, maxLines, style).size()));
     if (lines < 1) lines = 1;
   }
   UITheme::drawCenteredWrappedText(renderer, bounds, fontId, text, maxLines, true, style,
@@ -80,8 +81,9 @@ int PhoneJoinPanel::draw(const GfxRenderer& renderer, const Rect& bounds, const 
     const int lineHeight = renderer.getLineHeight(UI_10_FONT_ID);
     const int reservedBelow = lineHeight * (content.accessCode ? 6 : 5) + gap * 5;
     const int columnWidth = (bounds.width - pad * 2) / steps;
-    const int qrSide = std::max(
-        QR_MIN_SIDE, std::min({columnWidth - pad, bounds.y + bounds.height - y - reservedBelow - lineHeight, QR_MAX_SIDE}));
+    const int qrSide =
+        std::max(QR_MIN_SIDE,
+                 std::min({columnWidth - pad, bounds.y + bounds.height - y - reservedBelow - lineHeight, QR_MAX_SIDE}));
 
     int stepHeight = 0;
     int column = 0;
@@ -94,8 +96,8 @@ int PhoneJoinPanel::draw(const GfxRenderer& renderer, const Rect& bounds, const 
       if (!portal.passphrase().empty()) line2 = std::string(tr(STR_PHONE_JOIN_PASSWORD)) + " " + portal.passphrase();
       char caption[64];
       snprintf(caption, sizeof(caption), steps == 2 ? "1. %s" : "%s", tr(STR_PHONE_STEP_JOIN));
-      stepHeight = std::max(stepHeight, drawStep(renderer, columnRect(column++), qrSide, caption, portal.joinQrPayload(),
-                                                 portal.ssid(), line2));
+      stepHeight = std::max(stepHeight, drawStep(renderer, columnRect(column++), qrSide, caption,
+                                                 portal.joinQrPayload(), portal.ssid(), line2));
     }
     if (open) {
       char caption[64];
@@ -106,10 +108,9 @@ int PhoneJoinPanel::draw(const GfxRenderer& renderer, const Rect& bounds, const 
         snprintf(line, sizeof(line), tr(STR_ACCESS_CODE_LINE), content.accessCode);
         codeLine = line;
       }
-      stepHeight = std::max(
-          stepHeight, drawStep(renderer, columnRect(column++), qrSide, caption,
-                               content.pageQrUrl.empty() ? content.pageUrl : content.pageQrUrl, content.pageUrl,
-                               content.pageAlt ? content.pageAlt : "", codeLine));
+      stepHeight = std::max(stepHeight, drawStep(renderer, columnRect(column++), qrSide, caption,
+                                                 content.pageQrUrl.empty() ? content.pageUrl : content.pageQrUrl,
+                                                 content.pageUrl, content.pageAlt ? content.pageAlt : "", codeLine));
     }
     y += stepHeight;
   }

@@ -316,9 +316,9 @@ void WifiSelectionActivity::rebuildNetworkRowItems() {
                            getSignalStrengthIndicator(network.rssi);
     }
     fui::ListItem item;
-    item.label = network.isHiddenPlaceholder  ? tr(STR_ADD_HIDDEN_NETWORK)
-                : network.isRescanPlaceholder ? tr(STR_RESCAN_NETWORKS)
-                                              : network.ssid.c_str();
+    item.label = network.isHiddenPlaceholder   ? tr(STR_ADD_HIDDEN_NETWORK)
+                 : network.isRescanPlaceholder ? tr(STR_RESCAN_NETWORKS)
+                                               : network.ssid.c_str();
     if (!networkStatuses[i].empty()) item.value = networkStatuses[i].c_str();
     item.actionValue = static_cast<int16_t>(i);
     networkRowItems.push_back(item);
@@ -1087,8 +1087,9 @@ void WifiSelectionActivity::renderNetworkList(const Rect* screen, const ThemeMet
   const bool hasSavedPassword = !networks.empty() && networks[selectedNetworkIndex].hasSavedPassword;
   const char* forgetLabel = hasSavedPassword ? tr(STR_FORGET_BUTTON) : "";
 
-  const auto labels = fourButtons ? mappedInput.mapLabels(tr(STR_BACK), tr(STR_CONNECT), tr(STR_DIR_UP), tr(STR_DIR_DOWN))
-                                  : mappedInput.mapLabels(tr(STR_BACK), tr(STR_CONNECT), forgetLabel, tr(STR_RETRY));
+  const auto labels = fourButtons
+                          ? mappedInput.mapLabels(tr(STR_BACK), tr(STR_CONNECT), tr(STR_DIR_UP), tr(STR_DIR_DOWN))
+                          : mappedInput.mapLabels(tr(STR_BACK), tr(STR_CONNECT), forgetLabel, tr(STR_RETRY));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
 }
 
@@ -1301,8 +1302,8 @@ void WifiSelectionActivity::renderPhoneSetup(const Rect* screen, const ThemeMetr
       break;
   }
 
-  const int top = screen->y + metrics->topPadding + metrics->headerHeight + metrics->tabBarHeight +
-                  metrics->verticalSpacing * 2;
+  const int top =
+      screen->y + metrics->topPadding + metrics->headerHeight + metrics->tabBarHeight + metrics->verticalSpacing * 2;
   const Rect bounds{screen->x, top, screen->width, screen->y + screen->height - top};
   PhoneJoinPanel::Content content;
   content.headline = headline;

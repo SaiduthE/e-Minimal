@@ -108,8 +108,8 @@ void OpdsSettingsActivity::handleSelection() {
         requestUpdate();
       }
     };
-    auto keyboard = makeUniqueNoThrow<TextEntryActivity>(renderer, mappedInput, tr(STR_SERVER_NAME),
-                                                          editServer.name, 63, InputType::Text);
+    auto keyboard = makeUniqueNoThrow<TextEntryActivity>(renderer, mappedInput, tr(STR_SERVER_NAME), editServer.name,
+                                                         63, InputType::Text);
     if (!keyboard) {
       LOG_ERR("OPS", "OOM: TextEntryActivity");
       return;
@@ -126,8 +126,8 @@ void OpdsSettingsActivity::handleSelection() {
         requestUpdate();
       }
     };
-    auto keyboard = makeUniqueNoThrow<TextEntryActivity>(renderer, mappedInput, tr(STR_OPDS_SERVER_URL),
-                                                          prefillUrl, 127, InputType::Url);
+    auto keyboard = makeUniqueNoThrow<TextEntryActivity>(renderer, mappedInput, tr(STR_OPDS_SERVER_URL), prefillUrl,
+                                                         127, InputType::Url);
     if (!keyboard) {
       LOG_ERR("OPS", "OOM: TextEntryActivity");
       return;
@@ -143,8 +143,8 @@ void OpdsSettingsActivity::handleSelection() {
         requestUpdate();
       }
     };
-    auto keyboard = makeUniqueNoThrow<TextEntryActivity>(renderer, mappedInput, tr(STR_USERNAME),
-                                                          editServer.username, 63, InputType::Text);
+    auto keyboard = makeUniqueNoThrow<TextEntryActivity>(renderer, mappedInput, tr(STR_USERNAME), editServer.username,
+                                                         63, InputType::Text);
     if (!keyboard) {
       LOG_ERR("OPS", "OOM: TextEntryActivity");
       return;
@@ -160,8 +160,8 @@ void OpdsSettingsActivity::handleSelection() {
         requestUpdate();
       }
     };
-    auto keyboard = makeUniqueNoThrow<TextEntryActivity>(renderer, mappedInput, tr(STR_PASSWORD),
-                                                          editServer.password, 63, InputType::Password);
+    auto keyboard = makeUniqueNoThrow<TextEntryActivity>(renderer, mappedInput, tr(STR_PASSWORD), editServer.password,
+                                                         63, InputType::Password);
     if (!keyboard) {
       LOG_ERR("OPS", "OOM: TextEntryActivity");
       return;

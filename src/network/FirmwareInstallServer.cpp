@@ -37,8 +37,7 @@ bool FirmwareInstallServer::begin(const bool announce) {
   }
 
   server->on("/api/status", HTTP_GET, [this] { handleStatus(); });
-  server->on(
-      "/api/firmware", HTTP_POST, [this] { handleUploadDone(); }, [this] { handleUploadData(); });
+  server->on("/api/firmware", HTTP_POST, [this] { handleUploadDone(); }, [this] { handleUploadData(); });
   server->onNotFound([this] { sendJsonError(*server, 404, "Not found"); });
   const char* headers[] = {PUSH_HEADER};
   server->collectHeaders(headers, 1);

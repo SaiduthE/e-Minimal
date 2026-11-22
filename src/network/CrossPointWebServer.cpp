@@ -39,8 +39,8 @@
 #include "WifiCredentialStore.h"
 #include "html/ConvertPageHtml.generated.h"
 #include "html/DashboardsPageHtml.generated.h"
-#include "html/FilesPageHtml.generated.h"
 #include "html/DictionariesPageHtml.generated.h"
+#include "html/FilesPageHtml.generated.h"
 #include "html/FontsPageHtml.generated.h"
 #include "html/HomePageHtml.generated.h"
 #include "html/LoginPageHtml.generated.h"
@@ -176,8 +176,8 @@ void walkFolders(FolderWalk& w, const size_t baseLen, const int depth) {
       path[nameAt] = '/';
       entry.getName(path + nameAt + 1, FOLDER_PATH_MAX - nameAt - 1);
       const char* name = path + nameAt + 1;
-      bool skip = name[0] == '\0' || web_path::isProtectedSegment(name, strlen(name)) ||
-                  strpbrk(name, "\"\\") != nullptr;
+      bool skip =
+          name[0] == '\0' || web_path::isProtectedSegment(name, strlen(name)) || strpbrk(name, "\"\\") != nullptr;
       for (const char* c = name; !skip && *c; c++) {
         if (static_cast<unsigned char>(*c) < 0x20) skip = true;
       }
@@ -728,7 +728,6 @@ void CrossPointWebServer::handleLogin() {
   }
 }
 
-
 void CrossPointWebServer::begin() {
   if (running) {
     LOG_DBG("WEB", "Web server already running");
@@ -845,8 +844,8 @@ void CrossPointWebServer::begin() {
   // Font management endpoints
   route("/fonts", HTTP_GET, WebAccess::Read, RouteKind::Page, [this] { handleFontsPage(); });
   route("/api/fonts", HTTP_GET, WebAccess::Read, RouteKind::Api, [this] { handleFontList(); });
-  routeUpload("/api/fonts/upload", WebAccess::Upload, [this] { handleFontUpload(); },
-              [this] { handleFontUploadData(); });
+  routeUpload(
+      "/api/fonts/upload", WebAccess::Upload, [this] { handleFontUpload(); }, [this] { handleFontUploadData(); });
   route("/api/fonts/delete", HTTP_POST, WebAccess::Modify, RouteKind::Api, [this] { handleFontDelete(); });
 
   // Dictionary management endpoints
@@ -878,8 +877,8 @@ void CrossPointWebServer::begin() {
 
   // Headers the handlers read: WebDAV's, If-None-Match (static pages answer conditional GETs with 304), and the
   // session cookie, Origin and Basic credentials of the access checks. WebServer drops every other header.
-  const char* collectedHeaders[] = {"Depth",   "Destination", "Overwrite", "If",     "Lock-Token",
-                                    "Timeout", "If-None-Match", "Cookie",  "Origin", "Authorization"};
+  const char* collectedHeaders[] = {"Depth",   "Destination",   "Overwrite", "If",     "Lock-Token",
+                                    "Timeout", "If-None-Match", "Cookie",    "Origin", "Authorization"};
   server->collectHeaders(collectedHeaders, 10);
 
   // WebDAV answers any path, so it is only registered when the reader allows it (Security settings).
@@ -902,8 +901,8 @@ void CrossPointWebServer::begin() {
   wsInstance = const_cast<CrossPointWebServer*>(this);
   wsServer->begin();
   wsServer->onEvent(wsEventCallback);
-  wsServer->onValidateHttpHeader([this](const String& name, const String& value) { return wsHandshakeHeader(name, value); },
-                                 nullptr, 0);
+  wsServer->onValidateHttpHeader(
+      [this](const String& name, const String& value) { return wsHandshakeHeader(name, value); }, nullptr, 0);
   LOG_DBG("WEB", "WebSocket server started");
 
   udpActive = security.discovery && udp.begin(LOCAL_UDP_PORT);
@@ -1064,8 +1063,7 @@ void CrossPointWebServer::handleRoot() const {
 }
 
 void CrossPointWebServer::handleJszip() const {
-  PhonePage::sendStatic(*server, jszip_minJs, jszip_minJsCompressedSize, jszip_minJsETag,
-                        "application/javascript");
+  PhonePage::sendStatic(*server, jszip_minJs, jszip_minJsCompressedSize, jszip_minJsETag, "application/javascript");
   LOG_DBG("WEB", "Served jszip.min.js");
 }
 

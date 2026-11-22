@@ -65,8 +65,7 @@ const HomeIcons& homeIcons() {
 }
 }  // namespace
 
-EMinimalHomeUi::EMinimalHomeUi(GfxRenderer& renderer)
-    : UiAppHost(renderer), coverCache(renderer), renderer(renderer) {}
+EMinimalHomeUi::EMinimalHomeUi(GfxRenderer& renderer) : UiAppHost(renderer), coverCache(renderer), renderer(renderer) {}
 
 void EMinimalHomeUi::begin(const std::vector<RecentBook>& recent, bool opds, bool continuing) {
   books = &recent;
@@ -295,20 +294,18 @@ fui::Rect EMinimalHomeUi::layoutGrid(UiScreen& screen, fui::Rect rect) {
   grid.labelAlign = fui::TextAlign::Center;
   grid.labelFollowsCover = true;
   grid.labelGap = static_cast<int16_t>(frameGap + theme.spaceSm);
-  grid.labelHeight =
-      static_cast<int16_t>(screen.target().lineHeight(grid.titleText.font) * grid.titleText.maxLines);
+  grid.labelHeight = static_cast<int16_t>(screen.target().lineHeight(grid.titleText.font) * grid.titleText.maxLines);
   const int cellChromeHeight = frameGap + grid.labelGap + grid.labelHeight;
   // Covers take whatever height the featured card and tab bar leave (both
   // orientations are height-bound), so the grid runs down to the tab bar. The
   // featured-slot cap only stops the thumbs dwarfing the hero; at 3/2 it
   // clipped the 7.8" portrait thumbs ~12 px short of the tab bar.
   const int maxCoverWidth = std::max(1, (rect.width - (GRID_COLUMNS - 1) * grid.gap) / GRID_COLUMNS);
-  const int maxCoverHeight =
-      std::max(1, (rect.height - (GRID_ROWS - 1) * grid.rowGap) / GRID_ROWS - cellChromeHeight);
+  const int maxCoverHeight = std::max(1, (rect.height - (GRID_ROWS - 1) * grid.rowGap) / GRID_ROWS - cellChromeHeight);
   grid.coverSize.height = std::max(1, std::min({maxCoverHeight, maxCoverWidth * 5 / 3, card.coverSize.height * 8 / 5}));
   // Never wider than MAX_SLOT_ASPECT; spare width goes to the gutters.
-  grid.coverSize.width = std::max(
-      1, std::min(maxCoverWidth, grid.coverSize.height * MAX_SLOT_ASPECT_W / MAX_SLOT_ASPECT_H));
+  grid.coverSize.width =
+      std::max(1, std::min(maxCoverWidth, grid.coverSize.height * MAX_SLOT_ASPECT_W / MAX_SLOT_ASPECT_H));
   grid.rowHeight = static_cast<int16_t>(grid.coverSize.height + cellChromeHeight);
   // Full content width: SpaceBetween pins the outer columns to its edges.
   rect.height = GRID_ROWS * grid.rowHeight + (GRID_ROWS - 1) * grid.rowGap;

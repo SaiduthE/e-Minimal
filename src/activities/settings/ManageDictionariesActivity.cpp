@@ -258,8 +258,8 @@ void ManageDictionariesActivity::applyRename(const int index, const std::string&
 
 void ManageDictionariesActivity::promptDelete(const int index) {
   if (!onDictionaryRow(index)) return;
-  auto confirmation = makeUniqueNoThrow<ConfirmationActivity>(
-      renderer, mappedInput, tr(STR_DELETE) + std::string("? "), dictionaries[index].name);
+  auto confirmation = makeUniqueNoThrow<ConfirmationActivity>(renderer, mappedInput, tr(STR_DELETE) + std::string("? "),
+                                                              dictionaries[index].name);
   if (!confirmation) {
     LOG_ERR("MDICT", "OOM: delete confirmation");
     return;
@@ -289,8 +289,8 @@ void ManageDictionariesActivity::applyDelete(const int index) {
 }
 
 void ManageDictionariesActivity::openPortal() {
-  auto portal = makeUniqueNoThrow<DashboardPortalActivity>(renderer, mappedInput,
-                                                           DashboardPortalActivity::Section::Dictionaries);
+  auto portal =
+      makeUniqueNoThrow<DashboardPortalActivity>(renderer, mappedInput, DashboardPortalActivity::Section::Dictionaries);
   if (!portal) {
     LOG_ERR("MDICT", "OOM: dictionaries portal");
     return;

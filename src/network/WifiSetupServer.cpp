@@ -167,7 +167,8 @@ void WifiSetupServer::handleSubmit() {
   lastSsid = ssid;
   setState(State::CONNECTING);
   server->send(200, "application/json", "{\"state\":\"connecting\"}");
-  LOG_DBG("SETUP", "Phone submitted credentials for %s (password %s)", ssid.c_str(), password.empty() ? "empty" : "set");
+  LOG_DBG("SETUP", "Phone submitted credentials for %s (password %s)", ssid.c_str(),
+          password.empty() ? "empty" : "set");
 
   if (onSubmit) onSubmit(ssid, password);
 }

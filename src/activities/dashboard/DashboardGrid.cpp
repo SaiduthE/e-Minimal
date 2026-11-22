@@ -79,8 +79,7 @@ bool applyOrientation(GfxRenderer& renderer) {
 
 bool isPortrait(const GfxRenderer& renderer) {
   const auto orientation = renderer.getOrientation();
-  return orientation == GfxRenderer::Orientation::Portrait ||
-         orientation == GfxRenderer::Orientation::PortraitInverted;
+  return orientation == GfxRenderer::Orientation::Portrait || orientation == GfxRenderer::Orientation::PortraitInverted;
 }
 
 Rect tileRect(const GfxRenderer& renderer, const DashboardTile& tile) {

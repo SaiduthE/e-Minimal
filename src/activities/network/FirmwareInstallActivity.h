@@ -22,8 +22,8 @@ class FirmwareInstallActivity final : public Activity {
   std::string ssid;
   std::string ip;
   bool wifiStarted = false;
-  bool announced = false;   // mDNS name up
-  bool receiving = false;   // last rendered receiving state
+  bool announced = false;  // mDNS name up
+  bool receiving = false;  // last rendered receiving state
 
   void onWifiResult(bool connected);
   void startServer();

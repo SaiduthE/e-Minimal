@@ -191,8 +191,8 @@ inline std::vector<StrId> buildLongPressMenuValues() {
 #else
   static constexpr StrId SYNC_LABEL = StrId::STR_KOSYNC;
 #endif
-  static constexpr StrId VALUES[] = {SYNC_LABEL, StrId::STR_DISABLED, StrId::STR_BOOKMARK_OPTION,
-                                     StrId::STR_DICTIONARY, StrId::STR_READER_MENU};
+  static constexpr StrId VALUES[] = {SYNC_LABEL, StrId::STR_DISABLED, StrId::STR_BOOKMARK_OPTION, StrId::STR_DICTIONARY,
+                                     StrId::STR_READER_MENU};
   const size_t count = BoardConfig::hasHomeKey() ? std::size(VALUES) : std::size(VALUES) - 1;
   return {VALUES, VALUES + count};
 }
@@ -204,17 +204,16 @@ inline std::vector<StrId> buildLongPressMenuValues() {
 // enum-range clamp.
 inline std::vector<StrId> sideButtonLayoutValues() {
   if (five_button::active()) return {StrId::STR_PAGE_TURN_UP_BACK, StrId::STR_PAGE_TURN_DOWN_BACK};
-  return {StrId::STR_PREV_NEXT, StrId::STR_NEXT_PREV, StrId::STR_DISABLED, StrId::STR_NEXT_NEXT,
-          StrId::STR_PREV_PREV};
+  return {StrId::STR_PREV_NEXT, StrId::STR_NEXT_PREV, StrId::STR_DISABLED, StrId::STR_NEXT_NEXT, StrId::STR_PREV_PREV};
 }
 
 inline std::vector<StrId> homeThemeValues() {
 #if FREEINK_DEVICE_EMINIMAL
   // e-Minimal's own theme, defined on this device only (whose UI Theme row is
   // erased below). The board has PSRAM, so the indices stay aligned.
-  static constexpr StrId VALUES[] = {StrId::STR_THEME_CLASSIC,     StrId::STR_THEME_LYRA,
+  static constexpr StrId VALUES[] = {StrId::STR_THEME_CLASSIC,       StrId::STR_THEME_LYRA,
                                      StrId::STR_THEME_LYRA_EXTENDED, StrId::STR_THEME_ROUNDEDRAFF,
-                                     StrId::STR_THEME_COVER_GRID,  StrId::STR_THEME_EMINIMAL};
+                                     StrId::STR_THEME_COVER_GRID,    StrId::STR_THEME_EMINIMAL};
   return {VALUES, VALUES + std::size(VALUES)};
 #else
   static constexpr StrId VALUES[] = {StrId::STR_THEME_CLASSIC, StrId::STR_THEME_LYRA, StrId::STR_THEME_LYRA_EXTENDED,
@@ -284,12 +283,12 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
                            StrId::STR_BADGE_BOTTOM_LEFT, StrId::STR_BADGE_BOTTOM_RIGHT},
                           "chargeBadgePosition", StrId::STR_CAT_DISPLAY),
         SettingInfo::Enum(StrId::STR_BADGE_SIZE, &CrossPointSettings::chargeBadgeSize,
-                          {StrId::STR_BADGE_LARGE, StrId::STR_BADGE_MEDIUM, StrId::STR_BADGE_SMALL},
-                          "chargeBadgeSize", StrId::STR_CAT_DISPLAY),
-        SettingInfo::Enum(StrId::STR_BADGE_STYLE, &CrossPointSettings::chargeBadgeStyle,
-                          {StrId::STR_BADGE_BOLT_AND_PERCENT, StrId::STR_BADGE_BOLT_ONLY,
-                           StrId::STR_BADGE_PERCENT_ONLY},
-                          "chargeBadgeStyle", StrId::STR_CAT_DISPLAY),
+                          {StrId::STR_BADGE_LARGE, StrId::STR_BADGE_MEDIUM, StrId::STR_BADGE_SMALL}, "chargeBadgeSize",
+                          StrId::STR_CAT_DISPLAY),
+        SettingInfo::Enum(
+            StrId::STR_BADGE_STYLE, &CrossPointSettings::chargeBadgeStyle,
+            {StrId::STR_BADGE_BOLT_AND_PERCENT, StrId::STR_BADGE_BOLT_ONLY, StrId::STR_BADGE_PERCENT_ONLY},
+            "chargeBadgeStyle", StrId::STR_CAT_DISPLAY),
         SettingInfo::Enum(StrId::STR_HIDE_BATTERY, &CrossPointSettings::hideBatteryPercentage,
                           {StrId::STR_NEVER, StrId::STR_IN_READER, StrId::STR_ALWAYS}, "hideBatteryPercentage",
                           StrId::STR_CAT_DISPLAY),
@@ -311,8 +310,7 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
                             StrId::STR_CAT_DISPLAY),
         SettingInfo::Enum(StrId::STR_DASHBOARD_ORIENTATION, &CrossPointSettings::dashboardOrientation,
                           {StrId::STR_LANDSCAPE_CW, StrId::STR_LANDSCAPE_CCW, StrId::STR_PORTRAIT},
-                          "dashboardOrientation",
-                          StrId::STR_CAT_DISPLAY),
+                          "dashboardOrientation", StrId::STR_CAT_DISPLAY),
 
         // --- Reader ---
         // Built-in font-family entry. Replaced per-call with a registry-aware
@@ -406,10 +404,10 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
         // Five-button boards only; erased below everywhere else, which replaces the Long-Press Menu row.
         SettingInfo::Toggle(StrId::STR_HOLD_SELECT_MENU, &CrossPointSettings::holdSelectMenu, "holdSelectMenu",
                             StrId::STR_CAT_CONTROLS),
-        SettingInfo::Enum(StrId::STR_HOLD_SELECT_ACTION, &CrossPointSettings::holdSelectAction,
-                          {StrId::STR_HOLD_ASK, StrId::STR_DICTIONARY, StrId::STR_HIGHLIGHT,
-                           StrId::STR_BOOKMARK_OPTION},
-                          "holdSelectAction", StrId::STR_CAT_CONTROLS),
+        SettingInfo::Enum(
+            StrId::STR_HOLD_SELECT_ACTION, &CrossPointSettings::holdSelectAction,
+            {StrId::STR_HOLD_ASK, StrId::STR_DICTIONARY, StrId::STR_HIGHLIGHT, StrId::STR_BOOKMARK_OPTION},
+            "holdSelectAction", StrId::STR_CAT_CONTROLS),
         // Erased below unless the board is an X4 Pro.
         SettingInfo::Toggle(StrId::STR_DBL_CLICK_PWR_LIGHT, &CrossPointSettings::doubleClickPwrLight,
                             "doubleClickPwrLight", StrId::STR_CAT_CONTROLS),

@@ -47,12 +47,12 @@ Placement place(const Rect& area, const int width, const int height, const Fit f
       return out;
     }
   }
-  const float scale = std::min(1.0f, std::min(static_cast<float>(area.width) / visibleWidth,
-                                              static_cast<float>(area.height) / visibleHeight));
+  const float scale = std::min(
+      1.0f, std::min(static_cast<float>(area.width) / visibleWidth, static_cast<float>(area.height) / visibleHeight));
   const int drawnWidth = std::max(1, static_cast<int>(visibleWidth * scale));
   const int drawnHeight = std::max(1, static_cast<int>(visibleHeight * scale));
-  out.box = Rect{area.x + (area.width - drawnWidth) / 2, area.y + (area.height - drawnHeight) / 2, drawnWidth,
-                 drawnHeight};
+  out.box =
+      Rect{area.x + (area.width - drawnWidth) / 2, area.y + (area.height - drawnHeight) / 2, drawnWidth, drawnHeight};
   return out;
 }
 
@@ -78,6 +78,7 @@ bool drawDecoded(GfxRenderer& renderer, const Rect& area, const std::string& pat
   return converter.decodeToFramebuffer(path, renderer, config);
 }
 
+// cppcheck-suppress constParameterReference
 bool drawBmp(GfxRenderer& renderer, const Rect& area, const std::string& path, const Fit fit) {
   HalFile file;
   if (!Storage.openFileForRead("DASHIMG", path, file)) return false;
@@ -230,6 +231,7 @@ void maskCorners(const GfxRenderer& renderer, const Rect& rect, const int radius
   for (int dy = 1; dy <= r; dy++) {
     while (inside > 0 && inside * inside + dy * dy > r2) inside--;
     const int run = r - inside;
+    // cppcheck-suppress knownConditionTrueFalse
     if (run <= 0) continue;
     const int top = rect.y + r - dy;
     const int low = bottom - r + dy;
@@ -240,6 +242,7 @@ void maskCorners(const GfxRenderer& renderer, const Rect& rect, const int radius
   }
 }
 
+// cppcheck-suppress functionStatic
 TileCache::Key TileCache::keyFor(const GfxRenderer& renderer, const Rect& rect, const std::string& path) const {
   Key k;
   k.pathHash = std::hash<std::string>{}(path);

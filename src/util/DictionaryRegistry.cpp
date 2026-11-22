@@ -130,8 +130,8 @@ RenameResult renameDictionary(const char* oldName, const char* newName, const ch
   const size_t newLen = strlen(newName);
   // SdFat strips trailing dots and spaces from a path component, so such a name
   // would be stored differently from the folder it creates.
-  if (newLen > maxLen || strpbrk(newName, ":*?\"<>|") != nullptr || newName[0] == ' ' ||
-      newName[newLen - 1] == ' ' || newName[newLen - 1] == '.') {
+  if (newLen > maxLen || strpbrk(newName, ":*?\"<>|") != nullptr || newName[0] == ' ' || newName[newLen - 1] == ' ' ||
+      newName[newLen - 1] == '.') {
     return RenameResult::InvalidName;
   }
   for (size_t i = 0; i < newLen; i++) {
@@ -180,6 +180,7 @@ RenameResult renameDictionary(const char* oldName, const char* newName, const ch
 
 SelectionState ensureSelection(char* name, size_t capacity, std::vector<DictionaryEntry>& list, bool* changed) {
   if (changed) *changed = false;
+  // cppcheck-suppress variableScope
   std::string base;
   if (name[0] != '\0') {
     if (resolveBasePath(name, base)) return SelectionState::Ready;

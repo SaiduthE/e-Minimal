@@ -255,7 +255,7 @@ size_t HalFile::write(const uint8_t* buf, size_t count) { HAL_FILE_WRAPPED_CALL(
 size_t HalFile::write(const void* buf, size_t count) { HAL_FILE_WRAPPED_CALL(write, buf, count); }
 size_t HalFile::write(uint8_t b) { HAL_FILE_WRAPPED_CALL(write, b); }
 bool HalFile::rename(const char* newPath) { HAL_FILE_WRAPPED_CALL(rename, newPath); }
-bool HalFile::isDirectory() const { HAL_FILE_FORWARD_CALL(isDirectory, ); }  // already thread-safe, no need to wrap
+bool HalFile::isDirectory() const { HAL_FILE_FORWARD_CALL(isDirectory, ); }    // already thread-safe, no need to wrap
 bool HalFile::isContiguous() const { HAL_FILE_FORWARD_CALL(isContiguous, ); }  // a flag read, no I/O
 void HalFile::rewindDirectory() { HAL_FILE_WRAPPED_CALL(rewindDirectory, ); }
 bool HalFile::close() { HAL_FILE_WRAPPED_CALL(close, ); }

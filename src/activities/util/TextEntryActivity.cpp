@@ -89,8 +89,8 @@ bool TextEntryActivity::handleButtons() {
     const int selected = nav.selected;
     if (selected < 0 || selected >= ROW_COUNT) return true;
     const bool phone = selected == ROW_PHONE;
-    SETTINGS.textEntryMethod = static_cast<uint8_t>(phone ? CrossPointSettings::TEXT_ENTRY_PHONE
-                                                          : CrossPointSettings::TEXT_ENTRY_DEVICE);
+    SETTINGS.textEntryMethod =
+        static_cast<uint8_t>(phone ? CrossPointSettings::TEXT_ENTRY_PHONE : CrossPointSettings::TEXT_ENTRY_DEVICE);
     if (!SETTINGS.saveToFile()) LOG_ERR("TXT", "Could not save the text entry method");
     LOG_INF("TXT", "Text entry remembered: %s", phone ? "phone" : "reader");
     launch(phone);

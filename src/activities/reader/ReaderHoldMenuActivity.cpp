@@ -21,7 +21,8 @@ void ReaderHoldMenuActivity::loop() {
   if (holdPopup.handleInput(mappedInput, [this] {
         selectionMoved = true;
         requestUpdate();
-      })) return;
+      }))
+    return;
 
   // Dismissed without a pick (Back or a tap outside): cancel.
   ActivityResult res;

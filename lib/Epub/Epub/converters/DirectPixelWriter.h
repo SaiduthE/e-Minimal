@@ -240,8 +240,8 @@ struct DirectPixelWriter {
     if (static_cast<unsigned>(phyX) >= stride4 * 2u) return;
     if (nibble > 0xF) nibble = 0xF;
     uint8_t& byte = fb4[static_cast<uint32_t>(phyY) * stride4 + (static_cast<uint32_t>(phyX) >> 1)];
-    byte = (phyX & 1) ? static_cast<uint8_t>((byte & 0xF0) | nibble)
-                      : static_cast<uint8_t>((byte & 0x0F) | (nibble << 4));
+    byte =
+        (phyX & 1) ? static_cast<uint8_t>((byte & 0xF0) | nibble) : static_cast<uint8_t>((byte & 0x0F) | (nibble << 4));
   }
 };
 

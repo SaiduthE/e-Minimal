@@ -21,11 +21,11 @@ struct FileInfo {
 
 // Who may do what over HTTP, WebDAV and the upload WebSocket. The activity fills it in per session.
 struct WebSecurityOptions {
-  bool requireCode = true;     // access code gate on every route, WebDAV and WebSocket
-  uint8_t accessLevel = 0;     // 0 Full, 1 Upload only (no delete/rename/move/settings/wifi/opds writes),
-                               // 2 Read only (GET only; no uploads)
-  bool webdav = false;         // register WebDAVHandler only when true
-  bool discovery = true;       // gates the UDP discovery listener (the mDNS name is the activity's)
+  bool requireCode = true;  // access code gate on every route, WebDAV and WebSocket
+  uint8_t accessLevel = 0;  // 0 Full, 1 Upload only (no delete/rename/move/settings/wifi/opds writes),
+                            // 2 Read only (GET only; no uploads)
+  bool webdav = false;      // register WebDAVHandler only when true
+  bool discovery = true;    // gates the UDP discovery listener (the mDNS name is the activity's)
 };
 
 // The least access a route needs; a session's access level admits routes up to its own.

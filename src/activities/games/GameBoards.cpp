@@ -641,8 +641,8 @@ void drawLudo(const GfxRenderer& renderer, const GameSession& session, const Lud
     }
     const int textX = iconX + icon + px(10);
     const EpdFontFamily::Style style = onTurn ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR;
-    const int fontId = renderer.getTextWidth(UI_10_FONT_ID, label, style) <= x + columnWidth - textX ? UI_10_FONT_ID
-                                                                                                     : SMALL_FONT_ID;
+    const int fontId =
+        renderer.getTextWidth(UI_10_FONT_ID, label, style) <= x + columnWidth - textX ? UI_10_FONT_ID : SMALL_FONT_ID;
     renderer.drawText(fontId, textX, y + (rowHeight - renderer.getLineHeight(fontId)) / 2, label, true, style);
   }
   if (game.die() > 0) {
@@ -725,8 +725,8 @@ void drawFigure(const GfxRenderer& renderer, const Rect& figure, const bool odd,
                            head / 2 - outline, Color::LightGray);
   renderer.fillRoundedRect(body.x + outline, body.y + outline, body.width - 2 * outline, body.height - 2 * outline,
                            shoulder - outline, true, true, false, false, Color::LightGray);
-  drawQuestionMark(renderer, Rect(body.x + body.width / 5, body.y + body.height / 8, body.width * 3 / 5,
-                                  body.height * 3 / 4));
+  drawQuestionMark(renderer,
+                   Rect(body.x + body.width / 5, body.y + body.height / 8, body.width * 3 / 5, body.height * 3 / 4));
 }
 
 void drawUndercoverThumb(const GfxRenderer& renderer, const ThumbSquare& sq) {

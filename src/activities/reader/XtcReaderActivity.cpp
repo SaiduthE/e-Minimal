@@ -439,8 +439,8 @@ void XtcReaderActivity::renderPage() {
   // GC16 even between light pages (judged 2026-09-22); XTCH's true grays do
   // not. So in Double mode a 1-bit page always gets the second pass, an XTCH
   // page only after a dark one.
-  const bool doubleMode = cleanup != CrossPointSettings::PICTURE_CLEANUP_OFF &&
-                          cleanup != CrossPointSettings::PICTURE_CLEANUP_WHITE_FLASH;
+  const bool doubleMode =
+      cleanup != CrossPointSettings::PICTURE_CLEANUP_OFF && cleanup != CrossPointSettings::PICTURE_CLEANUP_WHITE_FLASH;
   const bool flashed = afterDark && cleanup == CrossPointSettings::PICTURE_CLEANUP_WHITE_FLASH;
   const bool repeat = doubleMode && (afterDark || bitDepth == 1);
   if (flashed) {
@@ -484,7 +484,7 @@ void XtcReaderActivity::renderPage() {
       if (direct) {
         for (size_t i = 0; i < planeSize; i++) {
           const uint8_t a = plane1[i], b = plane2[i];
-          const uint8_t v = pass == Pass::Base ? static_cast<uint8_t>(~(a | b))
+          const uint8_t v = pass == Pass::Base  ? static_cast<uint8_t>(~(a | b))
                             : pass == Pass::Lsb ? static_cast<uint8_t>(~a & b)
                                                 : static_cast<uint8_t>(a ^ b);
           if (flipped) {
@@ -515,8 +515,8 @@ void XtcReaderActivity::renderPage() {
     // keeps the row fill's frame-buffer writes and plane reads in step with
     // the rows the driver asks for.
     if (direct && renderer.supportsGray4() && planeSize == renderer.getBufferSize()) {
-      XthGray4Rows rows{
-          plane1, plane2, fb, renderer.getDisplayWidthBytes(), planeSize, flipped, 0, streamed ? &stream : nullptr};
+      XthGray4Rows rows{plane1,    plane2,  fb, renderer.getDisplayWidthBytes(),
+                        planeSize, flipped, 0,  streamed ? &stream : nullptr};
       // HALF, as the staged base asked of displayGrayBuffer(): GC16 every page.
       // The planes are only read until this returns; pageBuffer is freed after.
       bool sent = renderer.displayGray4Rows(fillXthGray4Row, &rows, HalDisplay::HALF_REFRESH);
@@ -581,8 +581,8 @@ void XtcReaderActivity::renderPage() {
       uint64_t ink = 0;
       for (size_t i = 0; i < planeSize; i++) {
         const uint8_t a = plane1[i], b = plane2[i];
-        ink += 3 * __builtin_popcount(a & b) + 2 * __builtin_popcount(~a & b & 0xFF) +
-               __builtin_popcount(a & ~b & 0xFF);
+        ink +=
+            3 * __builtin_popcount(a & b) + 2 * __builtin_popcount(~a & b & 0xFF) + __builtin_popcount(a & ~b & 0xFF);
       }
       prevPageDark = ink > static_cast<uint64_t>(planeSize) * 8 * 3 * DARK_PAGE_PERCENT / 100;
     } else {
@@ -623,8 +623,8 @@ void XtcReaderActivity::renderPage() {
             flashed  ? ", white flash first"
             : repeat ? ", repeated"
                      : "",
-            prevPageDark ? ", dark" : "",
-            t0 - tLoad, tBase - t0, tBaseShown - tBase, tPlanes - tBaseShown, tGray - tPlanes, millis() - tGray);
+            prevPageDark ? ", dark" : "", t0 - tLoad, tBase - t0, tBaseShown - tBase, tPlanes - tBaseShown,
+            tGray - tPlanes, millis() - tGray);
     return;
   } else {
     const size_t srcRowBytes = (pageWidth + 7) / 8;

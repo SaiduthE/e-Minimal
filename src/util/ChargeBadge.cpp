@@ -259,8 +259,8 @@ void show(GfxRenderer& renderer, const HalPowerManager& power, HalDisplay& displ
   // plain square.
   PsramBuf saved(windowBytes(box.side));
   if (saved.p && loadWindow(box, saved.p)) {
-    FillCtx ctx = {saved.p, renderer.getFrameBuffer(), box.x, box.y, box.side, sz.inset, sz.borderRadius,
-                 renderer.getDisplayWidthBytes()};
+    FillCtx ctx = {saved.p,         renderer.getFrameBuffer(),      box.x, box.y, box.side, sz.inset,
+                   sz.borderRadius, renderer.getDisplayWidthBytes()};
     if (display.displayWindowGray4(box.x, box.y, box.side, box.side, fillWindowRow, &ctx)) return;
     LOG_ERR("BADGE", "Window refresh refused, plain badge");
   } else if (!saved.p) {

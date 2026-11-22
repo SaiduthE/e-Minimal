@@ -87,8 +87,8 @@ bool PhonePortal::begin(const Config& config) {
   }
   ipStr.clear();
 
-  LOG_DBG("PORTAL", "Raising %s on channel %u (%s, %s), free heap %d bytes", ssidStr.c_str(), config.channel,
-          "WPA2", config.keepStation ? "AP+STA" : "AP", ESP.getFreeHeap());
+  LOG_DBG("PORTAL", "Raising %s on channel %u (%s, %s), free heap %d bytes", ssidStr.c_str(), config.channel, "WPA2",
+          config.keepStation ? "AP+STA" : "AP", ESP.getFreeHeap());
 
   WiFi.mode(config.keepStation ? WIFI_AP_STA : WIFI_AP);
   delay(100);

@@ -193,7 +193,9 @@ TEST(ContentOpfParserSeries, CoverMetaStillResolvesAlongsideSeries) {
   <manifest><item id="cover" href="cover.png" media-type="image/png"/></manifest><spine/></package>)";
   ContentOpfParser parser("", "OPS/", xml.size(), nullptr, true);
 
-  parse(parser, xml);
+  // A metadata-only parse stops at <manifest> and reports a short write.
+  ASSERT_TRUE(parser.setup());
+  EXPECT_LT(parser.write(reinterpret_cast<const uint8_t*>(xml.data()), xml.size()), xml.size());
 
   EXPECT_EQ(parser.series, "S");
 }

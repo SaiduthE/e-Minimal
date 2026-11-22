@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Epub/Page.h>
 #include <EpdFontFamily.h>
+#include <Epub/Page.h>
 #include <I18n.h>
 
 #include <cstddef>
@@ -43,8 +43,7 @@ class PageTextPicker {
   // Extracts the selectable words of `page` and starts on the middle row in
   // Line stage. skipShortWords drops tokens with fewer than 3 letters/digits.
   // Returns false when the page has no selectable word.
-  bool build(GfxRenderer& renderer, const Page& page, int fontId, int marginLeft, int marginTop,
-             bool skipShortWords);
+  bool build(GfxRenderer& renderer, const Page& page, int fontId, int marginLeft, int marginTop, bool skipShortWords);
 
   // Allocates the differential-repaint buffer (call from onEnter, after
   // build). A failed allocation only disables the fast path.

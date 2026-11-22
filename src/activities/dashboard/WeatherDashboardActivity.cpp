@@ -80,8 +80,7 @@ void WeatherDashboardActivity::drawForecast(const int x, const int top, const in
   snprintf(text, sizeof(text), "%d\xC2\xB0", rounded(forecast.temperature));
   renderer.drawText(BIG_FONT_ID, textX, y, text, true, EpdFontFamily::BOLD);
   y += bigLine;
-  renderer.drawText(UI_12_FONT_ID, textX, y, I18N.get(weather::conditionFor(forecast.code)), true,
-                    EpdFontFamily::BOLD);
+  renderer.drawText(UI_12_FONT_ID, textX, y, I18N.get(weather::conditionFor(forecast.code)), true, EpdFontFamily::BOLD);
   y += uiLine;
   if (forecast.dayCount > 0) {
     snprintf(text, sizeof(text), tr(STR_DASH_HIGH_LOW_FORMAT), rounded(forecast.days[0].high),

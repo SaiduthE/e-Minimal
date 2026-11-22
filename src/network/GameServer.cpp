@@ -169,8 +169,8 @@ void GameServer::handleJoin() {
   // one by name.
   const bool rejoined = session_.playerCount() == before;
   char body[72];
-  snprintf(body, sizeof(body), "{\"t\":\"%08lx\",\"seat\":%d,\"rejoined\":%s}", static_cast<unsigned long>(token),
-           seat, rejoined ? "true" : "false");
+  snprintf(body, sizeof(body), "{\"t\":\"%08lx\",\"seat\":%d,\"rejoined\":%s}", static_cast<unsigned long>(token), seat,
+           rejoined ? "true" : "false");
   server_->send(200, "application/json", body);
   LOG_DBG("GAMESRV", "Seat %d %s as %s", seat, rejoined ? "rejoined" : "joined",
           session_.player(static_cast<uint8_t>(seat)).name);

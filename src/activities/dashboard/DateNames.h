@@ -19,10 +19,10 @@ inline const char* weekdayShort(const int wday) {
 }
 
 inline const char* month(const int mon) {
-  static constexpr StrId NAMES[12] = {StrId::STR_JANUARY,   StrId::STR_FEBRUARY, StrId::STR_MARCH,
-                                      StrId::STR_APRIL,     StrId::STR_MAY,      StrId::STR_JUNE,
-                                      StrId::STR_JULY,      StrId::STR_AUGUST,   StrId::STR_SEPTEMBER,
-                                      StrId::STR_OCTOBER,   StrId::STR_NOVEMBER, StrId::STR_DECEMBER};
+  static constexpr StrId NAMES[12] = {StrId::STR_JANUARY, StrId::STR_FEBRUARY, StrId::STR_MARCH,
+                                      StrId::STR_APRIL,   StrId::STR_MAY,      StrId::STR_JUNE,
+                                      StrId::STR_JULY,    StrId::STR_AUGUST,   StrId::STR_SEPTEMBER,
+                                      StrId::STR_OCTOBER, StrId::STR_NOVEMBER, StrId::STR_DECEMBER};
   return I18N.get(NAMES[((mon % 12) + 12) % 12]);
 }
 

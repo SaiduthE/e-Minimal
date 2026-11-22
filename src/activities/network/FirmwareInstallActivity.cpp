@@ -125,8 +125,7 @@ void FirmwareInstallActivity::loop() {
 
   size_t stagedSize = 0;
   if (server->takeStaged(stagedSize)) {
-    LOG_INF("FWI", "Staged firmware %u bytes, handing over to the install screen",
-            static_cast<unsigned>(stagedSize));
+    LOG_INF("FWI", "Staged firmware %u bytes, handing over to the install screen", static_cast<unsigned>(stagedSize));
     installStaged();
     return;
   }
@@ -151,8 +150,8 @@ void FirmwareInstallActivity::render(RenderLock&&) {
   const int pageWidth = renderer.getScreenWidth();
   const int pageHeight = renderer.getScreenHeight();
 
-  GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight},
-                 tr(STR_WEB_FIRMWARE_INSTALL), nullptr);
+  GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_WEB_FIRMWARE_INSTALL),
+                 nullptr);
   GUI.drawSubHeader(renderer, Rect{0, metrics.topPadding + metrics.headerHeight, pageWidth, metrics.tabBarHeight},
                     ssid.c_str());
 

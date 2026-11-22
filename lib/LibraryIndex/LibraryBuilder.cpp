@@ -164,8 +164,8 @@ void refineTitleTies(SortKey* keys, const uint16_t n, uint32_t& serviceUnits) {
              stage.read(reinterpret_cast<uint8_t*>(&r), sizeof(r)) == static_cast<int>(sizeof(r));
         if (!ok) break;
         char full[sizeof(SortKey::key) + TIE_SUFFIX_BYTES];
-        const size_t len = naturalSortKey(std::string_view(r.fold, std::min<size_t>(r.foldLen, sizeof(r.fold))), full,
-                                          sizeof(full));
+        const size_t len =
+            naturalSortKey(std::string_view(r.fold, std::min<size_t>(r.foldLen, sizeof(r.fold))), full, sizeof(full));
         memset(scratch[m].suffix, 0, sizeof(scratch[m].suffix));
         if (len > sizeof(SortKey::key)) {
           memcpy(scratch[m].suffix, full + sizeof(SortKey::key), len - sizeof(SortKey::key));
@@ -502,11 +502,11 @@ int findPrior(WalkState& st, const uint64_t pathHash) {
       st.failed = true;
       return false;
     }
-    reuseMetadata =
-        st.prior[priorIndex].fileSize == fileSize && modificationTime != 0 &&
-        priorRecord.modificationTime == modificationTime && st.previous->header().foldVersion == CLIX_FOLD_VERSION &&
-        st.previous->header().metadataEnabled == st.readMetadata && priorRecord.metadataStatus == expectedStatus &&
-        !reenrichBook;
+    reuseMetadata = st.prior[priorIndex].fileSize == fileSize && modificationTime != 0 &&
+                    priorRecord.modificationTime == modificationTime &&
+                    st.previous->header().foldVersion == CLIX_FOLD_VERSION &&
+                    st.previous->header().metadataEnabled == st.readMetadata &&
+                    priorRecord.metadataStatus == expectedStatus && !reenrichBook;
   }
 
   if (reuseMetadata) {

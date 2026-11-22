@@ -122,7 +122,7 @@ void LyraTheme::drawButtonHints(GfxRenderer& renderer, const char* btn1, const c
   const int buttonWidth = static_cast<int>(80 * scale);
   const int smallButtonHeight = static_cast<int>(15 * scale);
   const int buttonHeight = metrics.buttonHintsHeight;
-  const int buttonY = metrics.buttonHintsHeight;         // Distance from bottom
+  const int buttonY = metrics.buttonHintsHeight;        // Distance from bottom
   const int textYOffset = static_cast<int>(7 * scale);  // Distance from top of button to text baseline
   // Keyed to the portrait panel width: the 528-wide X3 gets more spacing than
   // the 480-wide boards (X4, X4 Pro, and the other 800x480 panels). Anything

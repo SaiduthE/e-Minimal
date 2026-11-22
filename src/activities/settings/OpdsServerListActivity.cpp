@@ -163,8 +163,7 @@ void OpdsServerListActivity::handleSelection() {
       }
     };
     auto keyboard = makeUniqueNoThrow<TextEntryActivity>(renderer, mappedInput, tr(STR_OPDS_DOWNLOAD_FOLDER),
-                                                          std::string(SETTINGS.opdsDownloadFolder), 63,
-                                                          InputType::Text);
+                                                         std::string(SETTINGS.opdsDownloadFolder), 63, InputType::Text);
     if (!keyboard) {
       LOG_ERR("OPS", "OOM: TextEntryActivity");
       return;

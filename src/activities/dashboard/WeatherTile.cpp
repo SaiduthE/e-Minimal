@@ -35,8 +35,8 @@ struct DetailSet {
   int count;
 };
 constexpr Detail MEDIUM_ITEMS[] = {Detail::Feels, Detail::Rain, Detail::Wind};
-constexpr Detail LARGE_ITEMS[] = {
-    Detail::Feels, Detail::Humidity, Detail::Wind, Detail::Rain, Detail::Sunrise, Detail::Sunset};
+constexpr Detail LARGE_ITEMS[] = {Detail::Feels, Detail::Humidity, Detail::Wind,
+                                  Detail::Rain,  Detail::Sunrise,  Detail::Sunset};
 constexpr DetailSet MEDIUM_DETAILS{MEDIUM_ITEMS, static_cast<int>(std::size(MEDIUM_ITEMS))};
 constexpr DetailSet LARGE_DETAILS{LARGE_ITEMS, static_cast<int>(std::size(LARGE_ITEMS))};
 
@@ -128,8 +128,7 @@ bool formatDetail(const Ctx& c, const Detail detail, char* out, const size_t siz
       if (!today || today->sunrise == 0 || today->sunset == 0) return false;
       const bool rise = detail == Detail::Sunrise;
       const tm local = weather::localAt(rise ? today->sunrise : today->sunset, forecast.utcOffset);
-      snprintf(out, size, rise ? tr(STR_DASH_SUNRISE_FORMAT) : tr(STR_DASH_SUNSET_FORMAT), local.tm_hour,
-               local.tm_min);
+      snprintf(out, size, rise ? tr(STR_DASH_SUNRISE_FORMAT) : tr(STR_DASH_SUNSET_FORMAT), local.tm_hour, local.tm_min);
       return true;
     }
   }
@@ -636,8 +635,8 @@ void drawDays(const Ctx& c, const DayMetrics& m, const Days& days, const int x, 
 
 // The next days under a rule, planned for the room between top and bottom:
 // right under top, or against bottom when anchorBottom.
-void drawDaysSection(const Ctx& c, const DayMetrics& m, const int x, const int top, const int width,
-                     const int bottom, const DayLayout layout, const bool anchorBottom) {
+void drawDaysSection(const Ctx& c, const DayMetrics& m, const int x, const int top, const int width, const int bottom,
+                     const DayLayout layout, const bool anchorBottom) {
   const int room = bottom - top - c.sectionGap * 2;
   const Days days = planDays(c, m, width, room, layout);
   if (days.count == 0) return;

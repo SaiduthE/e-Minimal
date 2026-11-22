@@ -122,9 +122,8 @@ constexpr int STRIDE4 = PANEL_WIDTH / 2;
 
 void compareGray4(int orientation, int rotation, bool twoBit, bool antiAliased, bool state, int width, int height,
                   int x, int y, Rect clip) {
-  SCOPED_TRACE(::testing::Message() << "gray4 " << orientation << ',' << rotation << ',' << twoBit << ','
-                                    << antiAliased << ',' << state << " size=" << width << 'x' << height
-                                    << " at=" << x << ',' << y);
+  SCOPED_TRACE(::testing::Message() << "gray4 " << orientation << ',' << rotation << ',' << twoBit << ',' << antiAliased
+                                    << ',' << state << " size=" << width << 'x' << height << " at=" << x << ',' << y);
   const auto [dxX, dxY, dyX, dyY] = AXES[rotation];
   const glyphBitmap::Frame logical{x, y, dxX, dxY, dyX, dyY};
   std::vector<uint8_t> bitmap((width * height * (twoBit ? 2 : 1) + 7) / 8);
@@ -149,7 +148,8 @@ void compareGray4(int orientation, int rotation, bool twoBit, bool antiAliased, 
       }
       if (nibble < 0) continue;
       auto& byte = expected[16 + py * STRIDE4 + px / 2];
-      byte = (px % 2) ? static_cast<uint8_t>((byte & 0xF0) | nibble) : static_cast<uint8_t>((byte & 0x0F) | (nibble << 4));
+      byte =
+          (px % 2) ? static_cast<uint8_t>((byte & 0xF0) | nibble) : static_cast<uint8_t>((byte & 0x0F) | (nibble << 4));
     }
   }
 

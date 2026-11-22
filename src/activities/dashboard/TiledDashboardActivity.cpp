@@ -17,9 +17,7 @@
 #include "util/UiOrientation.h"
 
 namespace {
-bool isDue(const unsigned long at, const unsigned long now) {
-  return at != 0 && static_cast<long>(now - at) >= 0;
-}
+bool isDue(const unsigned long at, const unsigned long now) { return at != 0 && static_cast<long>(now - at) >= 0; }
 }  // namespace
 
 void TiledDashboardActivity::onEnter() {
@@ -256,9 +254,8 @@ TiledDashboardActivity::PaintStats TiledDashboardActivity::paintTiles() {
   return stats;
 }
 
-void TiledDashboardActivity::logRepaint(const char* frame, const HalDisplay::RefreshMode mode,
-                                        const PaintStats& paint, const unsigned long start,
-                                        const unsigned long shownAt) {
+void TiledDashboardActivity::logRepaint(const char* frame, const HalDisplay::RefreshMode mode, const PaintStats& paint,
+                                        const unsigned long start, const unsigned long shownAt) {
   const unsigned long end = millis();
   const char* image = "none";
   if (paint.image == dashboard_tiles::ImagePaint::Cached) image = "blit";

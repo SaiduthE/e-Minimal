@@ -62,8 +62,8 @@ class TiledDashboardActivity final : public TimedDashboardActivity {
   PaintStats paintTiles();
   // LOG_DBG of one repaint's cost: painting (the Image tile's decode or blit
   // within it) and the display call. frame: "gray4" or "1bpp".
-  static void logRepaint(const char* frame, HalDisplay::RefreshMode mode, const PaintStats& paint,
-                         unsigned long start, unsigned long shownAt);
+  static void logRepaint(const char* frame, HalDisplay::RefreshMode mode, const PaintStats& paint, unsigned long start,
+                         unsigned long shownAt);
 
   // A focus change repaints with the quick waveform; content changes get a
   // clean one. Set on the loop task, taken by the render task.

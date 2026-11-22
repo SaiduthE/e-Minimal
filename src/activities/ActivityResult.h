@@ -79,8 +79,7 @@ struct HighlightResult {
 
 using ResultVariant =
     std::variant<std::monostate, WifiResult, KeyboardResult, MenuResult, ChapterResult, PercentResult, IntervalResult,
-                 PageResult, ProgressChangeResult, NetworkModeResult, FootnoteResult, FilePathResult,
-                 HighlightResult>;
+                 PageResult, ProgressChangeResult, NetworkModeResult, FootnoteResult, FilePathResult, HighlightResult>;
 
 struct ActivityResult {
   bool isCancelled = false;

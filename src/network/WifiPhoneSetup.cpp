@@ -67,11 +67,12 @@ bool WifiPhoneSetup::begin() {
 
   std::vector<std::string> names;
   names.reserve(visible.size());
+  // cppcheck-suppress useStlAlgorithm
   for (const auto& target : visible) names.push_back(target.ssid);
 
-  const bool serving = server.begin(presetSsid, std::move(names), [this](const std::string& ssid, const std::string& password) {
-    onSubmit(ssid, password);
-  });
+  const bool serving =
+      server.begin(presetSsid, std::move(names),
+                   [this](const std::string& ssid, const std::string& password) { onSubmit(ssid, password); });
   if (!serving) {
     portalLink.end();
     currentPhase = Phase::ERROR;
@@ -180,7 +181,8 @@ void WifiPhoneSetup::startAttempt() {
   server.setState(WifiSetupServer::State::CONNECTING);
 
   const uint8_t channel = channelFor(joinedSsid);
-  LOG_DBG("SETUP", "Attempt %d: joining %s on channel %u with the portal up", attemptCount, joinedSsid.c_str(), channel);
+  LOG_DBG("SETUP", "Attempt %d: joining %s on channel %u with the portal up", attemptCount, joinedSsid.c_str(),
+          channel);
 
   // Credentials live in WifiCredentialStore; nothing goes to the SDK's NVS.
   WiFi.persistent(false);
@@ -215,6 +217,7 @@ void WifiPhoneSetup::pollAttempt() {
   const wl_status_t status = WiFi.status();
 
   if (status == WL_CONNECTED) {
+    // cppcheck-suppress shadowFunction
     const IPAddress ip = WiFi.localIP();
     char buffer[16];
     snprintf(buffer, sizeof(buffer), "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
@@ -260,6 +263,7 @@ void WifiPhoneSetup::fail(const FailReason why) {
 uint8_t WifiPhoneSetup::channelFor(const std::string& ssid) const {
   if (ssid.empty()) return 0;
   for (const auto& target : visible) {
+    // cppcheck-suppress useStlAlgorithm
     if (target.ssid == ssid) return target.channel;
   }
   return 0;

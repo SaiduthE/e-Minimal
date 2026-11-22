@@ -148,9 +148,8 @@ void EpubReaderHighlightsActivity::buildScreen(UiScreen& screen) {
 void EpubReaderHighlightsActivity::render(RenderLock&&) {
   renderer.clearScreen();
 
-  const int titleX = (renderer.getScreenWidth() -
-                      renderer.getTextWidth(UI_12_FONT_ID, tr(STR_HIGHLIGHTS), EpdFontFamily::BOLD)) /
-                     2;
+  const int titleX =
+      (renderer.getScreenWidth() - renderer.getTextWidth(UI_12_FONT_ID, tr(STR_HIGHLIGHTS), EpdFontFamily::BOLD)) / 2;
   renderer.drawText(UI_12_FONT_ID, titleX, 15, tr(STR_HIGHLIGHTS), true, EpdFontFamily::BOLD);
 
   renderUi();

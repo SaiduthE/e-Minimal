@@ -371,12 +371,10 @@ TEST(NaturalSortKey, LeadingZerosAreIgnored) {
 }
 
 TEST(NaturalSortKey, NumbersStayBetweenSpaceAndLetters) {
-  EXPECT_TRUE(natLess("a b", "a 1"));
+  EXPECT_TRUE(natLess("a b", "a1"));
   EXPECT_TRUE(natLess("a 9", "a b"));
   EXPECT_TRUE(natLess("1984", "alpha"));
   EXPECT_TRUE(natLess("a1", "a1b"));
 }
 
-TEST(NaturalSortKey, TruncatesAtCap) {
-  EXPECT_EQ(natKey("abcdefghij 12345", 12).size(), 12u);
-}
+TEST(NaturalSortKey, TruncatesAtCap) { EXPECT_EQ(natKey("abcdefghij 12345", 12).size(), 12u); }

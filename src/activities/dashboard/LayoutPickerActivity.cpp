@@ -264,8 +264,8 @@ void LayoutPickerActivity::buildScreen(UiScreen& screen) {
 
   const int selected = std::clamp(nav.selected.load(), 0, std::max(0, cardCount_ - 1));
   grid_.selectedIndex = static_cast<int16_t>(selected);
-  grid_.topIndex = fui::coverGridTopIndexFor(static_cast<uint16_t>(selected), cardCount_, columns,
-                                             static_cast<uint16_t>(perPage));
+  grid_.topIndex =
+      fui::coverGridTopIndexFor(static_cast<uint16_t>(selected), cardCount_, columns, static_cast<uint16_t>(perPage));
   fui::coverGrid(screen.frame(), gridRect, grid_);
 }
 
@@ -348,8 +348,7 @@ void LayoutPickerActivity::drawTiles(fui::DrawTarget& target, const fui::Rect ar
                          static_cast<int16_t>(x1 - x0 - 2 * gap), static_cast<int16_t>(y1 - y0 - 2 * gap)};
     if (cell.empty()) continue;
     target.stroke(cell, ink, stroke, radius);
-    target.text(cell.inset(fui::Insets{0, textPad, 0, textPad}), dashboard_widgets::widgetName(tile.widget),
-                tileText_);
+    target.text(cell.inset(fui::Insets{0, textPad, 0, textPad}), dashboard_widgets::widgetName(tile.widget), tileText_);
   }
 }
 

@@ -9,8 +9,8 @@
 
 #include <cstdio>
 
-#include "MappedInputManager.h"
 #include "FirmwareIdentity.h"
+#include "MappedInputManager.h"
 #include "components/UITheme.h"
 
 namespace fui = freeink::ui;

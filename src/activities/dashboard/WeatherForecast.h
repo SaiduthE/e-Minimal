@@ -15,7 +15,7 @@ struct WeatherForecast {
   static constexpr uint8_t MAX_DAYS = 5;
 
   struct Day {
-    int64_t date = 0;  // local midnight
+    int64_t date = 0;   // local midnight
     int16_t code = -1;  // WMO weather code, -1 when missing
     float high = 0.0f;
     float low = 0.0f;

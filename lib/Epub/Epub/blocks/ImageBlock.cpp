@@ -168,8 +168,7 @@ bool loadPxcSlot(uint64_t cacheHash, HalFile& cacheFile, uint16_t cachedWidth, u
   }
 
   // PSRAM first, in one block, whatever the image size.
-  if (payload <= PXC_MAX_PSRAM_PAYLOAD &&
-      heap_caps_get_free_size(MALLOC_CAP_SPIRAM) > payload + PXC_PSRAM_RESERVE) {
+  if (payload <= PXC_MAX_PSRAM_PAYLOAD && heap_caps_get_free_size(MALLOC_CAP_SPIRAM) > payload + PXC_PSRAM_RESERVE) {
     pxcBlock = static_cast<uint8_t*>(heap_caps_malloc(payload, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     if (pxcBlock) {
       for (size_t done = 0; done < payload;) {

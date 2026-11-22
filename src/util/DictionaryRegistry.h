@@ -7,8 +7,8 @@
 // One StarDict dictionary found under /dictionaries or /.dictionaries: a
 // subfolder holding <stem>.idx plus <stem>.dict or <stem>.dict.dz.
 struct DictionaryEntry {
-  std::string name;  // subfolder name (shown to the user, stored in settings)
-  std::string stem;  // index basename without .idx
+  std::string name;       // subfolder name (shown to the user, stored in settings)
+  std::string stem;       // index basename without .idx
   const char* root = "";  // "/dictionaries" or "/.dictionaries"
   bool hasSyn = false;
   bool compressed = false;  // .dict.dz rather than .dict

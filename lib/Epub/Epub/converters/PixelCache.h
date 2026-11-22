@@ -107,31 +107,31 @@ struct PixelCache {
     }
 
     if (!whole) {
-    int wantRows = maxBlockDstRows + 2;
-    if (wantRows < MIN_BAND_ROWS) wantRows = MIN_BAND_ROWS;
-    if (wantRows > h) wantRows = h;
+      int wantRows = maxBlockDstRows + 2;
+      if (wantRows < MIN_BAND_ROWS) wantRows = MIN_BAND_ROWS;
+      if (wantRows > h) wantRows = h;
 
-    size_t maxRowsByMem = MAX_BAND_BYTES / (size_t)bytesPerRow;
-    if (maxRowsByMem < 1) maxRowsByMem = 1;
-    if ((size_t)wantRows > maxRowsByMem) wantRows = (int)maxRowsByMem;
+      size_t maxRowsByMem = MAX_BAND_BYTES / (size_t)bytesPerRow;
+      if (maxRowsByMem < 1) maxRowsByMem = 1;
+      if ((size_t)wantRows > maxRowsByMem) wantRows = (int)maxRowsByMem;
 
-    // A single decode block must fit inside the band, otherwise streaming would
-    // drop rows. This only fails for pathological upscales that could not be
-    // cached at all; fall back to the no-cache path.
-    if (wantRows < maxBlockDstRows) {
-      LOG_ERR("IMG", "Cache band too small (%d < %d rows) for %dx%d", wantRows, maxBlockDstRows, w, h);
-      return false;
-    }
-    bandRows = wantRows;
+      // A single decode block must fit inside the band, otherwise streaming would
+      // drop rows. This only fails for pathological upscales that could not be
+      // cached at all; fall back to the no-cache path.
+      if (wantRows < maxBlockDstRows) {
+        LOG_ERR("IMG", "Cache band too small (%d < %d rows) for %dx%d", wantRows, maxBlockDstRows, w, h);
+        return false;
+      }
+      bandRows = wantRows;
 
-    const size_t bufSize = (size_t)(bandRows + 1) * bytesPerRow;  // +1 spare zero row
-    buffer = (uint8_t*)malloc(bufSize);
-    if (!buffer) {
-      LOG_ERR("IMG", "OOM cache band: %u bytes", (unsigned)bufSize);
-      return false;
-    }
-    memset(buffer, 0, bufSize);
-    zeroRow = buffer + (size_t)bandRows * bytesPerRow;
+      const size_t bufSize = (size_t)(bandRows + 1) * bytesPerRow;  // +1 spare zero row
+      buffer = (uint8_t*)malloc(bufSize);
+      if (!buffer) {
+        LOG_ERR("IMG", "OOM cache band: %u bytes", (unsigned)bufSize);
+        return false;
+      }
+      memset(buffer, 0, bufSize);
+      zeroRow = buffer + (size_t)bandRows * bytesPerRow;
     }
 
     cachePathStr = cachePath;
@@ -158,8 +158,8 @@ struct PixelCache {
       return false;
     }
 
-    LOG_DBG("IMG", "Cache stream started: %s (%dx%d, %s %d rows%s)", cachePath.c_str(), w, h,
-            whole ? "whole" : "band", bandRows, hasFile ? "" : ", PSRAM only");
+    LOG_DBG("IMG", "Cache stream started: %s (%dx%d, %s %d rows%s)", cachePath.c_str(), w, h, whole ? "whole" : "band",
+            bandRows, hasFile ? "" : ", PSRAM only");
     ok = true;
     return true;
   }
@@ -237,8 +237,7 @@ struct PixelCache {
     if (ImageBlock::adoptRenderCache(cachePathStr, buffer, (uint16_t)width, (uint16_t)height)) {
       buffer = nullptr;  // ownership passed to the slot; the destructor must not free it
       zeroRow = nullptr;
-      LOG_DBG("IMG", "Payload kept in PSRAM (%u KB) - no later pass re-decodes",
-              (unsigned)(payload / 1024));
+      LOG_DBG("IMG", "Payload kept in PSRAM (%u KB) - no later pass re-decodes", (unsigned)(payload / 1024));
     }
     ok = false;
     return written;

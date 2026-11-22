@@ -215,7 +215,7 @@ void BaseTheme::drawButtonHints(GfxRenderer& renderer, const char* btn1, const c
   const float scale = static_cast<float>(metrics.buttonHintsHeight) / BaseMetrics::values.buttonHintsHeight;
   const int buttonWidth = static_cast<int>(106 * scale);
   const int buttonHeight = metrics.buttonHintsHeight;
-  const int buttonY = metrics.buttonHintsHeight;         // Distance from bottom
+  const int buttonY = metrics.buttonHintsHeight;        // Distance from bottom
   const int textYOffset = static_cast<int>(7 * scale);  // Distance from top of button to text baseline
   // Keyed to the portrait panel width: the 528-wide X3 gets more spacing than
   // the 480-wide boards (X4, X4 Pro, and the other 800x480 panels). Wider
@@ -483,8 +483,8 @@ void BaseTheme::drawHeader(const GfxRenderer& renderer, Rect rect, const char* t
       }
     }
     // Same status line as the battery, mirrored to the other side.
-    const int16_t clockX = batteryLeft ? static_cast<int16_t>(statusRight - clockWidth)
-                                       : static_cast<int16_t>(statusLeft - clockBearing);
+    const int16_t clockX =
+        batteryLeft ? static_cast<int16_t>(statusRight - clockWidth) : static_cast<int16_t>(statusLeft - clockBearing);
     ui.target.text(fui::Rect{clockX, statusY, clockWidth, statusH}, clockText, tokens.smallText);
   }
 

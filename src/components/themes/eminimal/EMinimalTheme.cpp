@@ -9,8 +9,7 @@ namespace {
 constexpr int kHintRadius = 15;  // RoundedRaff's kBottomRadius
 }  // namespace
 
-void EMinimalTheme::drawHeader(const GfxRenderer& renderer, Rect rect, const char* title,
-                               const char* subtitle) const {
+void EMinimalTheme::drawHeader(const GfxRenderer& renderer, Rect rect, const char* title, const char* subtitle) const {
   // RoundedRaff skips untitled headers because its list home draws its own in
   // drawRecentBookCover. The cover grid home has no such header and draws the
   // battery through an untitled band, so draw every header.
@@ -18,7 +17,7 @@ void EMinimalTheme::drawHeader(const GfxRenderer& renderer, Rect rect, const cha
 }
 
 void EMinimalTheme::drawButtonHints(GfxRenderer& renderer, const char* btn1, const char* btn2, const char* btn3,
-                                   const char* btn4) const {
+                                    const char* btn4) const {
   if (gpio.hasTouch()) {
     return;
   }

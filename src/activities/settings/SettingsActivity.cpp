@@ -15,8 +15,8 @@
 
 #include "AboutActivity.h"
 #include "ButtonRemapActivity.h"
-#include "ClearCacheActivity.h"
 #include "ChargeBadgeSettingsActivity.h"
+#include "ClearCacheActivity.h"
 #include "ClockSettingsActivity.h"
 #include "CrossPointSettings.h"
 #include "FirmwareIdentity.h"
@@ -28,18 +28,18 @@
 #include "KeyboardLayoutsActivity.h"
 #include "LanguageSelectActivity.h"
 #include "ManageDictionariesActivity.h"
-#include "SecuritySettingsActivity.h"
 #include "MappedInputManager.h"
 #include "OpdsServerListActivity.h"
 #include "OtaUpdateActivity.h"
 #include "SdCardFontSystem.h"
 #include "SdFirmwareUpdateActivity.h"
-#include "activities/network/FirmwareInstallActivity.h"
+#include "SecuritySettingsActivity.h"
 #include "SettingsList.h"
 #include "SilentRestart.h"
 #include "SleepScreenSettingsActivity.h"
 #include "StatusBarSettingsActivity.h"
 #include "TextSettingsActivity.h"
+#include "activities/network/FirmwareInstallActivity.h"
 #include "activities/network/WifiSelectionActivity.h"
 #include "activities/util/IntervalSelectionActivity.h"
 #include "components/UITheme.h"
@@ -80,8 +80,7 @@ constexpr uint8_t SLEEP_PRESETS[] = {2, 5, 10, 15, 30, CrossPointSettings::SLEEP
 }  // namespace
 
 SettingsActivity::SettingsActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, const Scope scope)
-    : UiTabListActivity(scope == Scope::Global ? "GlobalSettings" : "Settings", renderer, mappedInput),
-      scope(scope) {}
+    : UiTabListActivity(scope == Scope::Global ? "GlobalSettings" : "Settings", renderer, mappedInput), scope(scope) {}
 
 void SettingsActivity::rebuildSettingsLists() {
   for (auto& tab : tabSettings) tab.clear();
@@ -197,8 +196,7 @@ void SettingsActivity::rebuildSettingsLists() {
   if (!globalMoved) {
     systemSettings.push_back(SettingInfo::Action(StrId::STR_CHECK_UPDATES, SettingAction::CheckForUpdates));
     systemSettings.push_back(SettingInfo::Action(StrId::STR_SD_FIRMWARE_UPDATE, SettingAction::SdFirmwareUpdate));
-    systemSettings.push_back(
-        SettingInfo::Action(StrId::STR_WEB_FIRMWARE_INSTALL, SettingAction::WifiFirmwareInstall));
+    systemSettings.push_back(SettingInfo::Action(StrId::STR_WEB_FIRMWARE_INSTALL, SettingAction::WifiFirmwareInstall));
   }
   systemSettings.push_back(SettingInfo::Action(StrId::STR_KEYBOARD_LAYOUTS, SettingAction::KeyboardLayouts));
   if (!globalMoved) systemSettings.push_back(SettingInfo::Action(StrId::STR_ABOUT, SettingAction::About));

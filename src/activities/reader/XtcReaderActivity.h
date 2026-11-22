@@ -25,7 +25,7 @@ struct XtcPageStream {
   bool flipped = false;  // panel row 0 is the end of each plane
   std::atomic<uint16_t> rowsReady{0};
   std::atomic<bool> failed{false};
-  uint32_t waitUs = 0;  // time the row fill spent waiting on SD
+  uint32_t waitUs = 0;                // time the row fill spent waiting on SD
   SemaphoreHandle_t start = nullptr;  // a page posted
   SemaphoreHandle_t chunk = nullptr;  // a chunk landed
   SemaphoreHandle_t done = nullptr;   // the page is read; the buffer is the caller's again

@@ -1,7 +1,7 @@
 #include "LibraryListActivity.h"
 
-#include <FreeInkUIIcon.h>
 #include <BookOverrides.h>
+#include <FreeInkUIIcon.h>
 #include <GfxRenderer.h>
 #include <HalStorage.h>
 #include <I18n.h>
@@ -17,6 +17,7 @@
 #include "CrossPointSettings.h"
 #include "MappedInputManager.h"
 #include "RecentBooksStore.h"
+#include "activities/library/ManageBookActivity.h"
 #include "activities/util/ConfirmationActivity.h"
 #include "activities/util/TextEntryActivity.h"
 #include "components/UIScale.h"
@@ -26,7 +27,6 @@
 #include "fontIds.h"
 #include "util/BookCacheUtils.h"
 #include "util/LibraryIndexRefresh.h"
-#include "activities/library/ManageBookActivity.h"
 
 namespace fui = freeink::ui;
 
@@ -141,9 +141,7 @@ void LibraryListActivity::onExit() {
   Activity::onExit();
 }
 
-bool LibraryListActivity::rebuildIndex() {
-  return library::rebuildLibraryIndexFromSettings();
-}
+bool LibraryListActivity::rebuildIndex() { return library::rebuildLibraryIndexFromSettings(); }
 
 void LibraryListActivity::swallowHeldReleases() {
   lockNextConfirmRelease = mappedInput.isPressed(MappedInputManager::Button::Confirm);
@@ -455,8 +453,8 @@ void LibraryListActivity::openSearch() {
   // No key filtering here on purpose. Greying out the letters that lead nowhere
   // was built, tested on device and removed: a letter you can see but cannot
   // reach reads as a broken keyboard, and the eye keeps returning to it.
-  auto keyboard = makeUniqueNoThrow<TextEntryActivity>(renderer, mappedInput, tr(STR_LIBRARY_SEARCH), query, 48,
-                                                       InputType::Text);
+  auto keyboard =
+      makeUniqueNoThrow<TextEntryActivity>(renderer, mappedInput, tr(STR_LIBRARY_SEARCH), query, 48, InputType::Text);
   if (!keyboard) {
     LOG_ERR("LIB", "OOM: search keyboard");
     return;

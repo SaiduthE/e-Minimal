@@ -236,9 +236,8 @@ void DashboardPortalActivity::showPage(const std::string& ip, const std::string&
     networkName = ssid;
     pageUrl = "http://" + ip + path;
     pageQrUrl = session.urlWithToken(pageUrl);
-    pageAlt = session.announces()
-                  ? std::string(tr(STR_OR_HTTP_PREFIX)) + PhonePortal::SHARED_HOSTNAME + ".local" + path
-                  : std::string();
+    pageAlt = session.announces() ? std::string(tr(STR_OR_HTTP_PREFIX)) + PhonePortal::SHARED_HOSTNAME + ".local" + path
+                                  : std::string();
     phase = Phase::Running;
   }
   LOG_INF("DPORTAL", "Serving %s, free heap %u bytes", pageUrl.c_str(), static_cast<unsigned>(ESP.getFreeHeap()));
@@ -330,8 +329,7 @@ void DashboardPortalActivity::render(RenderLock&&) {
   auto& theme = UITheme::getInstance();
   const auto& metrics = theme.getMetrics();
   const Rect screen = theme.getScreenSafeArea(renderer, true, false);
-  GUI.drawHeader(renderer, Rect{screen.x, screen.y + metrics.topPadding, screen.width, metrics.headerHeight},
-                 title());
+  GUI.drawHeader(renderer, Rect{screen.x, screen.y + metrics.topPadding, screen.width, metrics.headerHeight}, title());
 
   const int top = screen.y + metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing * 2;
   const Rect bounds{screen.x, top, screen.width, screen.y + screen.height - top};

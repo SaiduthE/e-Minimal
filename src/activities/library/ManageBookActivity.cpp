@@ -138,8 +138,8 @@ void ManageBookActivity::activateRow(const Row row) {
 // Leaving it after the radio came on restarts the device (as File Transfer
 // does everywhere), so this result only arrives when the user backed out first.
 void ManageBookActivity::openEditOnPhone() {
-  auto transfer = makeUniqueNoThrow<CrossPointWebServerActivity>(renderer, mappedInput,
-                                                                 "files?edit=" + urlEncode(bookPath));
+  auto transfer =
+      makeUniqueNoThrow<CrossPointWebServerActivity>(renderer, mappedInput, "files?edit=" + urlEncode(bookPath));
   if (!transfer) {
     LOG_ERR("MANAGE", "OOM: file transfer");
     return;
@@ -188,8 +188,8 @@ void ManageBookActivity::render(RenderLock&&) {
     }
     renderer.drawText(SMALL_FONT_ID, x, y, label, true);
     y += labelHeight;
-    const std::string text = renderer.truncatedText(UI_10_FONT_ID, field.value.empty() ? "-" : field.value.c_str(),
-                                                    textWidth);
+    const std::string text =
+        renderer.truncatedText(UI_10_FONT_ID, field.value.empty() ? "-" : field.value.c_str(), textWidth);
     renderer.drawText(UI_10_FONT_ID, x, y, text.c_str(), true);
     y += valueHeight + metrics.verticalSpacing;
   };

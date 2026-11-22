@@ -23,9 +23,8 @@ constexpr WidgetId DEFAULT_WIDGETS[DashboardConfigStore::DEFAULT_LAYOUT_COUNT][4
 
 // Tiles in reading order: top to bottom, then left to right (the focus order).
 void sortReadingOrder(DashboardTile* tiles, const uint8_t count) {
-  std::sort(tiles, tiles + count, [](const DashboardTile& a, const DashboardTile& b) {
-    return a.y != b.y ? a.y < b.y : a.x < b.x;
-  });
+  std::sort(tiles, tiles + count,
+            [](const DashboardTile& a, const DashboardTile& b) { return a.y != b.y ? a.y < b.y : a.x < b.x; });
 }
 
 DashboardTile makeTile(const WidgetId widget, const uint8_t x, const uint8_t y, const uint8_t w, const uint8_t h) {

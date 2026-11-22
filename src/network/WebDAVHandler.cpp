@@ -204,6 +204,13 @@ void WebDAVHandler::handlePropfind(WebServer& s) {
 
   LOG_DBG("DAV", "PROPFIND %s depth=%d", path.c_str(), depth);
 
+  // The listing below hides protected children; the requested path itself must pass the same guard, or
+  // PROPFIND /.e-minimal would list the names and sizes of the files GET refuses.
+  if (isProtectedPath(path)) {
+    s.send(403, "text/plain", "Forbidden");
+    return;
+  }
+
   // Check if path exists
   if (!Storage.exists(path.c_str()) && path != "/") {
     s.send(404, "text/plain", "Not Found");

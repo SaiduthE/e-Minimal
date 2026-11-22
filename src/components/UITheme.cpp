@@ -205,7 +205,7 @@ const ThemeMetrics& UITheme::getMetrics() const {
 namespace {
 struct MetricField {
   const char* name;
-  int ThemeMetrics::*field;
+  int ThemeMetrics::* field;
 };
 // Every integer metric, by the name it has in ThemeMetrics. Ratios, percents,
 // enums and booleans are deliberately absent.

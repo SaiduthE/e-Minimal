@@ -76,9 +76,7 @@ GamesActivity::GamesActivity(GfxRenderer& renderer, MappedInputManager& mappedIn
   grid_.scrollIndicator = false;
   grid_.coverPainterUserData = this;
   grid_.coverPainter = [](fui::DrawTarget& target, fui::Rect tile, const fui::CoverGridItem&, uint16_t index,
-                          void* user) {
-    return static_cast<GamesActivity*>(user)->paintTile(target, tile, index);
-  };
+                          void* user) { return static_cast<GamesActivity*>(user)->paintTile(target, tile, index); };
 }
 
 const char* GamesActivity::headerTitle() const { return tr(STR_APP_GAMES); }

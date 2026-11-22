@@ -6,8 +6,8 @@
 #include <Memory.h>
 
 #include <algorithm>
-#include <climits>
 #include <cctype>
+#include <climits>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -319,7 +319,6 @@ void PageTextPicker::drawHints(GfxRenderer& renderer, const MappedInputManager& 
     GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
     return;
   }
-  const auto labels =
-      mappedInput.mapLabels(tr(STR_BACK), I18N.get(wordConfirm), tr(STR_PREV_WORD), tr(STR_NEXT_WORD));
+  const auto labels = mappedInput.mapLabels(tr(STR_BACK), I18N.get(wordConfirm), tr(STR_PREV_WORD), tr(STR_NEXT_WORD));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
 }

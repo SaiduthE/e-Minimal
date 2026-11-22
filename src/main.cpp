@@ -342,7 +342,7 @@ static bool loadSleepFrameBuffer(const bool keepFile = false) {
 
 // Enter deep sleep mode
 void enterDeepSleep(bool fromTimeout = false) {
-  HalPowerManager::Lock powerLock;  // Ensure we are at normal CPU frequency for sleep preparation
+  HalPowerManager::Lock powerLock;     // Ensure we are at normal CPU frequency for sleep preparation
   HalPowerManager::clearUsbBounces();  // a sleep the user chose watches the USB line afresh
   APP_STATE.lastSleepFromReader = activityManager.isReaderActivity();
 #if FREEINK_DEVICE_EMINIMAL
@@ -840,9 +840,9 @@ void setup() {
 bool idleLightSleep(unsigned long sleepTimeoutMs, unsigned long idleMs) {
   constexpr unsigned long MIN_SLEEP_MS = 50;  // shorter waits stay in the 50 ms idle slices
   if (!(activityManager.currentIsReader() || activityManager.currentIsDashboard()) ||
-      activityManager.preventAutoSleep() || !activityManager.renderIdle() ||
-      RenderLock::peek() || gpio.rawInputActive() || gpio.isUsbConnected() || logSerial ||
-      WiFi.getMode() != WIFI_MODE_NULL || power_probe::windowRunning()) {
+      activityManager.preventAutoSleep() || !activityManager.renderIdle() || RenderLock::peek() ||
+      gpio.rawInputActive() || gpio.isUsbConnected() || logSerial || WiFi.getMode() != WIFI_MODE_NULL ||
+      power_probe::windowRunning()) {
     return false;
   }
   // Until a key, the reader's own next timer, or the auto-sleep deadline so deep

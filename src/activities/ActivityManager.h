@@ -1,5 +1,6 @@
 #pragma once
 
+#include <PartyGames.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include <freertos/task.h>
@@ -9,8 +10,6 @@
 #include <memory>
 #include <string>
 #include <vector>
-
-#include <PartyGames.h>
 
 #include "CrossPointState.h"
 #include "GfxRenderer.h"

@@ -24,10 +24,10 @@ void QrUtils::drawQrCode(const GfxRenderer& renderer, const Rect& bounds, const 
 
   // Byte-mode capacity per version at ECC_LOW (ISO/IEC 18004 table 7); the
   // smallest version that holds the payload, never below 4.
-  static constexpr uint16_t BYTE_CAPACITY_L[40] = {
-      17,   32,   53,   78,   106,  134,  154,  192,  230,  271,  321,  367,  425,  458,
-      520,  586,  644,  718,  792,  858,  929,  1003, 1091, 1171, 1273, 1367, 1465, 1528,
-      1628, 1732, 1840, 1952, 2068, 2188, 2303, 2431, 2563, 2699, 2809, 2953};
+  static constexpr uint16_t BYTE_CAPACITY_L[40] = {17,   32,   53,   78,   106,  134,  154,  192,  230,  271,
+                                                   321,  367,  425,  458,  520,  586,  644,  718,  792,  858,
+                                                   929,  1003, 1091, 1171, 1273, 1367, 1465, 1528, 1628, 1732,
+                                                   1840, 1952, 2068, 2188, 2303, 2431, 2563, 2699, 2809, 2953};
   int version = 4;
   while (version < 40 && BYTE_CAPACITY_L[version - 1] < len) version++;
 

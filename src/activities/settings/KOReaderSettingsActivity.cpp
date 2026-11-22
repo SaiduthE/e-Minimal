@@ -43,55 +43,51 @@ void KOReaderSettingsActivity::activateIndex(const int index) {
   if (index == 0) {
     // Username
     auto keyboard = makeUniqueNoThrow<TextEntryActivity>(renderer, mappedInput, tr(STR_KOREADER_USERNAME),
-                                                          KOREADER_STORE.getUsername(), 64, InputType::Text);
+                                                         KOREADER_STORE.getUsername(), 64, InputType::Text);
     if (!keyboard) {
       LOG_ERR("KOS", "OOM: TextEntryActivity");
       return;
     }
-    startActivityForResult(std::move(keyboard),
-                           [this](const ActivityResult& result) {
-                             if (!result.isCancelled) {
-                               const auto& kb = std::get<KeyboardResult>(result.data);
-                               KOREADER_STORE.setCredentials(kb.text, KOREADER_STORE.getPassword());
-                               KOREADER_STORE.saveToFile();
-                             }
-                           });
+    startActivityForResult(std::move(keyboard), [this](const ActivityResult& result) {
+      if (!result.isCancelled) {
+        const auto& kb = std::get<KeyboardResult>(result.data);
+        KOREADER_STORE.setCredentials(kb.text, KOREADER_STORE.getPassword());
+        KOREADER_STORE.saveToFile();
+      }
+    });
   } else if (index == 1) {
     // Password
     auto keyboard = makeUniqueNoThrow<TextEntryActivity>(renderer, mappedInput, tr(STR_KOREADER_PASSWORD),
-                                                          KOREADER_STORE.getPassword(), 64, InputType::Password);
+                                                         KOREADER_STORE.getPassword(), 64, InputType::Password);
     if (!keyboard) {
       LOG_ERR("KOS", "OOM: TextEntryActivity");
       return;
     }
-    startActivityForResult(std::move(keyboard),
-                           [this](const ActivityResult& result) {
-                             if (!result.isCancelled) {
-                               const auto& kb = std::get<KeyboardResult>(result.data);
-                               KOREADER_STORE.setCredentials(KOREADER_STORE.getUsername(), kb.text);
-                               KOREADER_STORE.saveToFile();
-                             }
-                           });
+    startActivityForResult(std::move(keyboard), [this](const ActivityResult& result) {
+      if (!result.isCancelled) {
+        const auto& kb = std::get<KeyboardResult>(result.data);
+        KOREADER_STORE.setCredentials(KOREADER_STORE.getUsername(), kb.text);
+        KOREADER_STORE.saveToFile();
+      }
+    });
   } else if (index == 2) {
     // Sync Server URL - prefill with https:// if empty to save typing
     const std::string currentUrl = KOREADER_STORE.getServerUrl();
     const std::string prefillUrl = currentUrl.empty() ? "https://" : currentUrl;
-    auto keyboard = makeUniqueNoThrow<TextEntryActivity>(renderer, mappedInput, tr(STR_SYNC_SERVER_URL),
-                                                          prefillUrl, 128, InputType::Url);
+    auto keyboard = makeUniqueNoThrow<TextEntryActivity>(renderer, mappedInput, tr(STR_SYNC_SERVER_URL), prefillUrl,
+                                                         128, InputType::Url);
     if (!keyboard) {
       LOG_ERR("KOS", "OOM: TextEntryActivity");
       return;
     }
-    startActivityForResult(std::move(keyboard),
-                           [this](const ActivityResult& result) {
-                             if (!result.isCancelled) {
-                               const auto& kb = std::get<KeyboardResult>(result.data);
-                               const std::string urlToSave =
-                                   (kb.text == "https://" || kb.text == "http://") ? "" : kb.text;
-                               KOREADER_STORE.setServerUrl(urlToSave);
-                               KOREADER_STORE.saveToFile();
-                             }
-                           });
+    startActivityForResult(std::move(keyboard), [this](const ActivityResult& result) {
+      if (!result.isCancelled) {
+        const auto& kb = std::get<KeyboardResult>(result.data);
+        const std::string urlToSave = (kb.text == "https://" || kb.text == "http://") ? "" : kb.text;
+        KOREADER_STORE.setServerUrl(urlToSave);
+        KOREADER_STORE.saveToFile();
+      }
+    });
   } else if (index == 3) {
     // Document Matching - toggle between Filename and Binary
     const auto current = KOREADER_STORE.getMatchMethod();

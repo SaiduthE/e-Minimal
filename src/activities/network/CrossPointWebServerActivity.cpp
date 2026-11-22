@@ -16,9 +16,9 @@
 #if !FREEINK_NO_CALIBRE_WIRELESS
 #include "activities/network/CalibreConnectActivity.h"
 #endif
+#include "CrossPointSettings.h"
 #include "components/PhoneJoinPanel.h"
 #include "components/UITheme.h"
-#include "CrossPointSettings.h"
 #include "fontIds.h"
 #include "util/TaskWatchdog.h"
 
@@ -359,7 +359,6 @@ void CrossPointWebServerActivity::loop() {
         onGoHome();
         return;
       }
-
     }
 
     // Also check outside the request-processing loop.
@@ -416,9 +415,9 @@ void CrossPointWebServerActivity::renderServerRunning() const {
   const Rect bounds{0, top, pageWidth, pageHeight - top - metrics.buttonHintsHeight - metrics.verticalSpacing};
   const std::string hostnameUrl =
       portal.isUp() ? portal.hostnameUrl() : std::string("http://") + PhonePortal::SHARED_HOSTNAME + ".local/";
-  const std::string altUrl =
-      session.announces() ? std::string(tr(STR_OR_HTTP_PREFIX)) + hostnameUrl.substr(sizeof("http://") - 1) + landingPath
-                          : std::string();
+  const std::string altUrl = session.announces() ? std::string(tr(STR_OR_HTTP_PREFIX)) +
+                                                       hostnameUrl.substr(sizeof("http://") - 1) + landingPath
+                                                 : std::string();
   PhoneJoinPanel::Content content;
   content.headline = isApMode ? tr(STR_PHONE_SCAN_HEADLINE) : tr(STR_OPEN_URL_HINT);
   content.portal = isApMode ? &portal : nullptr;

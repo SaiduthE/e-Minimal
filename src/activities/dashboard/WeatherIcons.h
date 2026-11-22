@@ -17,9 +17,9 @@ inline const uint8_t* hero(const int16_t code) {
 }
 
 inline const uint8_t* small(const int16_t code) {
-  static constexpr const uint8_t* ICONS[] = {
-      WeatherSunIcon96,          WeatherCloudSunIcon96,  WeatherCloudIcon96,     WeatherCloudFogIcon96,
-      WeatherCloudDrizzleIcon96, WeatherCloudRainIcon96, WeatherCloudSnowIcon96, WeatherCloudLightningIcon96};
+  static constexpr const uint8_t* ICONS[] = {WeatherSunIcon96,       WeatherCloudSunIcon96,      WeatherCloudIcon96,
+                                             WeatherCloudFogIcon96,  WeatherCloudDrizzleIcon96,  WeatherCloudRainIcon96,
+                                             WeatherCloudSnowIcon96, WeatherCloudLightningIcon96};
   return ICONS[static_cast<int>(weather::iconFor(code))];
 }
 

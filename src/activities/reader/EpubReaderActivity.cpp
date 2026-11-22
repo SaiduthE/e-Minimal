@@ -28,8 +28,8 @@
 #include "DictionaryWordSelectActivity.h"
 #include "EpubReaderBookmarksActivity.h"
 #include "EpubReaderChapterSelectionActivity.h"
-#include "EpubReaderHighlightsActivity.h"
 #include "EpubReaderFootnotesActivity.h"
+#include "EpubReaderHighlightsActivity.h"
 #include "EpubReaderPercentSelectionActivity.h"
 #include "EpubReaderUtils.h"
 #include "HighlightSelectActivity.h"
@@ -1010,16 +1010,16 @@ void EpubReaderActivity::openHighlightSelect() {
   orientedMarginTop += SETTINGS.screenMargin;
   orientedMarginLeft += SETTINGS.screenMargin;
 
-  startActivityForResult(
-      std::make_unique<HighlightSelectActivity>(renderer, mappedInput, std::move(page), orientedMarginLeft,
-                                                orientedMarginTop, static_cast<uint16_t>(currentSpineIndex),
-                                                highlights),
-      [this](const ActivityResult& result) {
-        if (!result.isCancelled) {
-          if (const auto* picked = std::get_if<HighlightResult>(&result.data)) applyHighlightResult(*picked);
-        }
-        requestUpdate();
-      });
+  startActivityForResult(std::make_unique<HighlightSelectActivity>(
+                             renderer, mappedInput, std::move(page), orientedMarginLeft, orientedMarginTop,
+                             static_cast<uint16_t>(currentSpineIndex), highlights),
+                         [this](const ActivityResult& result) {
+                           if (!result.isCancelled) {
+                             if (const auto* picked = std::get_if<HighlightResult>(&result.data))
+                               applyHighlightResult(*picked);
+                           }
+                           requestUpdate();
+                         });
 }
 
 // Stores or removes the picked highlight and arms the toast.
@@ -1717,8 +1717,8 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
   // a text page and the separate base would only cost a second 1.2 s refresh
   // (measured on e-Minimal: 3.6 s per image page instead of 2.4).
   const bool combinesImagePages = display.getController() == HalDisplay::Controller::IT8951;
-  const bool combinedGrayscaleBase = tiledGrayscale && (!pageHasImages || combinesImagePages) &&
-                                     grayscale.base == HalDisplay::GrayscaleBase::Combined;
+  const bool combinedGrayscaleBase =
+      tiledGrayscale && (!pageHasImages || combinesImagePages) && grayscale.base == HalDisplay::GrayscaleBase::Combined;
   const bool overlapRefresh = tiledGrayscale && grayscale.asyncBase && !pageHasImages;
   auto renderGrayscalePass = [&]() {
     if (absoluteImageGrayscale || needsTextGrayscale) {

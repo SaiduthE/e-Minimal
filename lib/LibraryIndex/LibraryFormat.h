@@ -227,7 +227,8 @@ inline ClixValidity validateHeaderStructure(const ClixHeader& h, const uint64_t 
   ClixHeader expected = h;
   layoutSections(expected, h.folderLen, h.nameLen);
   if (expected.folderStart != h.folderStart || expected.recordStart != h.recordStart ||
-      expected.permStart != h.permStart || expected.extraStart != h.extraStart || expected.nameStart != h.nameStart || expected.selfSize != h.selfSize) {
+      expected.permStart != h.permStart || expected.extraStart != h.extraStart || expected.nameStart != h.nameStart ||
+      expected.selfSize != h.selfSize) {
     return ClixValidity::SectionsInconsistent;
   }
   return ClixValidity::Ok;

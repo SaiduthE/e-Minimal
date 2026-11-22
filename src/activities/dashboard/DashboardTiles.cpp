@@ -56,8 +56,7 @@ void drawNote(const GfxRenderer& renderer, const Rect& area, const int top, cons
 int drawTitle(const GfxRenderer& renderer, const Rect& area, const char* title, const char* note) {
   const int uiLine = renderer.getLineHeight(UI_12_FONT_ID);
   const int noteWidth = note && note[0] ? renderer.getTextWidth(SMALL_FONT_ID, note) + UITheme::scaledPx(16) : 0;
-  const std::string fitted =
-      renderer.truncatedText(UI_12_FONT_ID, title, area.width - noteWidth, EpdFontFamily::BOLD);
+  const std::string fitted = renderer.truncatedText(UI_12_FONT_ID, title, area.width - noteWidth, EpdFontFamily::BOLD);
   renderer.drawText(UI_12_FONT_ID, area.x, area.y, fitted.c_str(), true, EpdFontFamily::BOLD);
   if (noteWidth > 0) {
     const int smallLine = renderer.getLineHeight(SMALL_FONT_ID);

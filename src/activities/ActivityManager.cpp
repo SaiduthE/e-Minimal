@@ -448,9 +448,7 @@ bool ActivityManager::isDashboardActivity() const {
          currentIsDashboard();
 }
 
-bool ActivityManager::currentIsDashboard() const {
-  return currentActivity && currentActivity->isDashboardActivity();
-}
+bool ActivityManager::currentIsDashboard() const { return currentActivity && currentActivity->isDashboardActivity(); }
 
 bool ActivityManager::dashboardViewOpen() const {
   const auto isView = [](const Activity* activity) { return activity && activity->name == "Dashboard"; };

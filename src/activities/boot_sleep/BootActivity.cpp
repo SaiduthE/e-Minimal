@@ -3,8 +3,8 @@
 #include <GfxRenderer.h>
 #include <I18n.h>
 
-#include "fontIds.h"
 #include "FirmwareIdentity.h"
+#include "fontIds.h"
 #include "images/Logo120.h"
 
 void BootActivity::onEnter() {

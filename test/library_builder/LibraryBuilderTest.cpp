@@ -389,7 +389,7 @@ TEST_F(LibraryBuilderTest, LibrariesPastOldGateAndAtFormatCeilingKeepAllOrders) 
 TEST_F(LibraryBuilderTest, SortAllocationFailureProducesValidDegradedIndex) {
   fake::reset();
   for (unsigned i = 0; i < 513; i++) fake::add("/book" + numbered("", i) + ".txt");
-  fake::failAlloc = 6;
+  fake::failAlloc = 9;
 
   ASSERT_TRUE(buildLibraryIndex("/", stats, false));
   EXPECT_TRUE(fake::failureTriggered);
