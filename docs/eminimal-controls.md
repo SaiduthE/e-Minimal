@@ -196,7 +196,7 @@ read once per File Transfer / phone-page session (`WebSession::begin`).
 `FirmwareInstallServer` (`GET /api/status`, `POST /api/firmware`, UDP
 `eminimal?` on 8135), with no access code and none of File Transfer's pages. It
 shows the address and, with Announce on Network on, `eminimal.local` plus an
-`_eminimal-update._tcp` mDNS service. `e-Minimal-Notes/tools/ota_push.py` finds
+`_eminimal-update._tcp` mDNS service. A push script (not part of this repository) finds
 the reader by that UDP query (or `--host`), refuses an image whose version
 matches the running one (`--force` overrides), uploads it, and prints the
 image's SHA-256 prefix to compare with the reader's. The POST must carry the

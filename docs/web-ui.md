@@ -110,7 +110,7 @@ Markup app.js produces (ids and classes are the contract):
   app.js sets the active link and the topbar title from those. A page with no
   drawer link of its own names its parent with `data-nav` (Pictures has
   `data-nav="dashboards"`), which lights that link with `aria-current="true"`.
-- app.js fetches `/api/status` once and fills `#topbarStatus` ("Joined · 192.168.50.240"
+- app.js fetches `/api/status` once and fills `#topbarStatus` ("Joined · 192.168.1.50"
   or "Hotspot · 192.168.4.1") and `#drawerFoot`. Failure leaves them empty; no error UI.
 - Drawer state: `body.drawer-open`. Opened by `#menuBtn`, closed by backdrop,
   Esc, or any drawer link. Focus returns to the button on close.

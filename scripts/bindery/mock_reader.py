@@ -35,7 +35,7 @@ DASH = {
         {"id": 2, "name": "Grid", "shape": "landscape", "tiles": [
             {"widget": "weather", "x": 0, "y": 0, "w": 7, "h": 5}, {"widget": "date", "x": 7, "y": 0, "w": 7, "h": 5},
             {"widget": "todo", "x": 0, "y": 5, "w": 7, "h": 5}, {"widget": "image", "x": 7, "y": 5, "w": 7, "h": 5}]}],
-    "weather": {"hasLocation": True, "place": "Hyderabad", "lat": 17.385, "lon": 78.4867, "units": "c"},
+    "weather": {"hasLocation": True, "place": "Greenwich", "lat": 51.4779, "lon": -0.0015, "units": "c"},
     "carousel": {"folder": "/carousel", "intervalMinutes": 30, "minMinutes": 5, "maxMinutes": 1440},
 }
 TODO = {"items": [{"text": "Water the plants", "done": False}, {"text": "Return library books", "done": True}],

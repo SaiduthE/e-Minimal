@@ -1,3 +1,20 @@
+# e-Minimal firmware
+
+> **This repository is a fork of [CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-reader).**
+> It adapts CrossPoint to the e-Minimal reader: an ESP32-S3 (N16R8) driving a 7.8" 1872x1404 e-ink panel
+> through an IT8951 controller, with five keys and a microSD card. It adds a dashboard, party games played
+> from phones, and firmware install over Wi-Fi.
+>
+> - Build target: `pio run -e eminimal`
+> - Developer documentation for the fork: [docs/eminimal/](docs/eminimal/README.md)
+> - Licence and attribution: [LICENSE](LICENSE), [NOTICE.md](NOTICE.md)
+> - Not affiliated with or endorsed by the CrossPoint Reader project, Xteink or Waveshare.
+>
+> Everything below this banner, and `GOVERNANCE.md`, `SCOPE.md`, `ROADMAP.md` and `AGENTS.md`, is the
+> upstream project's text, kept so the fork can be synced. It describes CrossPoint, not this fork.
+
+---
+
 # CrossPoint Reader
 
 [![Fund contributors](https://img.shields.io/badge/%F0%9F%91%91_Fund_contributors-royalty.dev-BB953A?style=for-the-badge&labelColor=1a1a1a)](https://app.royalty.dev/crosspoint-reader/crosspoint-reader)

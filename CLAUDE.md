@@ -71,8 +71,7 @@ for upstream detail not covered here.
 **Board.** Freenove ESP32-S3 devkit, N16R8 module (16 MB flash, 8 MB octal
 PSRAM), `qio_opi` memory type (not `dio_opi`). Panel: IT8951 1872x1404,
 `uiScale` 1.5 (the UI fonts are the 2x tier — Ubuntu 20/24, NotoSans 16
-small; only the 12 px hint font is 1.5x; see `docs/web-ui.md` and
-`e-Minimal-Notes/tools/ui_tune.md`).
+small; only the 12 px hint font is 1.5x; see `docs/web-ui.md`).
 
 **Five buttons, not seven.** No side buttons: four front keys in a row under
 the screen — Back (GPIO 7), Confirm/Select (GPIO 6), Up (GPIO 4), Down
@@ -85,11 +84,11 @@ with the reader's rotation. Detect this board at runtime with
 `five_button::active()` (`src/util/FiveButtonInput.h`); **never** branch on
 `Button::Left`/`Button::Right` reaching the user, and read keys through
 `MappedInputManager`, not `HalGPIO::BTN_*`, unless a site must stay physical.
-Pin table: `e-Minimal-Notes/MAP.md` §2; controls: `docs/eminimal-controls.md`.
+Pin table: `docs/eminimal/02-display-pipeline.md` and `docs/eminimal/03-application-framework.md`; controls: `docs/eminimal-controls.md`.
 
-**Branch.** Work directly on `eminimal-7in8` in the main checkout
-(`D:\Personal_Projects\e-Minimal\e-Minimal`); the SDK submodule's branch is
-`eminimal-7in8` too. No feature branches or worktrees unless Sai asks for one.
+**Branch.** Work directly on `master` in the main checkout; it is the only
+branch. The SDK submodule's branch is `eminimal-7in8`. No feature branches or
+worktrees unless the maintainer asks for one.
 
 **Build env.** Always pass `-e eminimal`: `platformio.ini:2`
 `default_envs = default` is the Xteink C3 target; on a clone without
@@ -103,8 +102,8 @@ to COM5 so `pio run -e eminimal` needs no `--upload-port`.
 
 **Sandboxed `pio` hangs.** `pio run` hangs at SCons startup under a
 sandboxed Bash tool; run build/flash with the sandbox off or hand them to
-the user. `e-Minimal-Notes/tools/dev.ps1` wraps build/flash/monitor/
-capture/size for this env and port — see `MAP.md` §3.
+the user. See `docs/eminimal/06-build-flash-release.md` for the build, flash and
+monitor commands.
 
 **clang-format.** Needs clang-format >= 21, not installed on this PC;
 `.\bin\clang-format-fix.ps1 -g` fails here. Hand-match 120 cols / 2-space
@@ -114,8 +113,8 @@ indent; CI's format check is the backstop. Don't set `core.hooksPath
 **Firmware size.** `python scripts/firmware_size_history.py --env eminimal
 --commits <refs>` — the script defaults to env `default`, the wrong chip.
 
-Read `e-Minimal-Notes/MAP.md` (navigation) and `e-Minimal-Notes/STATUS.md`
-(current state) before non-trivial work.
+Read `docs/eminimal/README.md` (developer documentation index) before
+non-trivial work.
 
 **Submodule order.** `freeink-sdk` is a real submodule: commit and push it
 first, bump and commit the fork's gitlink, then push the fork. Never run
